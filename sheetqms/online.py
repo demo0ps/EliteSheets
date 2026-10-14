@@ -236,8 +236,8 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             parsed, originals = [], []
             for index, (filename, data) in enumerate([target_data] + source_data):
                 extension = Path(filename).suffix.lower()
-                if extension not in ({'.xlsx'} if index == 0 else {'.xlsx', '.csv'}) or len(data) > 20 * 1024 * 1024:
-                    raise HTTPException(422, 'Use XLSX target and XLSX/UTF-8 CSV sources, at most 20 MiB each.')
+                if extension not in ({'.xlsx'} if index == 0 else {'.xlsx', '.xls', '.csv'}) or len(data) > 20 * 1024 * 1024:
+                    raise HTTPException(422, 'Use XLSX target and XLSX/XLS/UTF-8 CSV sources, at most 20 MiB each.')
                 file_id = 'template' if index == 0 else f'source-{index}'
                 path = Path(directory) / (file_id + extension)
                 path.write_bytes(data)
@@ -444,17 +444,19 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         source_bytes = [(source.filename or 'source.csv', await source.read(20 * 1024 * 1024 + 1)) for source in sources]
         if target is not None and target.filename:
             target_bytes = await target.read(20 * 1024 * 1024 + 1)
-            if Path(target.filename).suffix.lower() == '.csv':
+            t_ext = Path(target.filename).suffix.lower()
+            if t_ext in {'.csv', '.xls'}:
                 from openpyxl import Workbook
-                from .workbooks import csv_rows
+                from .workbooks import book_rows
                 with tempfile.TemporaryDirectory() as tmpd:
-                    cp = Path(tmpd) / 'target.csv'
+                    cp = Path(tmpd) / ('target' + t_ext)
                     cp.write_bytes(target_bytes)
-                    crows = csv_rows(cp)
+                    sheets_dict = book_rows(cp, data_only=True)
+                    first_sheet = next(iter(sheets_dict.values()), [])
                 wb = Workbook()
                 ws = wb.active
                 ws.title = 'Output'
-                for r in crows:
+                for r in first_sheet:
                     ws.append(r)
                 bio = BytesIO()
                 wb.save(bio)
@@ -1657,11 +1659,11 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         source_bytes = []
         for src in sources:
             fname = Path(src.filename or 'sheet.xlsx').name
-            if Path(fname).suffix.lower() not in {'.xlsx', '.csv'}:
+            if Path(fname).suffix.lower() not in {'.xlsx', '.xls', '.csv'}:
                 continue
             source_bytes.append((fname, await src.read(20 * 1024 * 1024 + 1)))
         if not source_bytes:
-            raise HTTPException(422, 'No .xlsx or .csv files found in the selected folder.')
+            raise HTTPException(422, 'No .xlsx, .xls or .csv files found in the selected folder.')
         return _merge_batch_files(identity, request_id, source_bytes, title)
 
     return app

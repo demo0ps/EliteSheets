@@ -662,6 +662,23 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     assert b_rows[1]['SA ID Number'] == '0803055123084'
     assert b_rows[1]['SA ID Status'].startswith('Repaired SA ID (Leading 0 Restored')
 
+    # 4. Legacy .xls Upload Support (HTML-table .xls & SpreadsheetML XML .xls & Folder Batch .xls)
+    html_xls = b"""<html><body><table>
+      <tr><th>Student ID</th><th>First Name</th><th>Last Name</th><th>Grade</th><th>Parent Phone</th></tr>
+      <tr><td>STU010</td><td>Sipho</td><td>Nkosi</td><td>8</td><td>0825551234</td></tr>
+      <tr><td>STU011</td><td>Lerato</td><td>Khumalo</td><td>Grade 9</td><td>0834449876</td></tr>
+    </table></body></html>"""
+    xls_res = c.post('/api/jobs', data={'request_id': 'xls-upload-test-001', 'title': 'SA-SAMS-Export.xlsx'}, files=[
+        ('sources', ('sasams-learners.xls', html_xls, 'application/vnd.ms-excel')),
+    ])
+    assert xls_res.status_code == 200, xls_res.text
+    xls_job = xls_res.json()
+    assert xls_job['state'] == 'RELEASED'
+    assert len(xls_job['report']['rows']) == 2
+    assert xls_job['report']['rows'][0]['Student ID'] == 'STU010'
+    assert xls_job['report']['rows'][0]['Parent Phone'] == '0825551234'
+
+
 
 
 

@@ -75,11 +75,170 @@ def public_value(value):
     return value
 
 
+def _coerce_xls_text_cell(raw_val: str):
+    s = raw_val.strip()
+    if not s:
+        return None
+    if re.fullmatch(r'0\d+', s) or re.fullmatch(r'\d{11,}', s):
+        return s
+    if re.fullmatch(r'[+-]?\d+', s):
+        try:
+            return int(s)
+        except ValueError:
+            return s
+    if re.fullmatch(r'[+-]?\d+\.\d+', s):
+        try:
+            f = float(s)
+            return int(f) if f.is_integer() else f
+        except ValueError:
+            return s
+    return s
+
+
+def xls_rows(path: Path) -> dict[str, list[list[object]]]:
+    raw = path.read_bytes()
+    if not raw:
+        raise ValueError('Empty .xls file; platform supports .xlsx, .xls and UTF-8 .csv workbooks.')
+    # 1. ZIP OpenXML (.xlsx renamed to .xls)
+    if raw[:4] == b'PK\x03\x04':
+        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True, keep_links=False)
+        result = {}
+        try:
+            for ws in wb:
+                result[ws.title] = [list(row) for row in ws.iter_rows(values_only=True)]
+        finally:
+            wb.close()
+        if result:
+            return result
+    # 2. Legacy Binary Excel 97-2003 BIFF8 / BIFF5 (.xls)
+    if raw[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1' or raw[:2] == b'\x09\x08':
+        try:
+            import xlrd
+            book = xlrd.open_workbook(file_contents=raw)
+        except Exception as exc:
+            raise ValueError('Legacy .xls workbook could not be read; platform supports unencrypted .xlsx, .xls and UTF-8 .csv.') from exc
+        result: dict[str, list[list[object]]] = {}
+        total = 0
+        for sh in book.sheets():
+            if sh.nrows > MAX_ROWS or sh.ncols > MAX_COLS:
+                raise ValueError(f'Sheet {sh.name} exceeds the row or column limit.')
+            total += sh.nrows * sh.ncols
+            if total > MAX_CELLS:
+                raise ValueError('Workbook exceeds the one-million-cell inspection limit.')
+            sheet_rows: list[list[object]] = []
+            for r_idx in range(sh.nrows):
+                row_vals: list[object] = []
+                for c_idx in range(sh.ncols):
+                    cell = sh.cell(r_idx, c_idx)
+                    ctype = cell.ctype
+                    val = cell.value
+                    if ctype in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
+                        row_vals.append(None)
+                    elif ctype == xlrd.XL_CELL_DATE:
+                        try:
+                            dt = xlrd.xldate_as_datetime(val, book.datemode)
+                            row_vals.append(dt.strftime('%Y-%m-%d'))
+                        except Exception:
+                            row_vals.append(str(val))
+                    elif ctype == xlrd.XL_CELL_BOOLEAN:
+                        row_vals.append(bool(val))
+                    elif ctype == xlrd.XL_CELL_NUMBER:
+                        fval = float(val)
+                        row_vals.append(int(fval) if fval.is_integer() else fval)
+                    else:
+                        sval = str(val).strip()
+                        row_vals.append(sval if sval != '' else None)
+                sheet_rows.append(row_vals)
+            result[sh.name or f'Sheet{len(result)+1}'] = sheet_rows
+        if result:
+            return result
+    # 3. Text-based .xls exports (HTML table .xls, SpreadsheetML XML 2003 .xls, or TSV/CSV .xls)
+    try:
+        text = raw.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        try:
+            text = raw.decode('latin-1')
+        except Exception as exc:
+            raise ValueError('First version supports .xlsx, .xls and UTF-8 .csv sources; unrecognized binary format.') from exc
+    lower_head = text[:4096].lower()
+    if '<table' in lower_head or '<tr' in lower_head:
+        from html.parser import HTMLParser
+
+        class _TableParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.rows: list[list[object]] = []
+                self._cur_row: list[object] | None = None
+                self._cur_cell: list[str] | None = None
+
+            def handle_starttag(self, tag, attrs):
+                t = tag.lower()
+                if t == 'tr':
+                    self._cur_row = []
+                elif t in ('td', 'th') and self._cur_row is not None:
+                    self._cur_cell = []
+
+            def handle_data(self, data):
+                if self._cur_cell is not None:
+                    self._cur_cell.append(data)
+
+            def handle_endtag(self, tag):
+                t = tag.lower()
+                if t in ('td', 'th') and self._cur_row is not None and self._cur_cell is not None:
+                    self._cur_row.append(_coerce_xls_text_cell(''.join(self._cur_cell)))
+                    self._cur_cell = None
+                elif t == 'tr' and self._cur_row is not None:
+                    if any(v is not None for v in self._cur_row):
+                        self.rows.append(self._cur_row)
+                    self._cur_row = None
+
+        parser = _TableParser()
+        parser.feed(text)
+        if parser.rows:
+            return {'Sheet1': parser.rows}
+    if '<workbook' in lower_head or '<worksheet' in lower_head:
+        import xml.etree.ElementTree as ET
+        try:
+            root = ET.fromstring(text)
+            sheets: dict[str, list[list[object]]] = {}
+            for ws_el in root.iter():
+                if ws_el.tag.endswith('Worksheet'):
+                    sh_name = next((v for k, v in ws_el.attrib.items() if k.endswith('Name')), f'Sheet{len(sheets)+1}')
+                    sh_rows: list[list[object]] = []
+                    for r_el in ws_el.iter():
+                        if r_el.tag.endswith('Row'):
+                            r_vals: list[object] = []
+                            for c_el in r_el:
+                                if c_el.tag.endswith('Cell'):
+                                    idx_attr = next((v for k, v in c_el.attrib.items() if k.endswith('Index')), None)
+                                    if idx_attr and str(idx_attr).isdigit():
+                                        target_idx = int(idx_attr) - 1
+                                        while len(r_vals) < target_idx:
+                                            r_vals.append(None)
+                                    cell_text = ''.join(c_el.itertext())
+                                    r_vals.append(_coerce_xls_text_cell(cell_text))
+                            sh_rows.append(r_vals)
+                    if sh_rows:
+                        sheets[sh_name] = sh_rows
+            if sheets:
+                return sheets
+        except Exception:
+            pass
+    # 4. Tab/comma/semicolon delimited table saved with .xls extension (must have >=2 lines and a delimiter)
+    non_empty_lines = [ln for ln in text.splitlines() if ln.strip()]
+    if len(non_empty_lines) >= 2 and any(d in non_empty_lines[0] for d in ('\t', ',', ';')):
+        return {'Sheet1': csv_rows(path)}
+    raise ValueError('First version supports .xlsx, .xls and UTF-8 .csv sources; templates must be .xlsx. Legacy, macro-enabled and encrypted workbooks are not supported.')
+
+
 def check_file(path: Path):
     if path.stat().st_size > MAX_BYTES:
         raise ValueError('File exceeds the first-version 20 MiB limit.')
-    if path.suffix.lower() not in {'.xlsx', '.csv'}:
-        raise ValueError('First version supports .xlsx and UTF-8 .csv sources; templates must be .xlsx. Legacy, macro-enabled and encrypted workbooks are not supported.')
+    if path.suffix.lower() not in {'.xlsx', '.xls', '.csv'}:
+        raise ValueError('First version supports .xlsx, .xls and UTF-8 .csv sources; templates must be .xlsx. Legacy, macro-enabled and encrypted workbooks are not supported.')
+    if path.suffix.lower() == '.xls':
+        xls_rows(path)
+        return
     if path.suffix.lower() == '.xlsx':
         try:
             with zipfile.ZipFile(path) as archive:
@@ -117,6 +276,8 @@ def book_rows(path: Path, data_only=False):
     check_file(path)
     if path.suffix.lower() == '.csv':
         return {'CSV': csv_rows(path)}
+    if path.suffix.lower() == '.xls':
+        return xls_rows(path)
     try:
         wb = load_workbook(path, read_only=True, data_only=data_only, keep_links=False)
     except Exception as exc:

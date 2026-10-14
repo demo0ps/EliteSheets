@@ -1,4 +1,5 @@
 import { EDUSCF_LOGO_URI } from './eduscf_logo';
+import * as XLSX from 'xlsx';
 interface User{id:string;name:string;email:string;role:string;tenant_id:string}
 interface Q{ id:string;text:string;evidence:string;kind:string }
 interface Check{id:string;name:string;passed:boolean;detail:string}
@@ -396,9 +397,9 @@ function studio(){
           <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
             ${boot.demo_mode?`<div class="picker-row"><select id="sample-case" aria-label="Try an example">${vMeta.samples.map((s,idx)=>`<option value="${s.val}">Demo ${idx+1}: ${escapeHTML(s.label)}</option>`).join('')}</select><button id="load-example" class="btn primary small">Load Demo</button></div>`:''}
             <div class="upload-grid" style="grid-template-columns:1fr 1fr 1fr">
-              <label class="upload-box" for="source-files">${icon('upload')}<strong>Your Sheet(s)</strong><small>Excel or CSV</small><input id="source-files" type="file" multiple accept=".xlsx,.csv" aria-label="Upload source spreadsheets"></label>
+              <label class="upload-box" for="source-files">${icon('upload')}<strong>Your Sheet(s)</strong><small>.XLSX, .XLS or .CSV</small><input id="source-files" type="file" multiple accept=".xlsx,.xls,.csv" aria-label="Upload source spreadsheets"></label>
               <label class="upload-box" for="folder-files">${icon('folder')}<strong>Entire Folder</strong><small>Merge all files</small><input id="folder-files" type="file" webkitdirectory directory multiple aria-label="Upload entire folder of spreadsheets"></label>
-              <label class="upload-box" for="target-file">${icon('grid')}<strong>Template</strong><small>Optional</small><input id="target-file" type="file" accept=".xlsx,.csv" aria-label="Upload destination template"></label>
+              <label class="upload-box" for="target-file">${icon('grid')}<strong>Template</strong><small>Optional</small><input id="target-file" type="file" accept=".xlsx,.xls,.csv" aria-label="Upload destination template"></label>
             </div>
             <div id="file-list" class="file-list"></div>
             <button id="inspect-files" class="btn primary small" style="width:100%" disabled>Open Uploaded Files</button>
@@ -495,7 +496,7 @@ function studio(){
     const src=$<HTMLInputElement>('source-files').files;
     const fld=$<HTMLInputElement>('folder-files').files;
     const target=$<HTMLInputElement>('target-file').files;
-    const validFolderFiles=Array.from(fld||[]).filter(f=>/\.(xlsx|csv)$/i.test(f.name));
+    const validFolderFiles=Array.from(fld||[]).filter(f=>/\.(xlsx|xls|csv)$/i.test(f.name));
     $('file-list').innerHTML=[...Array.from(src||[]),...validFolderFiles,...Array.from(target||[])].map(f=>`<span class="file-chip">${escapeHTML((f as any).webkitRelativePath||f.name)}</span>`).join('');
     $<HTMLButtonElement>('inspect-files').disabled=!src?.length&&!validFolderFiles.length&&!target?.length;
   };
@@ -506,7 +507,7 @@ function studio(){
     const f=new FormData();
     const targetFiles=$<HTMLInputElement>('target-file').files;
     const srcFiles=$<HTMLInputElement>('source-files').files;
-    const fldFiles=Array.from($<HTMLInputElement>('folder-files').files||[]).filter(fl=>/\.(xlsx|csv)$/i.test(fl.name));
+    const fldFiles=Array.from($<HTMLInputElement>('folder-files').files||[]).filter(fl=>/\.(xlsx|xls|csv)$/i.test(fl.name));
     if(targetFiles?.length)f.append('target',targetFiles[0]);
     if(fldFiles.length){
       for(const file of fldFiles)f.append('sources',file);
@@ -531,8 +532,9 @@ function studio(){
   if($('view-batch-audit'))$('view-batch-audit').addEventListener('click',()=>showBatchAuditModal());
 
   if(job){
-    $('run-job').addEventListener('click',()=>void doRun());
-    $('download-output').addEventListener('click',()=>void download('output'));
+    if($('run-job'))$('run-job').addEventListener('click',()=>void doRun());
+    if($('confirm-correction'))$('confirm-correction').addEventListener('click',()=>void confirmCorrection());
+    if($('download-output'))$('download-output').addEventListener('click',()=>void download('output'));
     document.querySelectorAll<HTMLSelectElement>('.col-map-select').forEach(sel=>sel.addEventListener('change',()=>void busy(sel,async()=>{
       const tgt=sel.dataset.mapTarget!;
       const src=sel.value;
@@ -1637,8 +1639,8 @@ async function templatesPage(){
         <input id="tpl-cat" value="${escapeHTML(vMeta.templateCategories[0]||'Custom')}" placeholder="e.g. School / Business">
         <label for="tpl-headers">Column Names (comma-separated) — or upload an Excel/CSV file below</label>
         <input id="tpl-headers" required placeholder="e.g. ID, First Name, Last Name, Phone, Amount">
-        <label for="tpl-file">Or copy columns from an existing Excel / CSV file (optional)</label>
-        <input id="tpl-file" type="file" accept=".xlsx,.csv">
+        <label for="tpl-file">Or copy columns from an existing Excel (.XLSX / .XLS) / CSV file (optional)</label>
+        <input id="tpl-file" type="file" accept=".xlsx,.xls,.csv">
         <button type="submit" id="save-tpl-submit" class="btn primary" style="margin-top:14px">Save Template</button>
       </form>
     `);
@@ -1648,7 +1650,7 @@ async function templatesPage(){
       const parsed=await parseUploadedFile(f);
       if(parsed.headers.length){
         $<HTMLInputElement>('tpl-headers').value=parsed.headers.join(', ');
-        if(!$<HTMLInputElement>('tpl-name').value)$<HTMLInputElement>('tpl-name').value=f.name.replace(/\.(xlsx|csv)$/i,'');
+        if(!$<HTMLInputElement>('tpl-name').value)$<HTMLInputElement>('tpl-name').value=f.name.replace(/\.(xlsx|xls|csv)$/i,'');
       }
     });
     $('custom-tpl-form').addEventListener('submit',e=>{
@@ -1907,20 +1909,38 @@ function buildXlsxBlob(sheetName:string,headers:string[],rows:Record<string,any>
   return buildMultiSheetXlsxBlob([{name:sheetName,headers,rows}]);
 }
 
+let memStaticState:any=null;
 function loadStaticState():any{
+  if(memStaticState)return memStaticState;
   try{
     const raw=localStorage.getItem('sheetqms_static_state_v3');
-    if(raw)return JSON.parse(raw);
+    if(raw){
+      const parsed=JSON.parse(raw);
+      if(parsed&&parsed.jobs){
+        for(const [jid,j] of Object.entries<any>(parsed.jobs)){
+          const hs:string[]=j?.report?.headers||j?.customHeaders||[];
+          if(hs.length>150||hs.some(h=>String(h).includes('\uFFFD')||String(h).includes('\x00')||String(h).startsWith('\xD0\xCF'))){
+            delete parsed.jobs[jid];
+          }
+        }
+      }
+      memStaticState=parsed;
+      return memStaticState;
+    }
   }catch{}
-  return {
+  memStaticState={
     preferences:{theme:'light',density:'comfortable',explanations:'detailed',auto_checks:true,vertical:'general'},
     admin:{enabled:false,provider:'openai_compatible',base_url:'https://api.openai.com/v1',model:'gpt-4o-mini',monthly_budget_usd:'0',platform_budget_usd:'0',input_price_per_million_usd:'0.15',output_price_per_million_usd:'0.60',pricing_source_url:'https://openai.com/api/pricing/',pricing_verified_date:'2026-10-13',max_output_tokens:2048,timeout_seconds:75,auto_learn:true,key_configured:false,max_storage_mib_per_customer:250,max_jobs_per_customer:50},
     customers:[{id:'demo-a',name:'Demo Customer A',users:1,created:'2026-10-13T08:00:00Z'}],
     jobs:{} as Record<string,any>,
     knowledge:[] as any[]
   };
+  return memStaticState;
 }
-function saveStaticState(s:any){try{localStorage.setItem('sheetqms_static_state_v3',JSON.stringify(s))}catch{}}
+function saveStaticState(s:any){
+  memStaticState=s;
+  try{localStorage.setItem('sheetqms_static_state_v3',JSON.stringify(s))}catch{}
+}
 
 function makeStaticSampleJob(caseName:string):any{
   const id=uid();
@@ -2101,10 +2121,46 @@ function parseCsvLine(line:string,delim:string):string[]{
 
 async function parseUploadedFile(file:File):Promise<{name:string;sheet:string;headers:string[];rows:Record<string,any>[]}>{
   const name=file.name||'uploaded.csv';
-  if(name.toLowerCase().endsWith('.xlsx')){
+  const lowerName=name.toLowerCase();
+  const buf=await file.arrayBuffer();
+  const bytes=new Uint8Array(buf);
+  const isZip=bytes.length>=4&&bytes[0]===0x50&&bytes[1]===0x4B&&bytes[2]===0x03&&bytes[3]===0x04;
+  const isOleBiff=bytes.length>=8&&bytes[0]===0xD0&&bytes[1]===0xCF&&bytes[2]===0x11&&bytes[3]===0xE0;
+  const ruleSheets=new Set(['rules','instructions','mapping rules','business rules']);
+
+  // 1. SheetJS (XLSX) universal reader for .xls (BIFF8/BIFF5/HTML/XML) and .xlsx workbooks
+  if(lowerName.endsWith('.xls')||lowerName.endsWith('.xlsx')||isOleBiff||isZip){
     try{
-      const buf=await file.arrayBuffer();
-      const bytes=new Uint8Array(buf);
+      const wb=XLSX.read(buf,{type:'array',cellDates:true});
+      if(wb&&wb.SheetNames&&wb.SheetNames.length){
+        const chosenName=wb.SheetNames.find(sn=>!ruleSheets.has(sn.trim().toLowerCase()))||wb.SheetNames[0];
+        const ws=wb.Sheets[chosenName];
+        if(ws){
+          const rawMatrix=XLSX.utils.sheet_to_json<any[]>(ws,{header:1,defval:null,raw:true});
+          const matrix:any[][]=rawMatrix.map(row=>(row||[]).map(cell=>{
+            if(cell instanceof Date&&!Number.isNaN(cell.getTime())){
+              return cell.toISOString().slice(0,10);
+            }
+            if(typeof cell==='string'){
+              const s=cell.trim();
+              if(!s)return null;
+              if(!/^0\d+/.test(s)&&!/^\d{11,}$/.test(s)&&!Number.isNaN(Number(s)))return Number(s);
+              return s;
+            }
+            return cell;
+          })).filter(r=>r.some(x=>x!==null&&x!==undefined&&x!==''));
+          if(matrix.length){
+            const tbl=matrixToTable(chosenName,matrix);
+            return {name,sheet:tbl.sheet,headers:tbl.headers,rows:tbl.rows};
+          }
+        }
+      }
+    }catch{}
+  }
+
+  // 2. Native ZIP / Central-Directory XML fallback for .xlsx
+  if(lowerName.endsWith('.xlsx')||isZip){
+    try{
       const view=new DataView(buf);
       const entries:Record<string,Uint8Array>={};
       const inflateEntry=async(method:number,compData:Uint8Array)=>{
@@ -2118,7 +2174,6 @@ async function parseUploadedFile(file:File):Promise<{name:string;sheet:string;he
         }
         return null;
       };
-      // Prefer Central Directory so data-descriptor XLSX files (compSize=0 in local header) parse cleanly
       let eocdPos=-1;
       for(let i=bytes.length-22;i>=Math.max(0,bytes.length-65557);i--){
         if(view.getUint32(i,true)===0x06054b50){eocdPos=i;break}
@@ -2144,19 +2199,6 @@ async function parseUploadedFile(file:File):Promise<{name:string;sheet:string;he
           }
           cdPos+=46+nameLen+extraLen+commentLen;
         }
-      }else{
-        let pos=0;
-        while(pos+30<=bytes.length&&view.getUint32(pos,true)===0x04034b50){
-          const method=view.getUint16(pos+8,true);
-          const compSize=view.getUint32(pos+18,true);
-          const nameLen=view.getUint16(pos+26,true);
-          const extraLen=view.getUint16(pos+28,true);
-          const entryName=new TextDecoder().decode(bytes.subarray(pos+30,pos+30+nameLen));
-          const dataStart=pos+30+nameLen+extraLen;
-          const out=await inflateEntry(method,bytes.subarray(dataStart,dataStart+compSize));
-          if(out)entries[entryName]=out;
-          pos=dataStart+compSize;
-        }
       }
       const dec=new TextDecoder();
       const shared:string[]=[];
@@ -2164,7 +2206,6 @@ async function parseUploadedFile(file:File):Promise<{name:string;sheet:string;he
         const doc=new DOMParser().parseFromString(dec.decode(entries['xl/sharedStrings.xml']),'application/xml');
         doc.querySelectorAll('si').forEach(si=>{shared.push(Array.from(si.querySelectorAll('t')).map(t=>t.textContent||'').join(''))});
       }
-      const ruleSheets=new Set(['rules','instructions','mapping rules','business rules']);
       let chosenSheetName='Sheet1';
       let sheetKey=Object.keys(entries).find(k=>k.startsWith('xl/worksheets/sheet')&&k.endsWith('.xml'));
       if(entries['xl/workbook.xml']){
@@ -2212,11 +2253,33 @@ async function parseUploadedFile(file:File):Promise<{name:string;sheet:string;he
       }
     }catch{}
   }
-  const text=await file.text();
+
+  // 3. Guard against unrecognized binary files so they never flood the table as raw binary text
+  const text=new TextDecoder('utf-8',{fatal:false}).decode(bytes);
+  if(isOleBiff||bytes.subarray(0,256).some(b=>b===0)){
+    throw new Error(`Could not read "${name}". Please make sure it is an unencrypted Excel (.xls / .xlsx) or CSV file.`);
+  }
+
+  // 4. HTML Table exported with .xls extension (common in SA-SAMS & accounting exports)
+  if(/<table[\s>]|<tr[\s>]/i.test(text.slice(0,4096))){
+    const htmlDoc=new DOMParser().parseFromString(text,'text/html');
+    const trs=Array.from(htmlDoc.querySelectorAll('tr'));
+    const htmlMatrix:any[][]=trs.map(tr=>Array.from(tr.querySelectorAll('th,td')).map(td=>{
+      const raw=(td.textContent||'').trim();
+      if(!raw)return null;
+      if(!/^0\d+/.test(raw)&&!/^\d{11,}$/.test(raw)&&!Number.isNaN(Number(raw)))return Number(raw);
+      return raw;
+    })).filter(r=>r.some(x=>x!==null));
+    if(htmlMatrix.length){
+      const tbl=matrixToTable('Sheet1',htmlMatrix);
+      return {name,sheet:tbl.sheet,headers:tbl.headers,rows:tbl.rows};
+    }
+  }
+
   const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   if(!lines.length)return {name,sheet:'CSV',headers:['Col1'],rows:[]};
   const delim=lines[0].includes('\t')?'\t':(lines[0].includes(';')?';':',');
-  const matrix=lines.map(line=>parseCsvLine(line,delim).map(raw=>raw===''?null:(!Number.isNaN(Number(raw))?Number(raw):raw)));
+  const matrix=lines.map(line=>parseCsvLine(line,delim).map(raw=>raw===''?null:(!/^0\d+/.test(raw)&&!/^\d{11,}$/.test(raw)&&!Number.isNaN(Number(raw))?Number(raw):raw)));
   const tbl=matrixToTable('CSV',matrix);
   return {name,sheet:'CSV',headers:tbl.headers,rows:tbl.rows};
 }
