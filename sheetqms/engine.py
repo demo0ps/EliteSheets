@@ -483,6 +483,14 @@ def validate_and_repair_sa_id(value) -> dict:
     if re.search(r'[A-Za-z]', raw) and not re.match(r'^\d+(\.\d+)?[eE]\+\d+$', raw):
         return {'id_str': raw, 'dob': None, 'gender': None, 'citizenship': 'Foreign / Permit', 'valid_luhn': False, 'repaired': False, 'status': 'Foreign / Passport / Permit ID'}
     digits = re.sub(r'\D', '', raw)
+    # Support 6-digit YYMMDD (e.g. 121007 -> 2012-10-07) and 5-digit zero-stripped YMMDD for 2005-2009 (e.g. 90524 -> 090524 -> 2009-05-24)
+    if len(digits) == 6 or (len(digits) == 5 and digits[0] in '56789'):
+        d6 = digits.zfill(6)
+        yy, mm, dd = int(d6[:2]), int(d6[2:4]), int(d6[4:6])
+        if 1 <= mm <= 12 and 1 <= dd <= 31:
+            century = 2000 if yy <= 26 else 1900
+            dob = f'{century + yy:04d}-{mm:02d}-{dd:02d}'
+            return {'id_str': raw, 'dob': dob, 'gender': None, 'citizenship': None, 'valid_luhn': False, 'repaired': False, 'status': '6-Digit YYMMDD Date of Birth'}
     repaired = False
     if len(digits) in {11, 12}:
         padded = digits.zfill(13)
@@ -781,16 +789,24 @@ def build_rows(records, destination, rules):
             subj_fields = ['Subjects']
 
         def _fill_caps_senior_phase(target_rows: list[dict], row_hl_map: dict[int, str], row_fal_map: dict[int, str]):
-            if not subj_fields:
-                return
             for idx, r_dict in enumerate(target_rows):
-                gr_val = norm(r_dict.get('Grade') or r_dict.get('grade') or '')
-                if re.match(r'^(?:grade\s*0?[89]|gr\.?\s*0?[89]|0?[89])(?:[a-z])?$', gr_val):
-                    for subj_key in subj_fields:
-                        if not (r_dict.get(subj_key) and str(r_dict.get(subj_key)).strip()):
-                            hl = row_hl_map.get(idx) or default_hl
-                            fal = row_fal_map.get(idx) or default_fal
-                            r_dict[subj_key] = f'{hl}; {fal}; Mathematics; Natural Sciences; Social Sciences; Technology; Economic and Management Sciences (EMS); Life Orientation; Creative Arts'
+                if not r_dict.get('Date of Birth') and destination.key and r_dict.get(destination.key):
+                    sa_info = validate_and_repair_sa_id(r_dict.get(destination.key))
+                    if sa_info.get('dob'):
+                        r_dict['Date of Birth'] = sa_info['dob']
+                if subj_fields:
+                    gr_val = norm(r_dict.get('Grade') or r_dict.get('grade') or '')
+                    if re.match(r'^(?:grade\s*0?[89]|gr\.?\s*0?[89]|0?[89])(?:[a-z])?$', gr_val):
+                        for subj_key in subj_fields:
+                            if not (r_dict.get(subj_key) and str(r_dict.get(subj_key)).strip()):
+                                hl = row_hl_map.get(idx) or default_hl
+                                fal = row_fal_map.get(idx) or default_fal
+                                r_dict[subj_key] = f'{hl}; {fal}; Mathematics; Natural Sciences; Social Sciences; Technology; Economic and Management Sciences (EMS); Life Orientation; Creative Arts'
+            if destination.key == 'Student ID' and any('First Name' in r and 'Last Name' in r for r in target_rows):
+                has_explicit_stu = any(re.match(r'^STU[-_]?\d+$', str(r.get('Student ID') or '').strip(), re.I) for r in target_rows)
+                for idx, r_dict in enumerate(target_rows):
+                    if not has_explicit_stu or r_dict.get('Student ID') in (None, ''):
+                        r_dict['Student ID'] = f'STU{idx + 1:04d}'
 
         source_regions = {r['id'].rsplit(':', 1)[0] for r in records}
         is_school_learner_job = any('First Name' in r.get('data', {}) and 'Last Name' in r.get('data', {}) for r in records)
@@ -824,7 +840,7 @@ def build_rows(records, destination, rules):
                 return True
 
             def _is_real_key(kv: str) -> bool:
-                return bool(kv and (len(kv) >= 6 or not kv.isdigit()))
+                return bool(kv and (len(kv) >= 10 or not kv.isdigit()))
 
             def _are_compatible_given_names(fn_a: str, fn_b: str, same_region: bool) -> bool:
                 if not fn_a or not fn_b:

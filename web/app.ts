@@ -1935,7 +1935,7 @@ let memStaticState:any=null;
 function loadStaticState():any{
   if(memStaticState)return memStaticState;
   try{
-    const raw=localStorage.getItem('sheetqms_static_state_v7');
+    const raw=localStorage.getItem('sheetqms_static_state_v8');
     if(raw){
       const parsed=JSON.parse(raw);
       if(parsed&&parsed.jobs){
@@ -1961,7 +1961,7 @@ function loadStaticState():any{
 }
 function saveStaticState(s:any){
   memStaticState=s;
-  try{localStorage.setItem('sheetqms_static_state_v7',JSON.stringify(s))}catch{}
+  try{localStorage.setItem('sheetqms_static_state_v8',JSON.stringify(s))}catch{}
 }
 
 function makeStaticSampleJob(caseName:string):any{
@@ -2081,6 +2081,18 @@ function extractDobFromSaId(rawVal:any):{id13:string|null;dob:string|null}{
     if(Number.isFinite(n))s=Math.round(n).toString();
   }
   const digits=s.replace(/[\s-]/g,'');
+  // Support 6-digit YYMMDD (e.g. 121007 -> 2012-10-07) and 5-digit zero-stripped YMMDD for 2005-2009 (e.g. 90524 -> 090524 -> 2009-05-24)
+  if(/^\d{6}$/.test(digits)||/^[5-9]\d{4}$/.test(digits)){
+    const d6=digits.padStart(6,'0');
+    const yy=Number(d6.slice(0,2));
+    const mm=Number(d6.slice(2,4));
+    const dd=Number(d6.slice(4,6));
+    if(mm>=1&&mm<=12&&dd>=1&&dd<=31){
+      const year=yy<=26?2000+yy:1900+yy;
+      return {id13:null,dob:`${String(year).padStart(4,'0')}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`};
+    }
+    return {id13:null,dob:null};
+  }
   if(!/^\d{10,13}$/.test(digits))return {id13:null,dob:null};
   const padded=digits.padStart(13,'0');
   const yy=Number(padded.slice(0,2));
@@ -2234,9 +2246,9 @@ const SECTION_HEADER_CELL_RE=/^((?:learner\s*|student\s*|parent\s*|guardian\s*|f
 function isBannerOrMetadataRow(row:any[]):boolean{
   const filled=(row||[]).filter(v=>v!==undefined&&v!==null&&String(v).trim()!=='');
   if(!filled.length)return true;
-  if(filled.length<=3){
+  if(filled.length<=6){
     const joined=filled.map(v=>String(v).replace(/\s+/g,' ').trim()).join(' | ');
-    if(/\b(department\s+of\s+education|internal\s+school|mark\s+schedule|school\s*:|district\s*:|circuit\s*:|emis\s*:|for\s*:\s*grade|report\s+generated|prepared\s+by|page\s+\d+\s+of|summary\s+report|total\s+learners|learner\s+information|parent\s+information)\b/i.test(joined))return true;
+    if(/\b(department\s+of\s+education|internal\s+school|mark\s+schedule|school\s*:|district\s*:|circuit\s*:|emis\s*:|for\s*:\s*grade|grade\s*:\s*\d|class\s*:\s*all|code\s*:\s*all|all\s+learners|term\s*:\s*\d|year\s*:\s*\d|report\s+generated|prepared\s+by|page\s+\d+\s+of|summary\s+report|total\s+learners|learner\s+information|parent\s+information|codes\s*:\s*p)\b/i.test(joined))return true;
   }
   return false;
 }
@@ -2594,7 +2606,7 @@ function matrixToTable(sheet:string,matrix:any[][]):{sheet:string;headers:string
         }
         if(!resolvedDob){
           if(typeof cellVal==='number'&&cellVal<19000)continue;
-          if(typeof cellVal==='string'&&/^\d{1,9}([.,]\d+)?$/.test(cellVal.trim())&&!/^(?:19|20)\d{6}$/.test(cellVal.trim()))continue;
+          if(typeof cellVal==='string'&&/^\d{1,4}([.,]\d+)?$/.test(cellVal.trim()))continue;
           const candDob=normalizeDateValue(cellVal);
           if(candDob){
             const yr=Number(candDob.slice(0,4));
@@ -3851,8 +3863,8 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
 
           const indexRec=(rec:Record<string,any>)=>{
             const kv=String(rec[keyCol]||'').trim().toLowerCase();
-            // Only index as a cross-sheet ID if it's a real code/SA ID (>=6 chars or non-numeric), NEVER a 1..9999 row counter!
-            if(kv&&(kv.length>=6||!/^\d+$/.test(kv)))byRealId[kv]=rec;
+            // Only index as a cross-sheet ID if it's a real 10..13-digit SA ID/Accession or alphanumeric code, NEVER a 1..9999 row counter or 6-digit YYMMDD birthday!
+            if(kv&&(kv.length>=10||!/^\d+$/.test(kv)))byRealId[kv]=rec;
             const fn=String(rec['First Name']||'').trim().toLowerCase();
             const ln=String(rec['Last Name']||'').trim().toLowerCase();
             const rNum=rowMeta.get(rec)?.rowNum;
@@ -3922,7 +3934,7 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
                 if(dob)obj['Date of Birth']=dob;
               }
               const kVal=String(obj[keyCol]||'').trim().toLowerCase();
-              const isRealId=Boolean(kVal&&(kVal.length>=6||!/^\d+$/.test(kVal)));
+              const isRealId=Boolean(kVal&&(kVal.length>=10||!/^\d+$/.test(kVal)));
               const rawRowNum=String(r['Number']??r['No']??r['No.']??r['#']??(!isRealId?kVal:'')??'').trim();
               const rowNum=/^\d{1,4}$/.test(rawRowNum)?rawRowNum:'';
               const fnRaw=String(obj['First Name']||'').trim();
@@ -4007,9 +4019,19 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
             }
           }
           if(headers.includes('Student ID')){
+            // Extract any remaining Date of Birth from Student ID (if Student ID holds a 6-digit YYMMDD or 13-digit SA ID), then assign uniform counting batch STU0001..STU1800 across all learners!
+            const hasExplicitStuIds=rows.some(rec=>/^STU[-_]?\d+$/i.test(String(rec['Student ID']||'').trim()));
             rows.forEach((rec,rIdx)=>{
-              if(rec['Student ID']===null||rec['Student ID']===undefined||rec['Student ID']===''){
+              if((!rec['Date of Birth']||rec['Date of Birth']==='')&&rec['Student ID']){
+                const {dob}=extractDobFromSaId(rec['Student ID']);
+                if(dob){
+                  rec['Date of Birth']=dob;
+                  allCovered.add('Date of Birth');
+                }
+              }
+              if(!hasExplicitStuIds||rec['Student ID']===null||rec['Student ID']===undefined||rec['Student ID']===''){
                 rec['Student ID']=`STU${String(rIdx+1).padStart(4,'0')}`;
+                allCovered.add('Student ID');
               }
             });
           }

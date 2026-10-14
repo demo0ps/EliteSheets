@@ -781,12 +781,14 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     assert gde_rows[5]['Date of Birth'] == '2012-08-14'
     assert 'Economic and Management Sciences (EMS)' in gde_rows[5]['Subjects']
     # Row 6 (appended at bottom): Grade 10 Amogelang Aphane from Mark Schedule
-    assert gde_rows[6]['Student ID'] == '1007085869083'
+    assert gde_rows[6]['Student ID'] == 'STU0007'
     assert gde_rows[6]['Grade'] == 'Grade 10'
     assert gde_rows[6]['Date of Birth'] == '2010-07-08'
     assert 'Business Studies' in gde_rows[6]['Subjects']
+    # Row 0: Uniform auto-generated counting batch Student ID STU0001
+    assert gde_rows[0]['Student ID'] == 'STU0001'
     # Row 1: Thato Aphane (matched to 'APHANE, Thato, Bonolo' on Mark Schedule -> DOB 2009-05-24, Father Matsobane Aphane, (Gr 10) stripped from Subjects)
-    assert gde_rows[1]['Student ID'] == '0905245292081'
+    assert gde_rows[1]['Student ID'] == 'STU0002'
     assert gde_rows[1]['First Name'] == 'Thato'
     assert gde_rows[1]['Last Name'] == 'Aphane'
     assert gde_rows[1]['Date of Birth'] == '2009-05-24'
@@ -796,23 +798,23 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     assert gde_rows[1]['Parent Last Name'] == 'Aphane'
     assert gde_rows[1]['Parent Phone'] == '0609003212'
     # Row 2: Onalenna Assegaai (Father blank -> Mother Johannah Aphane selected as 1 unit; Mother's surname 'Aphane' preserved!)
-    assert gde_rows[2]['Student ID'] == '0907271190086'
+    assert gde_rows[2]['Student ID'] == 'STU0003'
     assert gde_rows[2]['Date of Birth'] == '2009-07-27'
     assert gde_rows[2]['Parent First Name'] == 'Johannah'
     assert gde_rows[2]['Parent Last Name'] == 'Aphane'
     assert gde_rows[2]['Parent Phone'] == '0714364266'
     assert gde_rows[2]['Subjects'] == 'Business Studies; Computer Applications Technology; Economics; English First Additional Language; Life Orientation; Mathematical Literacy; Sepedi Home Language'
     # Row 3: Phendile Baloyi (Father Justice Baloyi selected as 1 unit, never mixing with Mother Thandi Skhosana!)
-    assert gde_rows[3]['Student ID'] == '0909290643084'
+    assert gde_rows[3]['Student ID'] == 'STU0004'
     assert gde_rows[3]['Date of Birth'] == '2009-09-29'
     assert gde_rows[3]['Parent First Name'] == 'Justice'
     assert gde_rows[3]['Parent Last Name'] == 'Baloyi'
     assert gde_rows[3]['Parent Phone'] == '0783496897'
     assert gde_rows[3]['Subjects'] == 'Accounting; Business Studies; Economics; English First Additional Language; Life Orientation; Mathematics; Sepedi Home Language'
 
-    # 6. Stacked Multi-Section Sheet (e.g. from line 1800 going down inside the SAME sheet)
-    # Section 1 (top of sheet): Learner roster where some learners are missing Date of Birth, Accession Number, or Parent Phone
-    # Section 2 (stacked below in the same sheet with its own banner & header row): Contains the missing Accession Number, Birth Date, and Parent details for those same learners!
+    # 6. Stacked Multi-Section Sheet (e.g. from line 1800 going down inside the SAME sheet) + 6-Digit YYMMDD Grade 8/9 DOB
+    # Section 1 (top of sheet): Learner roster where Grade 8 learner Lerato Mokoena has NO DOB yet
+    # Section 2 (stacked below in the same sheet with its own banner & header row): Grade 8 learner has 6-digit YYMMDD (121007 -> 2012-10-07) and Grade 11 learner has 13-digit SA ID!
     stacked_wb = Workbook()
     stacked_ws = stacked_wb.active
     stacked_ws.title = 'School_Combined'
@@ -824,7 +826,7 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     stacked_ws.append(['GAUTENG DEPARTMENT OF EDUCATION'])
     stacked_ws.append(['LEARNER INFORMATION & SUBJECTS REGISTER'])
     stacked_ws.append(['Accession Number', 'Surname', 'First Name', 'Gender', 'Grade', 'Birth Date', 'Subjects', 'Father Name', 'Father Surname', 'Father Cell'])
-    stacked_ws.append(['1204150234081', 'MOKOENA', 'Lerato', 'F', 'Grade 8', '2012-04-15', None, None, None, None])
+    stacked_ws.append([121007, 'MOKOENA', 'Lerato', 'F', 'Grade 8', 121007, None, None, None, None])
     stacked_ws.append(['0809105123087', 'NKOSI', 'Sibusiso', 'M', 'Grade 11', '10/09/2008', 'Mathematics; Physical Sciences; Accounting; Life Orientation', 'Sipho', 'NKOSI', '0839998877'])
     stacked_ws.append(['Total Learners', '2', None, None, None, None, None, None, None, None])
     stacked_bytes = BytesIO()
@@ -839,17 +841,17 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     if not stacked_job.get('report'):
         stacked_job = c.post(f'/api/jobs/{stacked_job["id"]}/run', json={}).json()
     st_rows = stacked_job['report']['rows']
-    # Strictly capped to the 2 unique learners (no duplicate rows from Section 2, and 'Total Learners' summary row excluded!)
+    # Strictly capped to the 2 unique learners, with uniform counting batch STU0001..STU0002 and 6-digit YYMMDD 121007 -> 2012-10-07!
     assert len(st_rows) == 2
-    assert st_rows[0]['Student ID'] == '1204150234081'
+    assert st_rows[0]['Student ID'] == 'STU0001'
     assert st_rows[0]['First Name'] == 'Lerato'
     assert st_rows[0]['Last Name'] == 'Mokoena'
-    assert st_rows[0]['Date of Birth'] == '2012-04-15'
+    assert st_rows[0]['Date of Birth'] == '2012-10-07'
     assert st_rows[0]['Grade'] == 'Grade 8'
     assert st_rows[0]['Parent First Name'] == 'Nomsa'
     assert st_rows[0]['Parent Phone'] == '0721112233'
     assert 'Economic and Management Sciences (EMS)' in st_rows[0]['Subjects']
-    assert st_rows[1]['Student ID'] == '0809105123087'
+    assert st_rows[1]['Student ID'] == 'STU0002'
     assert st_rows[1]['First Name'] == 'Sibusiso'
     assert st_rows[1]['Last Name'] == 'Nkosi'
     assert st_rows[1]['Date of Birth'] == '2008-09-10'

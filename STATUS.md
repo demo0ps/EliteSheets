@@ -25,14 +25,14 @@ Implemented in `sheetqms-cloud/`:
 
 ## Executed verification — v0.2 (`sheetqms-cloud/`)
 
-- Full pytest: **71 passed, 1 test-client deprecation warning**, exit 0 (`14.87s`). Evidence: `sheetqms-cloud/verification/automated-tests.txt`.
-- Bundle build: `web/app.ts` $\rightarrow$ `web/app.js` (`1056.8kb` with SheetJS `.xls`/`.xlsx` engine + Stacked Multi-Section Table Splitter (`line 1800+ going down`) + Unified Single-Master-Row Learner Profile Merger (`D-037`, `D-038`, `D-039`, `D-040`), `styles.css?v=b331f82728e9`, `app.js?v=23ae4ef9ee62`).
-- Deliverable archive: `/home/user/SheetQMS-online.zip` (`1,716,378 bytes`, 64 files, `sha256=4620d22019a8a1d8d64ffebaefe48a9ea4bee5e9becacaad88d76a40d13b283d`).
+- Full pytest: **71 passed, 1 test-client deprecation warning**, exit 0 (`15.31s`). Evidence: `sheetqms-cloud/verification/automated-tests.txt`.
+- Bundle build: `web/app.ts` $\rightarrow$ `web/app.js` (`1057.3kb` with SheetJS `.xls`/`.xlsx` engine + Stacked Multi-Section Table Splitter + Grade 8 & 9 6-Digit `YYMMDD` DOB Extraction + Uniform `STU0001..STU1800` Counting Batch `Student ID` (`D-037`–`D-041`), `styles.css?v=b331f82728e9`, `app.js?v=f7af5b898b0e`).
+- Deliverable archive: `/home/user/SheetQMS-online.zip` (`1,749,561 bytes`, 68 files, `sha256=0251d7046902f2ed5cb4668a7243fe52e6f378499e5814754605627ff288544c`).
 
 ## Running development preview & published GitHub Pages preview
 
 - **Arena Sandbox FastAPI Preview:** `EduSheetManager — by EduSCF` is running on port **3001**, managed process `edusheetmanager-by-eduscf-a113cc12` (`SHEETQMS_DEMO=1`).
-- **GitHub Repository & Pages:** `https://github.com/demo0ps/SheetQMS` and `https://demo0ps.github.io/SheetQMS/` (last pushed at `8e12a24`; send a transient PAT whenever you want `D-040` (`app.js?v=23ae4ef9ee62`) pushed to GitHub Pages).
+- **GitHub Repository & Pages:** `https://github.com/demo0ps/SheetQMS` and `https://demo0ps.github.io/SheetQMS/` updated and verified at commit `bee1ac7` (`bee1ac7c8d668271ade4de4f0b97ef5517af65a2`), serving `<title>EduSheetManager — by EduSCF</title>`, `styles.css?v=b331f82728e9`, and `app.js?v=23ae4ef9ee62` (`1,062,836 bytes`, 0 token occurrences in `/home/user` or `/tmp`).
 
 ## Known gaps / blockers before production
 

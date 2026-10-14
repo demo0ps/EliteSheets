@@ -437,6 +437,20 @@ Status: Implemented, verified (`71 passed`), and deployed to `https://demo0ps.gi
      - Filters out non-learner banner, summary, total, average, and footer rows (`isValidPersonName` / `_is_valid_person_name`) so the Master Sheet stays strictly bounded to the actual learners on the spreadsheet.
      - Bumped `localStorage` state key to `'sheetqms_static_state_v7'`.
 
+## D-041: Grade 8 & 9 6-Digit `YYMMDD` Date of Birth Extraction & Uniform Counting Batch `Student ID` (`STU0001..STU1800`) (2026-10-14)
+- **Owner-Confirmed Decisions (`ask_user`):**
+  1. `student_id_stu_format`: **`stu0001_no_hyphen_4digits`** — Format `Student ID` across all learners as a uniform auto-generated counting batch (`STU0001`, `STU0002`, ..., `STU1800`, 4 digits with leading zeros, no hyphen) so `Student ID` never mixes short numbers (`1, 2, 3...` or 6-digit `121007`) on Grades 8 & 9 with 13-digit SA IDs on Grades 10–12.
+  2. `dob_output_format_from_yymmdd`: **`convert_yymmdd_to_yyyy_mm_dd`** — Convert 6-digit `YYMMDD` values in the Mark Schedule for Grade 8 & 9 (e.g. `121007` $\rightarrow$ `2012-10-07`, `120218` $\rightarrow$ `2012-02-18`, `111103` $\rightarrow$ `2011-11-03`, `130624` $\rightarrow$ `2013-06-24`) and 13-digit SA IDs for Grades 10–12 into standard `YYYY-MM-DD` in the destination `Date of Birth` column.
+  3. `grade_8_9_mark_schedule_location`: **`multi_tabs_or_sections_in_mark_schedule`** — Support Mark Schedule workbooks with multiple tabs or stacked sections across Grades 8–12 (including Grade 8 & 9 Mark Schedule sections where Column B is titled `"Date of Birth"` or `"Accession Number"`).
+- **Implemented across `web/app.ts` (`web/app.js`), `sheetqms/workbooks.py`, `sheetqms/engine.py`, and `tests/test_online.py`:**
+  1. **6-Digit `YYMMDD` (`121007` $\rightarrow$ `2012-10-07`) & 5-Digit Zero-Stripped `YMMDD` (`90524` $\rightarrow$ `2009-05-24`) Date of Birth Parsing:**
+     - Updated `extractDobFromSaId` and `normalizeDateValue` in `web/app.ts`, `_extract_dob_from_sa_id_str` and `_normalize_school_sheet_rows` in `sheetqms/workbooks.py`, and `validate_and_repair_sa_id` in `sheetqms/engine.py` to parse 6-digit `YYMMDD` (`\d{6}`) and 5-digit zero-stripped `YMMDD` (`[5-9]\d{4}`) into `YYYY-MM-DD` (`{ id13: null, dob: 'YYYY-MM-DD' }`).
+     - Updated `_normalize_school_sheet_rows` (`mode == 'gde_marks'`) so Grade 8 & 9 Mark Schedule headers where Column B is titled `"Date of Birth"` (rather than `"Accession Number"`) are recognized and normalized into `YYYY-MM-DD`.
+     - Updated `isRealId` / `_is_real_key` to require `>= 10` digits for numeric cross-sheet IDs so 6-digit `YYMMDD` birthdays are never treated as unique Student IDs.
+  2. **Uniform Auto-Generated Counting Batch `Student ID` (`STU0001..STU1800`):**
+     - After merging all sections/sheets and extracting `Date of Birth` from any 6-digit `YYMMDD` or 13-digit SA ID, assigns sequential `STU0001`, `STU0002`, ..., `STU1800` (`STU${String(rIdx + 1).padStart(4, '0')}`) across all learner rows (`localStorage` key bumped to `'sheetqms_static_state_v8'`).
+
+
 
 
 

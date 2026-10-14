@@ -28910,7 +28910,7 @@
   function loadStaticState() {
     if (memStaticState) return memStaticState;
     try {
-      const raw = localStorage.getItem("sheetqms_static_state_v7");
+      const raw = localStorage.getItem("sheetqms_static_state_v8");
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.jobs) {
@@ -28938,7 +28938,7 @@
   function saveStaticState(s) {
     memStaticState = s;
     try {
-      localStorage.setItem("sheetqms_static_state_v7", JSON.stringify(s));
+      localStorage.setItem("sheetqms_static_state_v8", JSON.stringify(s));
     } catch {
     }
   }
@@ -29122,6 +29122,17 @@
       if (Number.isFinite(n)) s = Math.round(n).toString();
     }
     const digits = s.replace(/[\s-]/g, "");
+    if (/^\d{6}$/.test(digits) || /^[5-9]\d{4}$/.test(digits)) {
+      const d6 = digits.padStart(6, "0");
+      const yy2 = Number(d6.slice(0, 2));
+      const mm2 = Number(d6.slice(2, 4));
+      const dd2 = Number(d6.slice(4, 6));
+      if (mm2 >= 1 && mm2 <= 12 && dd2 >= 1 && dd2 <= 31) {
+        const year2 = yy2 <= 26 ? 2e3 + yy2 : 1900 + yy2;
+        return { id13: null, dob: `${String(year2).padStart(4, "0")}-${String(mm2).padStart(2, "0")}-${String(dd2).padStart(2, "0")}` };
+      }
+      return { id13: null, dob: null };
+    }
     if (!/^\d{10,13}$/.test(digits)) return { id13: null, dob: null };
     const padded = digits.padStart(13, "0");
     const yy = Number(padded.slice(0, 2));
@@ -29268,9 +29279,9 @@
   function isBannerOrMetadataRow(row) {
     const filled = (row || []).filter((v) => v !== void 0 && v !== null && String(v).trim() !== "");
     if (!filled.length) return true;
-    if (filled.length <= 3) {
+    if (filled.length <= 6) {
       const joined = filled.map((v) => String(v).replace(/\s+/g, " ").trim()).join(" | ");
-      if (/\b(department\s+of\s+education|internal\s+school|mark\s+schedule|school\s*:|district\s*:|circuit\s*:|emis\s*:|for\s*:\s*grade|report\s+generated|prepared\s+by|page\s+\d+\s+of|summary\s+report|total\s+learners|learner\s+information|parent\s+information)\b/i.test(joined)) return true;
+      if (/\b(department\s+of\s+education|internal\s+school|mark\s+schedule|school\s*:|district\s*:|circuit\s*:|emis\s*:|for\s*:\s*grade|grade\s*:\s*\d|class\s*:\s*all|code\s*:\s*all|all\s+learners|term\s*:\s*\d|year\s*:\s*\d|report\s+generated|prepared\s+by|page\s+\d+\s+of|summary\s+report|total\s+learners|learner\s+information|parent\s+information|codes\s*:\s*p)\b/i.test(joined)) return true;
     }
     return false;
   }
@@ -29612,7 +29623,7 @@
           }
           if (!resolvedDob) {
             if (typeof cellVal === "number" && cellVal < 19e3) continue;
-            if (typeof cellVal === "string" && /^\d{1,9}([.,]\d+)?$/.test(cellVal.trim()) && !/^(?:19|20)\d{6}$/.test(cellVal.trim())) continue;
+            if (typeof cellVal === "string" && /^\d{1,4}([.,]\d+)?$/.test(cellVal.trim())) continue;
             const candDob = normalizeDateValue(cellVal);
             if (candDob) {
               const yr = Number(candDob.slice(0, 4));
@@ -30914,7 +30925,7 @@
             };
             const indexRec = (rec) => {
               const kv = String(rec[keyCol] || "").trim().toLowerCase();
-              if (kv && (kv.length >= 6 || !/^\d+$/.test(kv))) byRealId[kv] = rec;
+              if (kv && (kv.length >= 10 || !/^\d+$/.test(kv))) byRealId[kv] = rec;
               const fn = String(rec["First Name"] || "").trim().toLowerCase();
               const ln = String(rec["Last Name"] || "").trim().toLowerCase();
               const rNum = rowMeta.get(rec)?.rowNum;
@@ -30977,7 +30988,7 @@
                   if (dob) obj["Date of Birth"] = dob;
                 }
                 const kVal = String(obj[keyCol] || "").trim().toLowerCase();
-                const isRealId = Boolean(kVal && (kVal.length >= 6 || !/^\d+$/.test(kVal)));
+                const isRealId = Boolean(kVal && (kVal.length >= 10 || !/^\d+$/.test(kVal)));
                 const rawRowNum = String(r["Number"] ?? r["No"] ?? r["No."] ?? r["#"] ?? (!isRealId ? kVal : "") ?? "").trim();
                 const rowNum = /^\d{1,4}$/.test(rawRowNum) ? rawRowNum : "";
                 const fnRaw = String(obj["First Name"] || "").trim();
@@ -31060,9 +31071,18 @@
               }
             }
             if (headers.includes("Student ID")) {
+              const hasExplicitStuIds = rows.some((rec) => /^STU[-_]?\d+$/i.test(String(rec["Student ID"] || "").trim()));
               rows.forEach((rec, rIdx) => {
-                if (rec["Student ID"] === null || rec["Student ID"] === void 0 || rec["Student ID"] === "") {
+                if ((!rec["Date of Birth"] || rec["Date of Birth"] === "") && rec["Student ID"]) {
+                  const { dob } = extractDobFromSaId(rec["Student ID"]);
+                  if (dob) {
+                    rec["Date of Birth"] = dob;
+                    allCovered.add("Date of Birth");
+                  }
+                }
+                if (!hasExplicitStuIds || rec["Student ID"] === null || rec["Student ID"] === void 0 || rec["Student ID"] === "") {
                   rec["Student ID"] = `STU${String(rIdx + 1).padStart(4, "0")}`;
+                  allCovered.add("Student ID");
                 }
               });
             }

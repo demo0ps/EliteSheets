@@ -293,6 +293,14 @@ def _extract_dob_from_sa_id_str(raw_val) -> tuple[str | None, str | None]:
     if not s_clean or not re.fullmatch(r'\d+', s_clean):
         return None, None
     digits = s_clean
+    # Support 6-digit YYMMDD (e.g. 121007 -> 2012-10-07) and 5-digit zero-stripped YMMDD for 2005-2009 (e.g. 90524 -> 090524 -> 2009-05-24)
+    if len(digits) == 6 or (len(digits) == 5 and digits[0] in '56789'):
+        d6 = digits.zfill(6)
+        yy, mm, dd = int(d6[:2]), int(d6[2:4]), int(d6[4:6])
+        if 1 <= mm <= 12 and 1 <= dd <= 31:
+            century = 2000 if yy <= 26 else 1900
+            return f'{century + yy:04d}-{mm:02d}-{dd:02d}', None
+        return None, None
     if 10 <= len(digits) <= 12:
         padded = digits.zfill(13)
         mm_p, dd_p = int(padded[2:4]), int(padded[4:6])
@@ -514,7 +522,7 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
         norms = [norm(v) for v in (r or []) if v is not None and str(v).strip()]
         if not norms:
             continue
-        if any('accession' in n for n in norms) and any('learner name' in n or 'student name' in n for n in norms):
+        if any('accession' in n or n in {'date of birth', 'dob', 'birth date', 'birthdate'} for n in norms) and any('learner name' in n or 'student name' in n for n in norms):
             header_idx = idx
             mode = 'gde_marks'
             break
@@ -552,9 +560,12 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
                     banner_grade = f'Grade {int(gm.group(1))}'
             clean_h.append(hs)
         acc_idx = next((i for i, h in enumerate(clean_h) if 'accession' in norm(h)), None)
+        dob_col_idx = next((i for i, h in enumerate(clean_h) if norm(h) in {'date of birth', 'dob', 'birth date', 'birthdate'}), None)
         lname_idx = next((i for i, h in enumerate(clean_h) if norm(h) in {'learner name', 'student name', 'full name'}), None)
         has_grade = any(norm(h) == 'grade' for h in clean_h)
-        clean_h.extend(['Last Name', 'First Name', 'Date of Birth'])
+        clean_h.extend(['Last Name', 'First Name'])
+        if dob_col_idx is None:
+            clean_h.append('Date of Birth')
         if banner_grade and not has_grade:
             clean_h.append('Grade')
         out_rows[header_idx] = clean_h
@@ -579,11 +590,22 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
                     ln_val = _title_case_person(parts[0])
                     fn_val = _title_case_person(' '.join(parts[1:]))
             dob_val = None
+            if dob_col_idx is not None and dob_col_idx < len(r) and r[dob_col_idx] is not None:
+                norm_d = _normalize_date_str(r[dob_col_idx])
+                if norm_d:
+                    r[dob_col_idx] = norm_d
+                    dob_val = norm_d
             if acc_idx is not None and acc_idx < len(r) and r[acc_idx] is not None:
-                dob_val, padded_id = _extract_dob_from_sa_id_str(r[acc_idx])
+                ext_dob, padded_id = _extract_dob_from_sa_id_str(r[acc_idx])
+                if ext_dob and not dob_val:
+                    dob_val = ext_dob
+                    if dob_col_idx is not None and dob_col_idx < len(r):
+                        r[dob_col_idx] = ext_dob
                 if padded_id:
                     r[acc_idx] = padded_id
-            r.extend([ln_val, fn_val, dob_val])
+            r.extend([ln_val, fn_val])
+            if dob_col_idx is None:
+                r.append(dob_val)
             if banner_grade and not has_grade:
                 r.append(banner_grade)
             out_rows[r_i] = r
