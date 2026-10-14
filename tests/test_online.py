@@ -990,3 +990,33 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
 
 
 
+
+
+def test_grid_edits_are_saved_as_values_and_rebuild_the_workbook(client):
+    # EduSheetManager batch 1: Excel-style grid saves values only; a typed '=' stays plain text.
+    from io import BytesIO
+    from openpyxl import load_workbook
+    c, _ = client
+    sign(client)
+    job = example(client, request='grid-edit-001')
+    ran = c.post(f'/api/jobs/{job["id"]}/run', json={})
+    assert ran.status_code == 200, ran.text
+    report = ran.json()['report']
+    headers = report['headers']
+    rows = [dict(r) for r in report['rows']]
+    # Computed columns (sum rules) are recalculated on save, so the edit goes to a plain text column.
+    rows[0][headers[0]] = 'Grid edit'
+    rows[1][headers[0]] = '=SUM(A1:A2)'
+    saved = c.put(f'/api/jobs/{job["id"]}/rows', json={'headers': headers, 'rows': rows})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['report']['rows'][0][headers[0]] == 'Grid edit'
+    assert saved.json()['report']['rows'][1][headers[0]] == '=SUM(A1:A2)'
+    out = c.get(f'/api/jobs/{job["id"]}/output')
+    assert out.status_code == 200 and out.content[:2] == b'PK'
+    ws = load_workbook(BytesIO(out.content)).active
+    formula_cells = [cell for row in ws.iter_rows() for cell in row if cell.value == '=SUM(A1:A2)']
+    assert formula_cells and all(cell.data_type == 's' for cell in formula_cells)
+    assert 'Grid edit' in [cell.value for row in ws.iter_rows() for cell in row]
+    # Rows that are not a list of objects are refused.
+    bad = c.put(f'/api/jobs/{job["id"]}/rows', json={'headers': headers, 'rows': 'nope'})
+    assert bad.status_code == 422

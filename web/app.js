@@ -27132,7 +27132,10 @@
     document.body.className = ((overview.preferences?.theme === "dark" ? "dark" : "light") + (overview.preferences?.density === "compact" ? " compact" : "")).trim();
   }
   function shell() {
-    if (!user) return;
+    if (!user) {
+      updateTabbar();
+      return;
+    }
     const vert = activeVertical();
     const vMeta = VERTICAL_META[vert] || VERTICAL_META.general;
     $2("root").innerHTML = `<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${vMeta.tabs.map((t) => `<button class="nav-btn" data-page="${t.page}">${icon(t.iconName)}${escapeHTML(t.label)}</button>`).join("")}${user.role === "admin" ? `<button class="nav-btn" data-page="admin">${icon("shield")}Admin</button>` : ""}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k, v]) => `<option value="${k}" ${k === vert ? "selected" : ""}>${escapeHTML(v.label)}</option>`).join("")}</select>${user.role === "admin" && customers.length ? `<select id="workspace-picker" aria-label="Customer workspace">${customers.map((c) => `<option value="${c.id}" ${c.id === workspaceID ? "selected" : ""}>${escapeHTML(c.name)}</option>`).join("")}</select>` : ""}<button id="help" class="btn small">${icon("info")}Guide</button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon("logout")}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon("logout")}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>EduSheetManager</strong> <span style="opacity:0.75">by EduSCF</span> \xB7 Calm, everyday spreadsheet helper</div>${poweredByEduSCF()}</footer></div>`;
@@ -27160,6 +27163,7 @@
       await showPage(currentPage);
       toast(`Switched to ${VERTICAL_META[newVert]?.label || newVert}`);
     })());
+    ensureTabbar();
     if ($2("workspace-picker")) $2("workspace-picker").addEventListener("change", () => void (async () => {
       workspaceID = $2("workspace-picker").value;
       job = null;
@@ -27171,6 +27175,7 @@
   async function showPage(page) {
     stopInteractiveGuide();
     currentPage = page;
+    updateTabbar();
     document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
     try {
       if (page === "workspace") studio();
@@ -27304,22 +27309,14 @@
           <h2>Your Spreadsheet</h2>
           <small>${release ? "Ready \u2014 click Download Excel (.XLSX) on the right." : r ? "Answer the quick question on the left (or pick a column below) to finish." : job ? "Click Fill My Sheet on the left to populate your table." : "Open a file or type in the chat on the left to see your spreadsheet here."}</small>
         </div>
+        <label class="xl-namefield"><span>File name</span><input id="file-name" value="${escapeHTML(defaultFileName())}" maxlength="120" autocomplete="off" aria-label="File name used when you save"></label>
         <div class="result-actions">
           <span id="output-state" class="badge ${release ? "good" : r ? "warn" : ""}">${release ? "\u2713 Ready to Download" : r ? "Needs 1 Quick Answer" : "Ready"}</span>
           <button class="btn small ${release ? "primary" : ""}" id="download-output" ${release ? "" : "disabled"}>${icon(release ? "download" : "lock")}Download Excel (.XLSX)</button>
         </div>
       </div>
       ${r?.rows.length ? `<div class="clean-toolbar"><span>Quick Tools:</span>${toolbarButtonsHtml}</div>` : ""}
-      <div class="table-scroll" tabindex="0" aria-label="Output preview">
-        <table>
-          <thead>
-            <tr>${headers.map((h) => canMapCols ? `<th><div class="th-col-wrap"><span>${escapeHTML(h)}</span><select class="col-map-select ${activeFieldMap[h] ? "" : "unmapped"}" data-map-target="${escapeHTML(h)}" aria-label="Source column for ${escapeHTML(h)}"><option value="">${activeFieldMap[h] ? "\u2014 Unmap \u2014" : "Choose column\u2026"}</option>${srcColHeaders.map((sh) => `<option value="${escapeHTML(sh)}" ${activeFieldMap[h] === sh ? "selected" : ""}>\u2190 ${escapeHTML(sh)}</option>`).join("")}</select></div></th>` : `<th>${escapeHTML(h)}</th>`).join("")}</tr>
-          </thead>
-          <tbody>
-            ${r?.rows.length ? (showAllRows ? r.rows : r.rows.slice(0, 200)).map((row) => `<tr>${headers.map((h) => `<td>${row[h] === null || row[h] === void 0 || row[h] === "" ? !release && r.rows.length <= 20 ? '<span class="missing">Ask in chat</span>' : "" : escapeHTML(row[h])}</td>`).join("")}</tr>`).join("") : `<tr><td class="table-empty" colspan="${headers.length}">${job ? "Click <b>Fill My Sheet</b> on the left to fill your spreadsheet." : "Click <b>Open / Upload File</b> on the left (or type what columns you want in the chat box) to start your spreadsheet."}</td></tr>`}
-          </tbody>
-        </table>
-      </div>
+      ${r?.rows.length ? xlHtml(headers, r.rows, job?.plan?.destination?.sheet || "Output", (h) => canMapCols ? `<div class="th-col-wrap"><span>${escapeHTML(h)}</span><select class="col-map-select ${activeFieldMap[h] ? "" : "unmapped"}" data-map-target="${escapeHTML(h)}" aria-label="Source column for ${escapeHTML(h)}"><option value="">${activeFieldMap[h] ? "\u2014 Unmap \u2014" : "Choose column\u2026"}</option>${srcColHeaders.map((sh) => `<option value="${escapeHTML(sh)}" ${activeFieldMap[h] === sh ? "selected" : ""}>\u2190 ${escapeHTML(sh)}</option>`).join("")}</select></div>` : escapeHTML(h)) : `<div class="table-scroll" tabindex="0" aria-label="Output preview"><table><thead><tr>${headers.map((h) => `<th>${escapeHTML(h)}</th>`).join("")}</tr></thead><tbody><tr><td class="table-empty" colspan="${headers.length}">${job ? "Click <b>Fill My Sheet</b> on the left to fill your spreadsheet." : "Click <b>Open / Upload File</b> on the left (or type what columns you want in the chat box) to start your spreadsheet."}</td></tr></tbody></table></div>`}
       ${r?.rows && r.rows.length > 200 ? `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-top:8px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;font-size:12.5px;color:var(--muted)"><span>Showing <b>${showAllRows ? r.rows.length : 200}</b> of <b>${r.rows.length}</b> rows in live preview \u2014 all <b>${r.rows.length}</b> rows are included when you click <b>Download Excel (.XLSX)</b>.</span><button id="toggle-all-rows" class="btn small">${showAllRows ? "Show First 200 Rows" : `Show All ${r.rows.length} Rows`}</button></div>` : ""}
     </section>
   </div>`;
@@ -27446,7 +27443,8 @@
     if (job) {
       if ($2("run-job")) $2("run-job").addEventListener("click", () => void doRun());
       if ($2("confirm-correction")) $2("confirm-correction").addEventListener("click", () => void confirmCorrection());
-      if ($2("download-output")) $2("download-output").addEventListener("click", () => void download("output"));
+      if ($2("download-output")) $2("download-output").addEventListener("click", () => openSaveDialog());
+      xlBindAfterRender();
       document.querySelectorAll(".col-map-select").forEach((sel) => sel.addEventListener("change", () => void busy(sel, async () => {
         const tgt = sel.dataset.mapTarget;
         const src = sel.value;
@@ -28786,7 +28784,550 @@
       await showPage("workspace");
     }));
   }
-  async function download(kind) {
+  var xlSel = { ar: 0, ac: 0, fr: 0, fc: 0 };
+  var xlEditing = null;
+  var xlUndo = [];
+  var xlRedo = [];
+  var xlClip = "";
+  var xlSaveTimer = null;
+  var xlSaveText = "Ready";
+  var xlDrag = false;
+  var xlListenersInstalled = false;
+  var fileNameState = "";
+  var fileNameJobId = "";
+  function xlLetter(i) {
+    let s = "", n = i;
+    do {
+      s = String.fromCharCode(65 + n % 26) + s;
+      n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    return s;
+  }
+  function xlRows() {
+    return job?.report?.rows || [];
+  }
+  function xlHeaders() {
+    return job?.report?.headers || [];
+  }
+  function xlRaw(r, c) {
+    const v = xlRows()[r]?.[xlHeaders()[c]];
+    return v === void 0 ? null : v;
+  }
+  function xlIsFormula(v) {
+    return typeof v === "string" && v.trimStart().startsWith("=");
+  }
+  function xlIsEmpty(v) {
+    return v === null || v === void 0 || v === "";
+  }
+  function xlDisplay(v) {
+    return xlIsEmpty(v) ? "" : String(v);
+  }
+  function xlParse(text) {
+    if (text === "") return null;
+    if (/^-?(0|[1-9]\d*)(\.\d+)?$/.test(text)) return Number(text);
+    return text;
+  }
+  function xlShownCount() {
+    return showAllRows ? xlRows().length : Math.min(200, xlRows().length);
+  }
+  function xlCellEl(r, c) {
+    return document.querySelector(`#xl-scroll td.xl-cell[data-r="${r}"][data-c="${c}"]`);
+  }
+  function xlRange() {
+    return { r1: Math.min(xlSel.ar, xlSel.fr), r2: Math.max(xlSel.ar, xlSel.fr), c1: Math.min(xlSel.ac, xlSel.fc), c2: Math.max(xlSel.ac, xlSel.fc) };
+  }
+  function xlCellTd(r, c, v) {
+    const empty = xlIsEmpty(v), f = xlIsFormula(v);
+    return `<td class="xl-cell${empty ? " xl-empty" : ""}${f ? " xl-warned" : ""}" data-r="${r}" data-c="${c}"${f ? ' title="Formula warning: saved as text"' : ""}>${empty ? "" : escapeHTML(String(v))}</td>`;
+  }
+  function xlHtml(headers, rows, sheetName, headCell) {
+    const shown = showAllRows ? rows : rows.slice(0, 200);
+    return `<div class="xl-mobile-note" role="note">
+      <strong>\u{1F4F1} Spreadsheet editing opens on a computer.</strong>
+      <p>Open this page on your PC to edit cells the way you would in Excel. You can still download the finished file from here.</p>
+      <button id="copy-pc-link" class="btn small" type="button">Copy link to open on PC</button>
+    </div>
+    <div class="xl-wrap" id="xl-wrap" tabindex="-1" aria-label="Spreadsheet grid. Use the arrow keys to move and type to edit.">
+      <div class="xl-formula-bar">
+        <div class="xl-namebox" id="xl-namebox" aria-label="Selected cell">A2</div>
+        <span class="xl-fx" aria-hidden="true">fx</span>
+        <input id="xl-fbar" class="xl-fbar" aria-label="Formula bar: content of the selected cell" autocomplete="off" spellcheck="false">
+        <span class="xl-save" id="xl-save" aria-live="polite">${escapeHTML(xlSaveText)}</span>
+      </div>
+      <div class="xl-scroll" id="xl-scroll">
+        <table class="xl-table">
+          <thead>
+            <tr><th class="xl-corner" aria-hidden="true"></th>${headers.map((_, i) => `<th class="xl-colh">${xlLetter(i)}</th>`).join("")}</tr>
+            <tr class="xl-headrow"><th class="xl-rowh">1</th>${headers.map((h) => `<th class="xl-hcell">${headCell(h)}</th>`).join("")}</tr>
+          </thead>
+          <tbody>${shown.map((row, ri) => `<tr><th class="xl-rowh">${ri + 2}</th>${headers.map((h, ci) => xlCellTd(ri, ci, row[h])).join("")}</tr>`).join("")}</tbody>
+        </table>
+      </div>
+      <div class="xl-tabs" role="tablist"><span class="xl-tab active" role="tab" aria-selected="true">${escapeHTML(sheetName)}</span></div>
+      <div id="xl-warn" class="xl-warn" role="alert" hidden></div>
+    </div>`;
+  }
+  function xlSetSaveText() {
+    const el = $2("xl-save");
+    if (el) el.textContent = xlSaveText;
+  }
+  function xlSetWarn(msg) {
+    const el = $2("xl-warn");
+    if (!el) return;
+    if (msg) {
+      el.textContent = msg;
+      el.hidden = false;
+    } else {
+      el.textContent = "";
+      el.hidden = true;
+    }
+  }
+  function xlUpdateCell(r, c, v) {
+    const td = xlCellEl(r, c);
+    if (!td) return;
+    const f = xlIsFormula(v);
+    td.classList.toggle("xl-empty", xlIsEmpty(v));
+    td.classList.toggle("xl-warned", f);
+    if (f) td.title = "Formula warning: saved as text";
+    else td.removeAttribute("title");
+    td.textContent = xlDisplay(v);
+  }
+  function xlPaint(scroll = false) {
+    const wrap = $2("xl-wrap");
+    if (!wrap) return;
+    wrap.querySelectorAll(".xl-sel,.xl-active").forEach((el) => el.classList.remove("xl-sel", "xl-active"));
+    const { r1, r2, c1, c2 } = xlRange();
+    for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) xlCellEl(r, c)?.classList.add("xl-sel");
+    const act = xlCellEl(xlSel.fr, xlSel.fc);
+    act?.classList.add("xl-active");
+    const nb = $2("xl-namebox");
+    if (nb) nb.textContent = r1 === r2 && c1 === c2 ? `${xlLetter(c1)}${r1 + 2}` : `${xlLetter(c1)}${r1 + 2}:${xlLetter(c2)}${r2 + 2}`;
+    const fb = $2("xl-fbar");
+    if (fb && document.activeElement !== fb) fb.value = xlDisplay(xlRaw(xlSel.fr, xlSel.fc));
+    const sc = $2("xl-scroll");
+    if (scroll && act && sc) {
+      const a = act.getBoundingClientRect(), s = sc.getBoundingClientRect();
+      if (a.top < s.top + 30) sc.scrollTop -= s.top + 30 - a.top;
+      else if (a.bottom > s.bottom) sc.scrollTop += a.bottom - s.bottom;
+      if (a.left < s.left + 48) sc.scrollLeft -= s.left + 48 - a.left;
+      else if (a.right > s.right) sc.scrollLeft += a.right - s.right;
+    }
+  }
+  function xlApply(changes, remember = true) {
+    const rows = xlRows(), headers = xlHeaders();
+    const real = changes.filter((ch) => rows[ch.r] && ch.from !== ch.to);
+    if (!real.length) return;
+    for (const ch of real) {
+      rows[ch.r][headers[ch.c]] = ch.to;
+      xlUpdateCell(ch.r, ch.c, ch.to);
+    }
+    if (remember) {
+      xlUndo.push(real);
+      xlRedo = [];
+    }
+    const f = real.find((ch) => xlIsFormula(ch.to));
+    xlSetWarn(f ? `Formulas don't calculate in this grid. "${String(f.to).slice(0, 60)}" was saved as plain text, so it will show as text in Excel too. Type the value itself, or calculate it in Excel after you download.` : null);
+    xlSaveSoon();
+  }
+  function xlUndoStep() {
+    const ch = xlUndo.pop();
+    if (!ch) return;
+    const rows = xlRows(), headers = xlHeaders();
+    for (const x of ch) {
+      rows[x.r][headers[x.c]] = x.from;
+      xlUpdateCell(x.r, x.c, x.from);
+    }
+    xlRedo.push(ch);
+    xlSel = { ar: ch[0].r, ac: ch[0].c, fr: ch[0].r, fc: ch[0].c };
+    xlPaint(true);
+    xlSaveSoon();
+  }
+  function xlRedoStep() {
+    const ch = xlRedo.pop();
+    if (!ch) return;
+    const rows = xlRows(), headers = xlHeaders();
+    for (const x of ch) {
+      rows[x.r][headers[x.c]] = x.to;
+      xlUpdateCell(x.r, x.c, x.to);
+    }
+    xlUndo.push(ch);
+    xlSel = { ar: ch[0].r, ac: ch[0].c, fr: ch[0].r, fc: ch[0].c };
+    xlPaint(true);
+    xlSaveSoon();
+  }
+  function xlClearChanges() {
+    const out = [];
+    const { r1, r2, c1, c2 } = xlRange();
+    for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) {
+      const v = xlRaw(r, c);
+      if (!xlIsEmpty(v)) out.push({ r, c, from: v, to: null });
+    }
+    return out;
+  }
+  function xlCopyTSV() {
+    const { r1, r2, c1, c2 } = xlRange();
+    const lines = [];
+    for (let r = r1; r <= r2; r++) {
+      const cells = [];
+      for (let c = c1; c <= c2; c++) cells.push(xlDisplay(xlRaw(r, c)).replace(/[\t\r\n]+/g, " "));
+      lines.push(cells.join("	"));
+    }
+    return lines.join("\n");
+  }
+  function xlMove(dr, dc, extend = false) {
+    const rows = xlRows().length, cols = xlHeaders().length;
+    if (!rows || !cols) return;
+    const nr = Math.max(0, Math.min(rows - 1, xlSel.fr + dr)), nc = Math.max(0, Math.min(cols - 1, xlSel.fc + dc));
+    if (nr >= xlShownCount() && !showAllRows) {
+      showAllRows = true;
+      studio();
+      $2("xl-wrap")?.focus({ preventScroll: true });
+    }
+    if (extend) {
+      xlSel.fr = nr;
+      xlSel.fc = nc;
+    } else xlSel = { ar: nr, ac: nc, fr: nr, fc: nc };
+    xlPaint(true);
+  }
+  function xlStartEdit(r, c, seed) {
+    const td = xlCellEl(r, c);
+    if (!td) return;
+    xlSel = { ar: r, ac: c, fr: r, fc: c };
+    xlPaint(true);
+    const raw = xlRaw(r, c);
+    xlEditing = { r, c, orig: raw };
+    td.contentEditable = "true";
+    td.classList.add("xl-editing");
+    td.textContent = seed !== void 0 ? seed : xlDisplay(raw);
+    td.focus();
+    const sel = window.getSelection();
+    if (sel) {
+      const rg = document.createRange();
+      rg.selectNodeContents(td);
+      rg.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(rg);
+    }
+  }
+  function xlCommit(dr, dc) {
+    const g = xlEditing;
+    if (!g) return;
+    const td = xlCellEl(g.r, g.c);
+    const text = (td?.textContent ?? "").replace(/\r?\n/g, " ");
+    if (td) {
+      td.contentEditable = "false";
+      td.classList.remove("xl-editing");
+    }
+    xlEditing = null;
+    xlApply([{ r: g.r, c: g.c, from: xlRaw(g.r, g.c), to: xlParse(text) }]);
+    if (dr || dc) xlMove(dr, dc, false);
+    else xlPaint();
+    $2("xl-wrap")?.focus({ preventScroll: true });
+  }
+  function xlCancel() {
+    const g = xlEditing;
+    if (!g) return;
+    const td = xlCellEl(g.r, g.c);
+    xlEditing = null;
+    if (td) {
+      td.contentEditable = "false";
+      td.classList.remove("xl-editing");
+      td.textContent = xlDisplay(g.orig);
+    }
+    xlPaint();
+    $2("xl-wrap")?.focus({ preventScroll: true });
+  }
+  function xlPasteBlock(text) {
+    const rows = xlRows(), headers = xlHeaders();
+    if (!rows.length) return;
+    const lines = text.split("\n");
+    if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+    const grid = lines.map((l) => l.split("	"));
+    const { r1, r2, c1, c2 } = xlRange();
+    const changes = [];
+    if (grid.length === 1 && grid[0].length === 1 && (r2 > r1 || c2 > c1)) {
+      for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) changes.push({ r, c, from: xlRaw(r, c), to: xlParse(grid[0][0]) });
+      xlApply(changes);
+      return;
+    }
+    for (let i = 0; i < grid.length; i++) for (let j = 0; j < grid[i].length; j++) {
+      const r = r1 + i, c = c1 + j;
+      if (r < rows.length && c < headers.length) changes.push({ r, c, from: xlRaw(r, c), to: xlParse(grid[i][j]) });
+    }
+    xlApply(changes);
+    xlSel = { ar: r1, ac: c1, fr: Math.min(rows.length - 1, r1 + grid.length - 1), fc: Math.min(headers.length - 1, c1 + (grid[0]?.length || 1) - 1) };
+    xlPaint(true);
+  }
+  function xlKey(e) {
+    const t = e.target;
+    if (t.id === "xl-fbar") {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        xlApply([{ r: xlSel.fr, c: xlSel.fc, from: xlRaw(xlSel.fr, xlSel.fc), to: xlParse(t.value) }]);
+        xlPaint();
+        $2("xl-wrap")?.focus({ preventScroll: true });
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        xlPaint();
+        $2("xl-wrap")?.focus({ preventScroll: true });
+      }
+      return;
+    }
+    if (xlEditing) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        xlCommit(e.shiftKey ? -1 : 1, 0);
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        xlCommit(0, e.shiftKey ? -1 : 1);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        xlCancel();
+      }
+      return;
+    }
+    const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+    if (mod) {
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        xlUndoStep();
+      } else if (k === "y" || k === "z" && e.shiftKey) {
+        e.preventDefault();
+        xlRedoStep();
+      } else if (k === "a") {
+        e.preventDefault();
+        xlSel = { ar: 0, ac: 0, fr: xlRows().length - 1, fc: xlHeaders().length - 1 };
+        xlPaint();
+      } else if (k === "x") {
+        e.preventDefault();
+        const tsv = xlCopyTSV();
+        xlClip = tsv;
+        void navigator.clipboard?.writeText(tsv).catch(() => {
+        });
+        xlApply(xlClearChanges());
+      }
+      return;
+    }
+    if (e.altKey) return;
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        xlMove(1, 0, e.shiftKey);
+        return;
+      case "ArrowUp":
+        e.preventDefault();
+        xlMove(-1, 0, e.shiftKey);
+        return;
+      case "ArrowLeft":
+        e.preventDefault();
+        xlMove(0, -1, e.shiftKey);
+        return;
+      case "ArrowRight":
+        e.preventDefault();
+        xlMove(0, 1, e.shiftKey);
+        return;
+      case "Enter":
+        e.preventDefault();
+        xlMove(e.shiftKey ? -1 : 1, 0, false);
+        return;
+      case "Tab":
+        e.preventDefault();
+        xlMove(0, e.shiftKey ? -1 : 1, false);
+        return;
+      case "F2":
+        e.preventDefault();
+        xlStartEdit(xlSel.fr, xlSel.fc);
+        return;
+      case "Delete":
+      case "Backspace":
+        e.preventDefault();
+        xlApply(xlClearChanges());
+        return;
+    }
+    if (e.key.length === 1) {
+      e.preventDefault();
+      xlStartEdit(xlSel.fr, xlSel.fc, e.key);
+    }
+  }
+  function installGridListeners() {
+    if (xlListenersInstalled) return;
+    xlListenersInstalled = true;
+    const cellOf = (t) => t?.closest?.("#xl-scroll td.xl-cell") || null;
+    document.addEventListener("mousedown", (e) => {
+      const td = cellOf(e.target);
+      if (!td) return;
+      const r = Number(td.dataset.r), c = Number(td.dataset.c);
+      if (xlEditing) {
+        if (xlEditing.r === r && xlEditing.c === c) return;
+        xlCommit(0, 0);
+      }
+      e.preventDefault();
+      $2("xl-wrap")?.focus({ preventScroll: true });
+      if (e.shiftKey) {
+        xlSel.fr = r;
+        xlSel.fc = c;
+      } else xlSel = { ar: r, ac: c, fr: r, fc: c };
+      xlDrag = true;
+      xlPaint();
+    });
+    document.addEventListener("mouseover", (e) => {
+      if (!xlDrag) return;
+      const td = cellOf(e.target);
+      if (!td) return;
+      xlSel.fr = Number(td.dataset.r);
+      xlSel.fc = Number(td.dataset.c);
+      xlPaint();
+    });
+    document.addEventListener("mouseup", () => {
+      xlDrag = false;
+    });
+    document.addEventListener("dblclick", (e) => {
+      const td = cellOf(e.target);
+      if (td && !xlEditing) xlStartEdit(Number(td.dataset.r), Number(td.dataset.c));
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.target?.closest?.("#xl-wrap")) xlKey(e);
+    });
+    document.addEventListener("focusout", (e) => {
+      if (!xlEditing || e.target !== xlCellEl(xlEditing.r, xlEditing.c)) return;
+      const to = e.relatedTarget;
+      if (!(to && to.closest?.("#xl-wrap"))) xlCommit(0, 0);
+    });
+    document.addEventListener("copy", (e) => {
+      if (xlEditing || !e.target?.closest?.("#xl-wrap")) return;
+      const tsv = xlCopyTSV();
+      xlClip = tsv;
+      e.preventDefault();
+      e.clipboardData?.setData("text/plain", tsv);
+    });
+    document.addEventListener("paste", (e) => {
+      if (!e.target?.closest?.("#xl-wrap")) return;
+      e.preventDefault();
+      const text = (e.clipboardData?.getData("text/plain") || xlClip || "").replace(/\r/g, "");
+      if (xlEditing) {
+        document.execCommand("insertText", false, text.replace(/\n/g, " "));
+        return;
+      }
+      xlPasteBlock(text);
+    });
+  }
+  function xlSaveSoon() {
+    xlSaveText = "Saving\u2026";
+    xlSetSaveText();
+    clearTimeout(xlSaveTimer);
+    xlSaveTimer = setTimeout(() => void xlSave(), 900);
+  }
+  async function xlSave() {
+    if (!job?.report?.rows) return;
+    const jobId = job.id;
+    const payload = { headers: job.report.headers, rows: job.report.rows };
+    const before = job.report.status;
+    try {
+      const updated = staticMode ? await localApi(`/api/jobs/${jobId}/rows`, payload, "PUT") : await api(`/api/jobs/${jobId}/rows`, payload, "PUT");
+      if (!job || job.id !== jobId) return;
+      const latestRows = job.report.rows;
+      job = { ...job, ...updated, report: { ...updated.report, rows: latestRows } };
+      xlSaveText = job.report?.status === "RELEASED" ? "All changes saved \xB7 file ready to download" : "Changes saved \xB7 some cells are still empty";
+      xlSetSaveText();
+      if (before !== job.report?.status) studio();
+    } catch (e) {
+      xlSaveText = "Not saved yet \u2014 try again";
+      xlSetSaveText();
+      toast(e instanceof Error ? e.message : "The grid could not be saved.", true);
+    }
+  }
+  function xlBindAfterRender() {
+    $2("file-name")?.addEventListener("input", (e) => {
+      fileNameState = e.target.value;
+    });
+    $2("copy-pc-link")?.addEventListener("click", () => {
+      const fail = () => toast("Copy the web address from your browser bar and open it on your PC.", true);
+      if (navigator.clipboard) navigator.clipboard.writeText(location.href).then(() => toast("Link copied. Open it on your PC to edit the spreadsheet.")).catch(fail);
+      else fail();
+    });
+    if ($2("xl-wrap")) xlPaint();
+  }
+  function safeBaseName(s) {
+    const n = String(s ?? "").replace(/\.xlsx$/i, "").replace(/[\\/:*?"<>|\x00-\x1f]/g, "").replace(/\s+/g, " ").trim().slice(0, 100).trim();
+    return n || "EduSheetManager-verified";
+  }
+  function defaultFileName() {
+    if (fileNameJobId !== (job?.id || "")) {
+      fileNameJobId = job?.id || "";
+      fileNameState = "";
+    }
+    if (fileNameState) return safeBaseName(fileNameState);
+    return safeBaseName((job?.title || "").replace(/\.(xlsx?|csv)$/i, ""));
+  }
+  function openSaveDialog() {
+    openModal("Save your spreadsheet", `<p class="muted">Check the file name. \u201C.xlsx\u201D is added for you.</p>
+    <label for="save-name-input"><strong>File name</strong></label>
+    <input id="save-name-input" maxlength="120" autocomplete="off" value="${escapeHTML(defaultFileName())}">
+    <div class="settings-actions" style="margin-top:14px">
+      <button id="save-name-cancel" class="btn small" type="button">Cancel</button>
+      <button id="save-name-confirm" class="btn primary" type="button">${icon("download")}Save Excel file</button>
+    </div>`);
+    const confirmSave = () => {
+      const n = safeBaseName(document.getElementById("save-name-input").value);
+      fileNameState = n;
+      fileNameJobId = job?.id || "";
+      closeModal();
+      void download("output", n);
+    };
+    $2("save-name-cancel").addEventListener("click", () => closeModal());
+    $2("save-name-confirm").addEventListener("click", confirmSave);
+    $2("save-name-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        confirmSave();
+      }
+    });
+    setTimeout(() => {
+      const i = $2("save-name-input");
+      i.focus();
+      i.select();
+    }, 0);
+  }
+  function updateTabbar() {
+    const bar = document.getElementById("m-tabbar");
+    if (bar) bar.hidden = !user;
+    const mt = document.body.dataset.mtab || "chat";
+    document.querySelectorAll(".m-tab").forEach((b) => {
+      const on = b.dataset.mtab ? currentPage === "workspace" && b.dataset.mtab === mt : b.dataset.tpage === currentPage;
+      b.classList.toggle("active", Boolean(on));
+      if (on) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
+    });
+  }
+  function ensureTabbar() {
+    let bar = document.getElementById("m-tabbar");
+    if (!bar) {
+      bar = document.createElement("nav");
+      bar.id = "m-tabbar";
+      bar.className = "m-tabbar";
+      bar.setAttribute("aria-label", "Mobile navigation");
+      document.body.appendChild(bar);
+      bar.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        if (b.dataset.mtab) {
+          const mt = b.dataset.mtab;
+          void (async () => {
+            if (currentPage !== "workspace") await showPage("workspace");
+            document.body.dataset.mtab = mt;
+            updateTabbar();
+            window.scrollTo({ top: 0 });
+          })();
+        } else if (b.dataset.tpage) {
+          void showPage(b.dataset.tpage);
+          window.scrollTo({ top: 0 });
+        }
+      });
+    }
+    bar.innerHTML = `<button class="m-tab" data-mtab="chat" type="button"><span class="m-ico" aria-hidden="true">\u{1F4AC}</span>Helper</button><button class="m-tab" data-mtab="sheet" type="button"><span class="m-ico" aria-hidden="true">\u{1F4CA}</span>Sheet</button><button class="m-tab" data-tpage="templates" type="button"><span class="m-ico" aria-hidden="true">\u{1F5C2}\uFE0F</span>Templates</button><button class="m-tab" data-tpage="preferences" type="button"><span class="m-ico" aria-hidden="true">\u2699\uFE0F</span>Files</button>`;
+    updateTabbar();
+  }
+  async function download(kind, baseName) {
     if (!job) return;
     try {
       let blob;
@@ -28810,7 +29351,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = kind === "output" ? "EduSheetManager-verified.xlsx" : "EduSheetManager-evidence.json";
+      a.download = kind === "output" ? `${safeBaseName(baseName || defaultFileName())}.xlsx` : "EduSheetManager-evidence.json";
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -31491,6 +32032,21 @@
         return { ok: true };
       }
       if (!action) return j;
+      if (action === "rows" && method === "PUT") {
+        const hs = j.report?.headers || [];
+        j.report.rows = (body?.rows || []).map((r) => {
+          const o = {};
+          hs.forEach((h) => {
+            const v = r?.[h];
+            o[h] = v === void 0 || v === "" ? null : v;
+          });
+          return o;
+        });
+        j.report.status = j.report.rows.some((r) => hs.some((h) => r[h] === null)) ? j.report.status : "RELEASED";
+        s.jobs[id] = j;
+        saveStaticState(s);
+        return j;
+      }
       if (action === "run") {
         runStaticJob(s, j);
         s.jobs[id] = j;
@@ -31769,6 +32325,8 @@
       $2("root").innerHTML = '<div class="loading">Unable to reach the application. Reload the page.</div>';
     }
   })();
+  document.body.dataset.mtab = "chat";
+  installGridListeners();
 })();
 /*! Bundled license information:
 

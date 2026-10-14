@@ -24,7 +24,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import ai
 from .blobs import LocalBlobs, R2Blobs, materialise
 from .cloud_store import CloudStore
-from .engine import infer_plan, finalise_cell_profiles, input_signature, rebind_knowledge, transform, decimal_value, validate_and_repair_sa_id, percentage_to_caps_level
+from .engine import infer_plan, finalise_cell_profiles, input_signature, rebind_knowledge, transform, decimal_value, validate_and_repair_sa_id, percentage_to_caps_level, MAX_OUTPUT_ROWS
 from .models import MappingPlan, SourcePlan, AISettings
 from .online_models import Login, Signup, DemoLogin, Preferences, PlatformSettings, CustomerCreate, ChatInput, ProposalConfirm, Run, Analyse, PlanConfirm
 from .samples import create_samples, sample_case
@@ -34,6 +34,13 @@ from .workbooks import profile, check_file, public_value, norm, book_rows
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = logging.getLogger('sheetqms.online')
+
+
+def _text_safe_cell(*cells):
+    """Grid values are values only: a typed '=...' is stored as plain text, never as a live formula."""
+    for cell in cells:
+        if isinstance(cell.value, str) and cell.value.startswith('='):
+            cell.data_type = 's'
 
 
 def create_online_app(root=None, demo=None, database_url=None, blobs=None, encryption_key=None):
@@ -695,7 +702,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
 
         return None
 
-    def save_edited_workbook(tenant, job, summary_text):
+    def save_edited_workbook(tenant, job, summary_text, quiet=False):
         from openpyxl import Workbook, load_workbook
         from openpyxl.styles import Font, PatternFill
         report = job['report']
@@ -728,7 +735,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
                 ws.cell(row=header_row, column=c_idx, value=h)
             for r_offset, row in enumerate(rows, start=1):
                 for c_idx, h in enumerate(headers, start=1):
-                    ws.cell(row=header_row + r_offset, column=c_idx, value=row.get(h))
+                    _text_safe_cell(ws.cell(row=header_row + r_offset, column=c_idx, value=row.get(h)))
         else:
             wb = Workbook()
             ws = wb.active
@@ -739,6 +746,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
                 cell.fill = PatternFill('solid', fgColor='3559E0')
             for row in rows:
                 ws.append([row.get(h) for h in headers])
+                _text_safe_cell(*ws[ws.max_row])
         bio = BytesIO()
         wb.save(bio)
         data = bio.getvalue()
@@ -756,8 +764,9 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             report['passed_checks'] = report['total_checks']
             report['questions'] = []
             job['state'] = 'RELEASED'
-        job['mapping_origin'] = 'Client-requested chat edit'
-        message(job, 'qms', summary_text)
+        job['mapping_origin'] = 'Client-requested chat edit' if not quiet else 'Spreadsheet grid edit'
+        if not quiet:
+            message(job, 'qms', summary_text)
         return job
 
     def find_row_indices(rows, key_col, lower):
@@ -1349,6 +1358,43 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         job = create_job(tenant, request_id, (title, bio_tpl.getvalue()), [('builder-data.xlsx', bio_src.getvalue())], title)
         job['chat'] = []
         job = run_job(tenant, job)
+        return public(job)
+
+    @app.put('/api/jobs/{identifier}/rows')
+    @job_lease
+    def save_grid_rows(identifier: str, body: dict, identity=Depends(workspace)):
+        """Save cell edits made in the Excel-style grid, rebuild the workbook and re-run the release gate."""
+        _, tenant = identity
+        job = get_job(tenant, identifier)
+        report = job.get('report')
+        if not report or report.get('rows') is None:
+            raise HTTPException(409, 'Load or run a spreadsheet before editing the grid.')
+        headers = [str(h) for h in (report.get('headers') or [])]
+        incoming_rows = body.get('rows')
+        if not isinstance(incoming_rows, list):
+            raise HTTPException(422, 'rows must be a list.')
+        if len(incoming_rows) > MAX_OUTPUT_ROWS:
+            raise HTTPException(413, f'Too many rows for the grid (limit {MAX_OUTPUT_ROWS}).')
+        cleaned = []
+        for raw in incoming_rows:
+            if not isinstance(raw, dict):
+                raise HTTPException(422, 'Each row must be an object.')
+            row = {}
+            for h in headers:
+                v = raw.get(h)
+                if isinstance(v, str):
+                    if len(v) > 5000:
+                        raise HTTPException(422, 'A cell is too long (limit 5000 characters).')
+                    v = v if v.strip() != '' else None
+                elif isinstance(v, bool) or v is None:
+                    v = None if v is None else str(v)
+                elif not isinstance(v, (int, float)):
+                    v = str(v)
+                row[h] = v
+            cleaned.append(row)
+        report['rows'] = cleaned
+        save_edited_workbook(tenant, job, '', quiet=True)
+        store.save_job(tenant, job, 'grid_cells_edited', {'rows': len(cleaned)})
         return public(job)
 
     @app.post('/api/jobs/{identifier}/clean')

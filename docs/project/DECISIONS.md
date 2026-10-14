@@ -255,5 +255,237 @@ Status: Published and verified on `https://github.com/demo0ps/SheetQMS` and `htt
 2. **Dual-mode runtime (FastAPI backend + static browser preview fallback):** When served by FastAPI (`localhost:3001` or Cloud Run), `web/app.ts` uses `/api/...` server endpoints. When served on static GitHub Pages (`https://demo0ps.github.io/SheetQMS/`), `web/app.ts` automatically falls back to an in-browser SheetQMS engine (`localStorage` + pure-TypeScript OpenXML `.xlsx` generator) so the live preview link works end-to-end without a server.
 3. **Credential hygiene:** The GitHub PAT pasted in chat was used only in transient process memory from `/tmp/sheetqms-publish` (immediately deleted), never written to `/home/user`, `.env`, `.git/config` or committed files. The owner must revoke/rotate the chat-exposed token immediately.
 
+## D-028 — SA-SAMS 2-file student & subject-percentage matrix engine + multi-sheet relational joins
+
+Status: Confirmed by owner via screenshots (`image-1.png`, `image-2.png`) and `ask_user`, implemented and verified in `sheetqms-cloud/` (2026-10-14).
+
+1. **Multi-sheet relational key-join in `direct` mode:** When 2+ separate Excel/CSV files are uploaded (e.g., SA-SAMS Sheet 1 with Learner/Parent Bio and SA-SAMS Sheet 2 with Subject Marks Schedule), `infer_plan` and `build_rows` automatically join records per learner by `Student ID` / `Admission No` (with fallback to `First Name + Last Name`) and record provenance for all contributing source rows.
+2. **Horizontal Subject-Percentage Matrix → Joined `Subjects` column (`any_mark_not_blank`):** When the destination template includes a `Subjects` (or `Courses` / `Modules`) column and a source sheet contains vertical Subject columns across the top (`Mathematics`, `English`, `Science`, `Physical Science`, `Natural Science`, `Geography`, etc.) with horizontal percentages/marks inside each learner's row, `normalize_sources` collects every subject column where the learner has a non-blank mark (skipping blank, `-`, `N/A`, and summary columns like `Average`/`Total`) and joins them with `"; "`.
+3. **Smart student field formatting (`enforce_all_four`):** Automatically formats `Grade` as `"Grade X"` (e.g. `8` / `"Gr 7"` → `"Grade 8"` / `"Grade 7"`), `Date of Birth` as `"YYYY-MM-DD"`, preserves/restores leading `"0"` on `Parent Phone` (e.g. numeric `821234567` or `"+27 84 765 4321"` → `"0821234567"` / `"0847654321"` written as an explicit string cell in `.xlsx`), and formats `Subjects` with `"; "`.
+4. **General multi-account architecture preserved:** Isolated `customer_accounts` remain completely general so the school account can run SA-SAMS 2-file student imports while other customer accounts upload their own business templates and messy spreadsheets.
+
+## D-029 — 4-Vertical Sign-Up & Dynamic Tooling, Luhn 13-Digit SA ID Auto-Repair, CAPS Levels (1–7), and Multi-Batch Folder Upload
+
+Status: Confirmed by owner via discussion and `ask_user` (`four_specialized_verticals`, `self_signup_plus_quick_vertical_launch`, `saved_at_signup_plus_top_bar_switcher`, `smart_stack_or_join_with_source_col`, `keep_all_flag_cross_file_duplicates`), implemented and verified in `sheetqms-cloud/` (2026-10-14).
+
+1. **4 Specialized Verticals at Sign-Up + Switchable Anytime:** Users choose from 4 verticals at sign-up (`POST /api/auth/signup`) or via 4 quick-launch buttons on the login screen (`POST /api/auth/demo`):
+   - `education`: **🎓 Education & SA-SAMS** (Schools, District Offices, EMIS & Educational Consultants),
+   - `sme_pa`: **💼 SME Business & PA** (Small Business Owners, Quotations, Tax Invoices & CRM),
+   - `finance_hr`: **📊 Finance, Accounting & Payroll** (Branch Consolidations, HR, Payroll & Reconciliation),
+   - `supply_chain`: **📦 Supply Chain, Inventory & ERP** (Procurement, Warehouses & Supplier Stock).
+   The active vertical is persisted per customer workspace and can be switched anytime from the top navigation bar (`#vertical-picker`) or the `Preferences` tab.
+2. **Luhn-Validated 13-Digit South African ID Validator & Born 2000–2009 Leading-Zero Auto-Repair (`validate_and_repair_sa_id`):**
+   - Automatically pads 11/12-digit SA IDs where Excel stripped leading `'0'` or `'00'` (born 2000–2009) back to 13 digits (`'0803055123084'`) and writes them as explicit string cells (`data_type = 's'`) in `.xlsx` exports.
+   - Validates the 13th digit using the official South African Home Affairs modulo-10 Luhn checksum.
+   - Extracts `Date of Birth` (`YYYY-MM-DD`), `Gender` (`Male`/`Female`), and `Citizenship` (`SA Citizen` / `Permanent Resident`).
+   - Preserves all rows in the main sheet (`1. a`) and adds an `SA ID Status` column (`Valid SA ID`, `Repaired SA ID (Leading 0 Restored)`, `Foreign / Passport / Permit ID`, `Invalid SA ID (Checksum Failed)`).
+3. **CAPS Achievement Level (1–7) & Academic Risk Calculator (`caps_levels`):** Converts subject percentage marks (`0–100%`) into official South African CAPS Achievement Levels (`Level 1` to `Level 7`) and flags `At Risk` learners (`Level 1–2` / `< 40%`).
+4. **Multi-Batch Folder Processing (`POST /api/jobs/batch-folder` + `webkitdirectory`):** Allows uploading an entire folder of spreadsheets at once and merging them into one Master File automatically — smart auto-detect joins 2-file relational pairs or stacks homogeneous spreadsheets into one Master Sheet with a `Source File` column, flags cross-file duplicates in `Duplicate Status` (`Duplicate across: ...`), and generates a **Batch & Consultant Data Quality Audit Certificate**.
+
+## D-030 — Strictly Tailored 4-Vertical Workspaces, Everyday Non-Technical Language, and Clean Light Theme Default
+
+Status: Confirmed by owner via `ask_user` (`strict_vertical_workspace`, `plain_english_with_advanced_toggle`, `clean_light_default_with_action_cards`), implemented and verified in `sheetqms-cloud/` (2026-10-14).
+
+1. **Strictly Tailored Workspace per Vertical (`strict_vertical_workspace`):**
+   - Each vertical (`education`, `sme_pa`, `finance_hr`, `supply_chain`) strictly shapes its own top navigation tabs (`vMeta.tabs`), its own 3 big *"What would you like to do today?"* home action cards (`vMeta.cards`), its own strictly filtered example buttons (`vMeta.samples`), its own 4 sheet toolbar buttons, its own vertical preset in `Create Sheet`, and its own filtered `Templates` page (`vMeta.templateCategories`).
+   - For example, `education` hides `Quotes & Invoices` and shows only `School Sheets & SA-SAMS`, `Create Class Sheet`, `School Templates`, and `Past Files & Settings`, with `Pass Levels (1–7)` and `Fix SA IDs & Phones` on the sheet toolbar.
+2. **Everyday Plain-English Language + Technical Details Hidden in Settings (`plain_english_with_advanced_toggle`):**
+   - Replaced technical jargon (`"QMS"`, `"Released/Held"`, `"Mapping JSON"`, `"Audit JSON"`, `"Luhn"`, `"21/21 checks"`) across the main workspace with warm, everyday wording (`"Sheet Helper"`, `"✓ Ready to Download"`, `"Needs 1 Quick Answer"`, `"Fill My Sheet"`, `"Fix SA IDs & Phones"`, `"Pass Levels (1–7)"`, `"Remove Duplicates"`, `"Summary Report"`).
+   - Moved `Saved Rules`, `Inspect Current Mapping JSON`, and `Download Technical Audit JSON` inside a collapsed **`Advanced & Technical Details (Optional)`** section at the bottom of `Past Files & Settings`.
+3. **Clean Light Theme Default (`clean_light_default_with_action_cards`):**
+   - Defaulted `Preferences.theme` to `'light'` in both backend (`sheetqms/online_models.py`), HTML entry points (`web/index.html`, `index.html`), and static state (`web/app.ts`), while preserving optional Dark Mode in Settings.
+
+## D-031 — Default Regular/Everyday User Mode, Warm Paper & Calm Sage-Teal Palette (Zero Dark Overlap), and Spacious Layout
+
+Status: Confirmed by owner via `ask_user` (`default_regular_user_mode`, `warm_cream_and_sage`, `spacious_calm_layout`), implemented, verified, and deployed to `https://demo0ps.github.io/SheetQMS/` at commit `88584d1` (2026-10-14).
+
+1. **Default to `'general'` (`✨ Everyday / Regular User`) First (`default_regular_user_mode`):**
+   - Regular everyday users can enter and use the platform immediately without choosing an industry vertical. The Welcome/Sign-In card features a single primary button (`✨ Start as Regular / Everyday User →`), and Sign-Up defaults to `general` (`✨ Everyday / Regular User`).
+   - The 4 specialized industry packs (`education`, `sme_pa`, `finance_hr`, `supply_chain`) remain available inside an optional collapsible section on the welcome screen and via the top-bar workspace mode switcher.
+2. **Warm Paper & Calm Sage-Teal Palette with Zero Dark Overlap (`warm_cream_and_sage`):**
+   - Rewrote `web/styles.css` from `:root` up so every element — sign-in card, top navigation bar, buttons, badges, chat cards, spreadsheet tables, dropdowns, modals, and toasts — uses warm paper (`#FAF8F5`), crisp white cards (`#FFFFFF`), soft warm sand headers (`#F4F1EA`), soothing sage-teal accents (`#0F766E`), and warm charcoal text (`#1F2933`), removing all legacy dark-navy `#0f1628`/`#131c30`/`#1b2640` overlaps.
+3. **Spacious & Calm Layout (`spacious_calm_layout`):**
+   - Increased breathing room, card padding, and readable typography (`15.5px`), and streamlined the quick-tools bar to 3 calm buttons at a time.
+
+## D-032 — Rebrand to EduSheetManager, by EduSCF with Powered by EduSCF Logo Badge
+
+Status: Confirmed by owner via `ask_user` (`edusheetmanager_with_by_eduscf_tag`, `signin_and_page_footer`, `update_exports_and_printables`), implemented, verified, and deployed to `https://demo0ps.github.io/SheetQMS/` at commit `86b3921` (2026-10-14).
+
+1. **Brand Name & Header (`edusheetmanager_with_by_eduscf_tag`):**
+   - Preserved the platform's teal grid icon (`.logo-box`) and updated the brand title beside it to **`EduSheetManager`** with a subtle **`by EduSCF`** pill tag (`.brand-by`), plus updated `<title>EduSheetManager — by EduSCF</title>` in both HTML entry points.
+2. **"Powered by EduSCF" Badge on Welcome Card & Page Footer (`signin_and_page_footer`):**
+   - Cropped and optimized the attached EduSCF logo (`/home/user/uploads/5942776253129625469.jpg` $\rightarrow$ `web/eduscf-logo.png` & embedded data URI `web/eduscf_logo.ts`) so it renders reliably across FastAPI, GitHub Pages, and print dialogs.
+   - Added a clean **`Powered by [EduSCF Logo]`** badge (`.powered-by-eduscf`) at the bottom of the Welcome/Sign-In card and inside a calm page footer (`<footer class="app-footer">`) across every workspace screen while keeping the top navigation bar minimal.
+3. **Exported Filenames & Printable Reports (`update_exports_and_printables`):**
+   - Updated default downloaded filenames to `EduSheetManager-verified.xlsx` and `EduSheetManager-evidence.json`, and added the `Powered by [EduSCF Logo]` credit to printable PDF Quotes/Tax Invoices and the Data Quality Summary Report modal.
+
+## D-033 — Unified 1-Screen "My Spreadsheet" Workspace, Step 1-2-3 Visual Guide, and 1-Click Sales Demos
+
+Status: Confirmed by owner via `ask_user` (`unified_one_workspace`, `always_split_view`, `self_selling_guided_steps`), implemented, verified, and deployed to `https://demo0ps.github.io/SheetQMS/` at commit `028eb2b` (2026-10-14).
+
+1. **Unified 1-Screen Workspace (`unified_one_workspace`):**
+   - Merged `Clean & Combine Sheets` and `Create New Sheet` into a single **`My Spreadsheet`** screen so users never wonder which tab to use.
+   - Users can upload messy Excel/CSV files, merge an entire folder, click a 1-Click Demo, OR type what columns they want to create from scratch (`"Columns: Name, Phone, Fee, Paid"`) inside the same left-hand AI Helper chat box.
+2. **Always-Visible Split View (`always_split_view`):**
+   - Left panel (`STEP 1 & 2 · AI Sheet Helper`) has the upload drawer open by default and the chat input always enabled from the very start.
+   - Right panel (`STEP 3 · Your Live Spreadsheet`) displays the spreadsheet table and 1-Click Fixes toolbar beside the chat at all times.
+3. **Self-Selling Step 1 → Step 2 → Step 3 Visual Guide (`self_selling_guided_steps`):**
+   - Added a 3-step visual strip (`STEP 1: Load or Create` $\rightarrow$ `STEP 2: Tell the AI Helper` $\rightarrow$ `STEP 3: Download Excel (.XLSX)`) and 3 prominent **1-Click Demo** cards at the top of the screen so the platform practically demos and sells itself.
+
+## D-034 — Clean, Airy Workspace (No Step Bar / Top Card Clutter) + Interactive On-Screen Pointer Guide ("Click This → Then This → Then That")
+
+Status: Confirmed by owner via `ask_user` (`interactive_spotlight_tour`, `clean_airy_sheet_and_chat_only`), implemented, verified, and deployed to `https://demo0ps.github.io/SheetQMS/` at commit `b22617b` (2026-10-14).
+
+1. **Clean, Airy Workspace (`clean_airy_sheet_and_chat_only`):**
+   - Removed the static top step-by-step bar (`steps-strip`), top cards (`vertical-welcome`), and permanently open upload boxes so the workspace feels open, spacious, and never crowded (`max-width: 1400px`, `padding: 34px 36px 56px`, `gap: 32px`).
+   - Collapsed file uploads and demo selection inside a single clean **`Open / Upload File (or try a demo)`** button (`#tour-open-btn`) at the top of the **Sheet Helper** panel.
+2. **Interactive On-Screen Pointer Guide (`interactive_spotlight_tour`):**
+   - Clicking **`Guide`** in the top bar (or **`Show Me Where to Click (Interactive Guide)`** inside the Helper greeting) launches an interactive on-screen spotlight tour (`startInteractiveGuide()`) that highlights each button on screen with a pulsing sage-teal ring (`.tour-active-target`) and a floating pointer card (`.tour-popover`):
+     - **Step 1 of 4 (`#tour-open-btn`):** *"👆 1. Click This First: Open or Upload"*
+     - **Step 2 of 4 (`#chat-form`):** *"👆 2. Then Click Here: Ask in Plain Words"*
+     - **Step 3 of 4 (`#output-table-area`):** *"👆 3. Then Check Your Spreadsheet Here"*
+     - **Step 4 of 4 (`#download-output`):** *"👆 4. Finally, Click That: Download Excel"*
+
+## D-035 — Full Legacy `.xls` (BIFF8 Binary, HTML-Table `.xls`, XML 2003 `.xls`) Support & Post-Upload Crash Fix
+
+Status: Implemented, verified (`71 passed`), and deployed to `https://demo0ps.github.io/SheetQMS/` at commit `aaee6b0` (2026-10-14).
+
+1. **Client-Side Universal `.xls` + `.xlsx` Reader (`web/app.ts`):**
+   - Integrated SheetJS (`xlsx`) + HTML-table `.xls` DOMParser fallback in `parseUploadedFile(file)` so legacy Excel 97–2003 binary `.xls` (OLE2 BIFF8/BIFF5), SA-SAMS/Pastel HTML-table `.xls`, SpreadsheetML XML `.xls`, `.xlsx`, and `.csv` files parse cleanly in the browser.
+   - Added a binary-file guard before CSV text fallback and automatic cleanup of any corrupted `.xls` state in `localStorage`, plus an in-memory state cache (`memStaticState`) so large workbooks never fail on `localStorage` quota limits.
+2. **Post-Upload `studio()` Null-Guard Fix (`web/app.ts`):**
+   - Added null guards (`if ($('run-job'))`, `if ($('confirm-correction'))`, `if ($('download-output'))`) in `studio()` so auto-released uploads (where `#run-job` is hidden) never throw a `TypeError` when binding event listeners.
+   - Updated all file inputs (`accept=".xlsx,.xls,.csv"`) and folder batch filters (`/\.(xlsx|xls|csv)$/i`) to include `.xls`.
+3. **Backend `.xls` Support (`sheetqms/workbooks.py` & `sheetqms/online.py`):**
+   - Added `xls_rows(path)` supporting binary BIFF8/BIFF5 `.xls` (via `xlrd`), HTML-table `.xls`, SpreadsheetML XML 2003 `.xls`, `.xlsx`-renamed-to-`.xls`, and TSV/CSV `.xls`, and enabled `.xls` across `/api/jobs` and `/api/jobs/batch-folder`.
+
+## D-036 — School Template Mapping Fix: Repeated Learner/Parent Header Disambiguation, Multi-Parent Coalescing, Strict Academic Subject Filter & Fast 200-Row Preview
+
+Status: Implemented, verified (`71 passed`), and deployed to `https://demo0ps.github.io/SheetQMS/` at commit `bcf962f` (2026-10-14).
+
+1. **Header Row Detection & Repeated Learner/Parent Header Disambiguation (`pickHeaderIndex` & `matrixToTable` in `web/app.ts`, `candidate_headers` in `sheetqms/workbooks.py`):**
+   - Removed the strict `uniq.size !== textCells.length` filter and `'date'` prefix penalty that previously caused `pickHeaderIndex()` to skip real school header rows (which contain `Date of Birth` and repeated `Name`, `Surname`, `Email`, `Cell` headers across Learner, Father/Parent 1, and Mother/Parent 2) and pick Learner #17 (`17, BALOYI, Siyabonga...`) as the column headers.
+   - Added strong data-row penalties (`-14` per cell for emails `@`, phone numbers `069...`, `'Grade 12'`, `'12 C'`, `'M'`/`'F'`, dates, and leading row numbers) and header-keyword boosts (`+6` per cell).
+   - Added automatic disambiguation for repeated column headers in `matrixToTable()` (mapping 2nd/3rd occurrences of `Name`, `Surname`, `Email`, `Cell`/`Phone` to `Parent First Name`, `Parent Last Name`, `Parent Email`, `Parent Phone`) and headerless-sheet column inference when Row 0 is already data.
+2. **3-Tier Template Column Matcher + Multi-Parent Row Coalescing (`localApi('/api/jobs')` in `web/app.ts`):**
+   - Added Tier 1 (Expanded synonyms), Tier 2 (Keyword/substring matching), and Tier 3 (Data-content pattern matching across rows) plus automatic row-by-row coalescing across Parent 1 / Parent 2 columns so rows where Parent 1 is blank automatically pull Parent 2 (`Adelaide Fanisa`, `Twala`, `0730756884`).
+   - Restricted horizontal `Subjects` matrix collapsing (`ACADEMIC_SUBJECT_RE`) to real academic subject names so unmapped learner/parent columns are never stuffed into `Subjects`.
+3. **Immediate Release & Fast 200-Row Live Preview (`evaluateCustomJob` & `studio` in `web/app.ts`):**
+   - Stopped locking multi-row imports on blank optional cells (`Subjects`, `Parent Email`) and eliminated yellow `Ask in chat` badge spam on normal tables.
+   - Added a fast 200-row live DOM preview cap (with a `Show All N Rows` toggle button) so 3,831-row workbooks render instantaneously while exporting 100% of rows on `Download Excel (.XLSX)`.
+
+## D-037 — SA-SAMS / GDE 2-Sheet Learner-Parent Bio + Internal School Mark Schedule Join Fix
+
+Status: Implemented, verified (`71 passed`), and deployed to `https://demo0ps.github.io/SheetQMS/` at commit `22c0f95` (2026-10-14).
+
+1. **Single-Parent Unit Selection (`take 1 parent, whichever is available eith father or mother`):**
+   - On SA-SAMS / GDE Learner & Parent Info sheets (`Number | Surname | First Name | Gender | Grade | Class | Cell# | Name | Surname | Cell# | Name | Surname | Cell#`), disambiguated columns by semantic role (`FIRST_NAME`, `LAST_NAME`, `PHONE`, `EMAIL`) into `First Name`, `Last Name`, `Learner Phone`, `Parent 1 First Name`, `Parent 1 Last Name`, `Parent 1 Phone`, `Parent 2 First Name`, `Parent 2 Last Name`, `Parent 2 Phone`.
+   - For each learner row, selected **1 single parent as a unit** (Father / Parent 1 if Father has a name on that row, else Mother / Parent 2) into `Parent First Name`, `Parent Last Name`, `Parent Phone`, and `Parent Email`, so Father and Mother fields are never cross-mixed (e.g., when Father is blank and Mother is `Johannah | APHANE | 0714364266`, `Parent Last Name` is `Aphane`, never Father's blank surname).
+2. **GDE Mark Schedule Header Detection, `Learner Name` Splitting, `(Gr 10)` Subject Stripping & SA ID DOB Extraction:**
+   - Expanded `pickHeaderIndex()` / `candidate_headers()` to scan up to 35 rows and detect Row 12 headers below GDE school banners without penalizing wide header rows containing multi-line comment headers (`Codes: P (Achieved)... Report General Comment`).
+   - Automatically split combined `"SURNAME, FirstName, MiddleName"` (`"APHANE, Thato, Bonolo"`) in `Learner Name` into `Last Name` (`"Aphane"`) and `First Name` (`"Thato Bonolo"`).
+   - Extracted `Date of Birth` (`YYYY-MM-DD`) automatically from the first 6 digits (`YYMMDD`) of 13-digit (or 11–12 digit zero-padded) `Accession Number` / SA ID (`0905245292081` $\rightarrow$ `2009-05-24`), and extracted `Grade` (`Grade 10`) from `For: Grade 10` banner rows or `(Gr 10)` subject headers.
+   - Stripped `(Gr 10)` / `(Grade 10)` suffixes from subject column headers (`Accounting (Gr 10)` $\rightarrow$ `Accounting`) while excluding summary/comment columns (`Learner Average (All subjects)`, `Learner Rank`, `Learner Total`, `Code`, `Report General Comment`, `Deviation Comment`).
+3. **Cross-Sheet Bio + Mark Schedule Join (`keep_all_bio_learners`) & Staged Multi-File Upload:**
+   - Ordered multi-sheet joins so Bio sheets run first (keeping all learners across all grades) and Mark Schedule sheets run second.
+   - Prevented joining across sheets on sequential row counters (`Number = 1, 2, 3...`), matching instead on 6+ char `Accession Number` / SA ID or `Last Name + First Name` (exact match first, then `lastName|firstGivenName` such as `"aphane|thato"` $\leftrightarrow$ `"aphane|thato bonolo"` with Grade tiebreaker) and upgrading `Student ID` from row counter to `Accession Number`.
+   - Added multi-click file staging (`stagedSources`) and complementary school-sheet auto-joining in the upload drawer so users can pick their 2 `.xls` files either together at once or one after another.
+
+## D-038: Strict Grade + Gender + 1-to-1 Lock on Bio + Mark Schedule Joins, and Excluding Bio Language Columns from `Subjects` Matrix (2026-10-14)
+- **Owner-Confirmed Decisions (`ask_user`):**
+  1. `strict_grade_join_rule`: **`strict_grade_and_gender_lock`** — Only match a Grade 10 Mark Schedule row to a Bio learner who is also in Grade 10 (plus matching Gender `M`/`F`). Never put Grade 10 FET subjects (like `Business Studies`) or DOB onto Grade 8, 9, 11, or 12 learners who share the same name.
+  2. `unmatched_mark_schedule_learners`: **`append_as_grade10_if_not_in_bio`** — If a Grade 10 learner is on the Mark Schedule but not found in Grade 10 on the Bio sheet, append them as a Grade 10 row at the bottom (never attach them to a Grade 8/9/11/12 learner).
+  3. `grade_8_9_subjects_source`: **`caps_senior_phase_9_subjects`** — Auto-fill the standard 9 compulsory CAPS Senior Phase subjects for all Grade 8 and Grade 9 learners (`Sepedi Home Language; English First Additional Language; Mathematics; Natural Sciences; Social Sciences; Technology; Economic and Management Sciences (EMS); Life Orientation; Creative Arts`, dynamically using the learner's or school's Home Language and First Additional Language when specified).
+- **Implemented across `web/app.ts` (`web/app.js`), `sheetqms/engine.py`, and `tests/test_online.py`:**
+  1. **Strict Grade + Gender + 1-to-1 Lock (`findBestNameMatch` / `_pick_candidate`):**
+     - Enforced hard Grade lock (`if (objGr && cGr && cGr !== objGr) return false`), hard Gender lock (`if (objGen && cGen && cGen !== objGen) return false`), and 1-to-1 match lock (`if (isMarksSheet && meta?.matchedMarks) return false` / `matched_marks_idxs`) so a Grade 10 Mark Schedule row can never overwrite a Grade 8, 9, 11, or 12 learner (or a second learner with the same name).
+     - Appended any unmatched Grade 10 Mark Schedule learners at the bottom as `Grade 10`.
+  2. **Standard 9 CAPS Senior Phase Subjects Auto-Fill for Grade 8 & Grade 9 (`_fill_caps_senior_phase`):**
+     - Whenever a learner's `Grade` is `Grade 8` or `Grade 9` and no Grade 8/9 Mark Schedule subject list is present on that row, `Subjects` is automatically populated with the 9 compulsory CAPS Senior Phase subjects: `<Home Language>; <First Additional Language>; Mathematics; Natural Sciences; Social Sciences; Technology; Economic and Management Sciences (EMS); Life Orientation; Creative Arts`.
+  3. **Excluded Bio-Sheet Language Columns from `Subjects` Matrix (`isBioParentSheet` / `is_bio_parent_sheet`):**
+     - Excluded generic Bio language-preference headers (`Home Language`, `First Additional Language`, `Second Additional Language`, `Language of Learning and Teaching`, `Preferred Language`) and Bio sheets (`Parent 1 *` / `Parent 2 *` without `(Gr X)` headers) from `candSubj` / `cand_subj`, ensuring the `SUBJECTS` header dropdown always points to the Mark Schedule subject matrix (`← [Matrix: Accounting (Gr 10), Business Studies (Gr 10), ...]`).
+
+## D-039: Blank `Parent Email` on Bio Sheets, Full Bio `Birth Date` / `Date of Birth` Preservation Across All Grades, and No Same-Sheet Learner Merging (2026-10-14)
+- **Owner-Confirmed Decisions (`ask_user`):**
+  1. `nonexistent_emails_seen`: **`other_rows_or_fabricated_emails`** (`"flexerworldwide@gmail.com"`); `parent_email_rule_on_bio`: **`no_parent_email_keep_blank`** — The Bio `.xls` sheet has NO Parent Email column at all; `Parent Email` must remain completely blank for all rows on the Bio sheet (never map a learner's own `Email` column or another row's email into `Parent Email`).
+  2. `missing_dob_learners`: **`grade_8_9_11_12_learners`**; `grade_8_9_dob_location`: **`in_bio_sheet_column`**; `bio_sheet_dob_header_name`: **`birth_date_or_dob_col`**; `bio_dob_values_check`: **`all_learners_have_dob_in_bio`** — Every learner (across Grades 8–12) has a `Birth Date` / `Date of Birth` / `DOB` column filled in on the Bio `.xls` sheet; all learners must retain their `YYYY-MM-DD` Date of Birth from the Bio sheet.
+- **Root Causes Identified & Fixed across `web/app.ts` (`web/app.js`), `sheetqms/workbooks.py`, `sheetqms/engine.py`, and `tests/test_online.py`:**
+  1. **Stopped Copying `Learner Email` into `Parent Email` & Disambiguated Generic `Email` on Bio Sheets:**
+     - Removed the `|| obj['Learner Email']` fallback on lines 2374–2384 of `web/app.ts` and restricted `Parent Email` on `hasParentBlocks` / `bio_parents` sheets to explicit parent email columns (`hasExplicitParentEmails`).
+     - Treated single generic `Email` columns on 2-parent Bio sheets (`firstParentColIdx < 999`) as `'Learner Email'` rather than `'Parent 1 Email'`, and removed `'learner email'` / generic `'email'` from `'parent email'` synonyms so `'Parent Email'` remains completely blank (`null`) when a Bio sheet has no Parent Email column.
+  2. **Fixed Duplicate-Header Overwrite (`baseHeaders.forEach`) & Multi-Format `.xls` `Birth Date` / `Date of Birth` Normalization:**
+     - Fixed `matrixToTable` in `web/app.ts` (and `_normalize_school_sheet_rows` in `sheetqms/workbooks.py`) to populate row dictionaries using deduplicated `baseHeaders` instead of `rawHeaders`, and disambiguated repeated DOB columns (`Date of Birth` for the learner vs `Parent 1/2 Date of Birth` inside parent blocks) so a secondary blank DOB column never overwrites the learner's `Date of Birth` with `null`.
+     - Added `normalizeDateValue` / `_normalize_date_str` and dual `raw: true` + `raw: false` (`fmtMatrix`) SheetJS cell extraction supporting `Date` objects (`+12h` timezone-safe), Excel serial date numbers (`20000..50000`), `YYYY-MM-DD`, `DD/MM/YYYY`, `DD/MM/YY`, month-name dates (`"14 May 2011"`, `"18-Nov-2012"`), compact `YYYYMMDD`, and 10–13 digit SA IDs, plus a row-level learner DOB/SA-ID fallback scan across all Grades 8–12.
+  3. **Prevented Same-Sheet Learner Merging (`meta?.sourceIdx === pIdx`) & Added Cross-Sheet Given-Name Token Fallback:**
+     - Added `sourceIdx: pIdx` to `rowMeta` and enforced `if (meta?.sourceIdx === pIdx) return false` inside `findBestNameMatch` so two learners on the Bio sheet who share a surname, first given name, grade, and gender are never merged into one row.
+     - Added `bySurname` / `by_surname` cross-sheet fallback (requiring matching Surname, Grade, Gender, 1-to-1 lock, and at least one shared given-name token) and bumped `localStorage` state key to `'sheetqms_static_state_v6'`.
+
+## D-040: Stacked Multi-Section Table Splitting (Line 1800+ Going Down) & Unified Single-Master-Row Learner Profile Merger (2026-10-14)
+- **Owner-Confirmed Decisions (`ask_user`):**
+  1. `section_from_line_1800_layout`: **`stacked_second_table_in_same_sheet`** — Inside the same spreadsheet, below row ~1800, another table/section starts (with its own headers/columns) containing extra details for the same learners listed at the top.
+  2. `fields_found_below_1800`: **`all_missing_pieces_across_sections`** — Different sections/sheets each hold a piece of the learner's profile (`Date of Birth`, `SA ID / Accession Number`, `Subjects`, `Parent` details, `Grade`).
+  3. `master_sheet_row_limit_and_merge_rule`: **`one_row_per_unique_learner_fill_gaps`** — Keep strictly 1 row per unique learner (bounded to the actual number of learners on the spreadsheet, e.g. ~1,800), pulling missing fields from line 1800+ and across all sheets into that learner's single master row.
+  4. `matching_key_for_1800_down`: **`match_by_name_grade_or_id`** — Match by `Surname + First Name` (with `Grade`/`Gender` when available), or by `SA ID / Accession Number` when present.
+- **Implemented across `web/app.ts` (`web/app.js`), `sheetqms/workbooks.py`, `sheetqms/engine.py`, and `tests/test_online.py`:**
+  1. **Automatic Stacked-Table / Mid-Sheet Section Splitter (`splitMatrixIntoSections` / `_split_and_normalize_sheet_sections`):**
+     - Scans the entire worksheet (beyond the top header row, including line 1800+ going down) for any mid-sheet table header rows (`isMidSheetHeaderRow` / `_is_mid_sheet_school_header_row`) and preceding banner rows (`isBannerOrMetadataRow` / `_is_banner_or_metadata_row`), plus multiple `<table>` elements in HTML `.xls` files.
+     - Splits each stacked section into its own table (`Sheet1`, `Sheet1 (Section 2)`, etc.) so each section is parsed with its own header row, its own `bannerGrade`, and its own column mapping rather than being misread under Row 1's columns.
+  2. **Row-Level Field Recovery (`Class -> Grade`, Shifted `SURNAME, FirstName`, 10–13 Digit SA ID & DOB):**
+     - Automatically infers `Grade` (`Grade 8`..`Grade 12`) from `Class` codes (`8A`..`12Z`) when `Grade` is blank, recovers `Accession Number` and `Date of Birth` from any non-parent cell on the row, and splits shifted `"SURNAME, FirstName"` cells when `First Name` / `Last Name` are empty.
+  3. **Unified Relational Master-Row Merger (`parsedSources.length > 1 || isSchoolLearnerJob`) & Non-Learner Row Filter:**
+     - Runs the deduplicating relational merger across all sections and sheets (even within a single uploaded file), merging any matching learner from line 1800+ or secondary sheets into their single Master Row at the top (`byRealId`, `byExactName`, `byShortName`, `bySurname`, and `byRowNumSurname` fallback).
+     - Filters out non-learner banner, summary, total, average, and footer rows (`isValidPersonName` / `_is_valid_person_name`) so the Master Sheet stays strictly bounded to the actual learners on the spreadsheet.
+     - Bumped `localStorage` state key to `'sheetqms_static_state_v7'`.
+
+## D-041: Grade 8 & 9 6-Digit `YYMMDD` Date of Birth Extraction & Uniform Counting Batch `Student ID` (`STU0001..STU1800`) (2026-10-14)
+- **Owner-Confirmed Decisions (`ask_user`):**
+  1. `student_id_stu_format`: **`stu0001_no_hyphen_4digits`** — Format `Student ID` across all learners as a uniform auto-generated counting batch (`STU0001`, `STU0002`, ..., `STU1800`, 4 digits with leading zeros, no hyphen) so `Student ID` never mixes short numbers (`1, 2, 3...` or 6-digit `121007`) on Grades 8 & 9 with 13-digit SA IDs on Grades 10–12.
+  2. `dob_output_format_from_yymmdd`: **`convert_yymmdd_to_yyyy_mm_dd`** — Convert 6-digit `YYMMDD` values in the Mark Schedule for Grade 8 & 9 (e.g. `121007` $\rightarrow$ `2012-10-07`, `120218` $\rightarrow$ `2012-02-18`, `111103` $\rightarrow$ `2011-11-03`, `130624` $\rightarrow$ `2013-06-24`) and 13-digit SA IDs for Grades 10–12 into standard `YYYY-MM-DD` in the destination `Date of Birth` column.
+  3. `grade_8_9_mark_schedule_location`: **`multi_tabs_or_sections_in_mark_schedule`** — Support Mark Schedule workbooks with multiple tabs or stacked sections across Grades 8–12 (including Grade 8 & 9 Mark Schedule sections where Column B is titled `"Date of Birth"` or `"Accession Number"`).
+- **Implemented across `web/app.ts` (`web/app.js`), `sheetqms/workbooks.py`, `sheetqms/engine.py`, and `tests/test_online.py`:**
+  1. **6-Digit `YYMMDD` (`121007` $\rightarrow$ `2012-10-07`) & 5-Digit Zero-Stripped `YMMDD` (`90524` $\rightarrow$ `2009-05-24`) Date of Birth Parsing:**
+     - Updated `extractDobFromSaId` and `normalizeDateValue` in `web/app.ts`, `_extract_dob_from_sa_id_str` and `_normalize_school_sheet_rows` in `sheetqms/workbooks.py`, and `validate_and_repair_sa_id` in `sheetqms/engine.py` to parse 6-digit `YYMMDD` (`\d{6}`) and 5-digit zero-stripped `YMMDD` (`[5-9]\d{4}`) into `YYYY-MM-DD` (`{ id13: null, dob: 'YYYY-MM-DD' }`).
+     - Updated `_normalize_school_sheet_rows` (`mode == 'gde_marks'`) so Grade 8 & 9 Mark Schedule headers where Column B is titled `"Date of Birth"` (rather than `"Accession Number"`) are recognized and normalized into `YYYY-MM-DD`.
+     - Updated `isRealId` / `_is_real_key` to require `>= 10` digits for numeric cross-sheet IDs so 6-digit `YYMMDD` birthdays are never treated as unique Student IDs.
+  2. **Uniform Auto-Generated Counting Batch `Student ID` (`STU0001..STU1800`):**
+     - After merging all sections/sheets and extracting `Date of Birth` from any 6-digit `YYMMDD` or 13-digit SA ID, assigns sequential `STU0001`, `STU0002`, ..., `STU1800` (`STU${String(rIdx + 1).padStart(4, '0')}`) across all learner rows (`localStorage` key bumped to `'sheetqms_static_state_v8'`).
+
+## D-042: Deep Fix for Missing Grade 8 & 9 `Date of Birth` Across Stacked/Multi-Header Mark Schedules (2026-10-14)
+- **Root Causes Identified & Fixed Across `web/app.ts` (`web/app.js`), `sheetqms/workbooks.py`, `sheetqms/engine.py`, and `tests/test_online.py`:**
+  1. **Date-Formatted 6-Digit `YYMMDD` Recovery (`2231-04-21` $\rightarrow$ `121007` $\rightarrow$ `2012-10-07`):** When Excel/SheetJS (`cellDates: true`) or `openpyxl` reads a 6-digit `YYMMDD` integer (`121007`) inside a Date-formatted `Date of Birth` column, it converts serial day `121007` into a `Date` in year `2231`, which `normalizeDateValue` / `_normalize_date_str` previously rejected (`year > 2100`). Both engines now recover the raw Excel serial integer `(dt - 1899-12-30).days` (`121007`) and convert it via `extractDobFromSaId` $\rightarrow$ `"2012-10-07"`.
+  2. **Vertical Merge (`!merges`) Propagation & 5-Row Multi-Row Header Compositing:** Propagates vertically merged header cells (`No`, `Date of Birth`, `Learner Name`, `Gender`) down to the bottom row of the merge, composites adjacent header rows up to 5 rows above `hIdx`, and allows long subject headers up to 75 characters (`English First Additional Language (Gr 08)`).
+  3. **Pre-Header Banner Preservation & Dynamic `currentBannerGrade`:** Scans up to 18 rows above each section's `hIdx` for `For: Grade 8/9` or `(Gr 08/09)` before slicing `subMatrix`, preserves up to 6 pre-header rows above `hIdx`, and updates `currentBannerGrade` dynamically row-by-row on multi-grade sheets.
+  4. **Un-gated `saDob` Extraction, Comma-Name Splitting on Digits, & Tier 3 `isDob` Guard:** Un-gated `if (saDob && !resolvedDob)` from `if (id13)` so 6-digit `YYMMDD` (`id13 === null, saDob === "2012-10-07"`) is always captured; splits `"SURNAME, FirstName"` whenever `First Name`/`Last Name` hold digits or commas and registers `'Last Name'`/`'First Name'` in `headers`; and excludes `isDob` columns from Tier 3 `colStats.isId`.
+  5. **4-Pass Senior Phase `findBestNameMatch` & Grade Class-Suffix Normalization:** Normalizes `"Grade 08A"` / `"8A"` $\rightarrow$ `"Grade 8"`, tolerates middle-name spelling differences when `Surname + First Given Name + Grade + Gender` is unique, and matches 6-digit `YYMMDD` Senior Phase rows to Grade 8/9 Bio learners (or unique learners missing `Date of Birth`) even when a sheet has a stale top-of-sheet banner grade (`localStorage` key bumped to `'sheetqms_static_state_v9'`).
+
+## D-043: GDE Senior Phase (Grade 8 & 9) Mark Schedule Exact Layout (`image-1.png`) vs FET Phase (`image-2.png`) Compatibility (2026-10-14)
+- **Root Causes Identified from User-Attached Screenshots (`uploads/image-1.png` Senior Phase vs `uploads/image-2.png` FET Phase) & Fixed Across `web/app.ts` (`web/app.js`), `sheetqms/workbooks.py`, `sheetqms/engine.py`, and `tests/test_online.py`:**
+  1. **Combined Space-Separated Name Column (`"Learners in alphabetical order per class Surname and first names"` with `"APHIRI OMPHEMETSE"`, `"ASSEGAAI TSHEGOFATSO CHARMAINE"`, `"BABEDI THABISO JUNIOR"`):**
+     - On `image-1.png` (Grade 8 & 9 Senior Phase), Column C is titled `"Learners in alphabetical order per class\nSurname and first names"` and values are space-separated `"SURNAME FIRSTNAMES"` **without a comma** (whereas `image-2.png` Grade 10–12 uses `"Learner Name"` with comma-separated `"SURNAME, FirstName, MiddleName"`).
+     - Previously, `hasCombinedLearnerName` did not match that header, Tier 2 (`sFieldMap`) mapped `"Learners in alphabetical order per class Surname and first names"` only to `Last Name` (leaving `First Name` empty so `validBothNames` skipped every Grade 8 & 9 row), and the no-comma split branch assigned `parts[0]` to `First Name` instead of `Last Name`.
+     - Added `splitSurnameAndFirstNames(rawVal)` in `web/app.ts` and `_split_surname_and_first_names(raw_val)` in `sheetqms/workbooks.py`: when there is no comma, `parts[0]` is `Last Name` (Surname) and `parts.slice(1).join(' ')` is `First Name` (e.g., `"ASSEGAAI TSHEGOFATSO CHARMAINE"` $\rightarrow$ `Last Name: "Assegaai"`, `First Name: "Tshegofatso Charmaine"`), plus a `byFullName` (`${ln} ${fn}`) lookup index so multi-word surnames also match seamlessly.
+  2. **Multi-Row Header Overwrite Guard (`"Learner's Progress"` vs `"Home Language"`):**
+     - Expanded `HEADER_KEYWORDS_RE` with `language|creative|arts|economic|management|male|female|deviation` and restricted the `prevRow` fallback in `matrixToTable` and `_normalize_school_sheet_rows` so merged group banners like `"Learner's Progress"` never overwrite subject headers like `"Home Language"` in the sub-header row below.
+  3. **Multiline 13-Digit `Admission Number` (`"1210075634087\n1210075634087"`) & `saIdCols`:**
+     - Updated `extractDobFromSaId` (`web/app.ts`) and `_extract_dob_from_sa_id_str` (`sheetqms/workbooks.py`) to inspect individual lines/tokens before stripping non-digits (so repeated multiline 13-digit `Admission Number` cells don't concatenate into 26 digits) and added `'admission'` to `saIdCols` / `acc_idx` and `NON_PERSON_NAME_RE`.
+  4. **`"Male/Female"` Gender Header, `"Grade: | Grade 08"` Adjacent-Cell Banner, & Numeric Marks in `Home Language` / `First Additional Language`:**
+     - Added `'Male/Female'` to `normGender` and `_normalize_school_sheet_rows`, joined row cells when scanning for `Grade: | Grade 08` banners, excluded `"Grade 08"` from `isDataValueCell`, and ensured numeric marks (`33`, `46`) in `Home Language` / `First Additional Language` columns on `image-1.png` are never treated as language names (`localStorage` key bumped to `'sheetqms_static_state_v10'`).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
