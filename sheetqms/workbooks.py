@@ -305,11 +305,16 @@ def candidate_headers(rows, bold_rows=None):
         text = [v for v in filled if isinstance(v, str) and not v.startswith('=')]
         if len(text) < 2 or len(text) < len(filled) * 0.65:
             continue
-        if len({norm(v) for v in text}) != len(text):
+        if len({norm(v) for v in text}) < 2:
             continue
         score = len(text) * 2 + (5 if number in bold_rows else 0) - number / 100
-        # Penalize banner/title/metadata rows so real column headers below them win
-        if any(len(str(v).strip()) > 35 or ':' in str(v) or norm(v).startswith(('synthetic', 'fy20', 'report', 'prepared', 'confidential', 'summary —', 'summary -', 'page ', 'date')) for v in text):
+        if len({norm(v) for v in text}) != len(text):
+            score -= 2
+        # Penalize data rows containing emails, phone numbers, or specific Grade X values
+        if any('@' in str(v) or re.fullmatch(r'(?:\+27|0)[1-9]\d{7,8}', re.sub(r'[\s()-]', '', str(v))) or re.fullmatch(r'grade\s*\d{1,2}[a-z]?', str(v).strip(), re.I) for v in text):
+            score -= 18
+        # Penalize banner/title/metadata rows so real column headers below them win (never penalize 'Date of Birth')
+        if any(len(str(v).strip()) > 35 or ':' in str(v) or norm(v).startswith(('synthetic', 'fy20', 'report', 'prepared', 'confidential', 'summary —', 'summary -', 'page ', 'date:')) for v in text):
             score -= 8
         # Penalize total/subtotal summary rows so they are never picked as headers
         if norm(text[0]) in {'total', 'subtotal', 'grand total'}:

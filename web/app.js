@@ -26817,6 +26817,7 @@
   var customers = [];
   var previousFocus = null;
   var staticMode = false;
+  var showAllRows = false;
   async function api(path, body, method = "POST") {
     if (staticMode) return localApi(path, body, method);
     const headers = {};
@@ -27315,12 +27316,17 @@
             <tr>${headers.map((h) => canMapCols ? `<th><div class="th-col-wrap"><span>${escapeHTML(h)}</span><select class="col-map-select ${activeFieldMap[h] ? "" : "unmapped"}" data-map-target="${escapeHTML(h)}" aria-label="Source column for ${escapeHTML(h)}"><option value="">${activeFieldMap[h] ? "\u2014 Unmap \u2014" : "Choose column\u2026"}</option>${srcColHeaders.map((sh) => `<option value="${escapeHTML(sh)}" ${activeFieldMap[h] === sh ? "selected" : ""}>\u2190 ${escapeHTML(sh)}</option>`).join("")}</select></div></th>` : `<th>${escapeHTML(h)}</th>`).join("")}</tr>
           </thead>
           <tbody>
-            ${r?.rows.length ? r.rows.map((row) => `<tr>${headers.map((h) => `<td>${row[h] === null || row[h] === void 0 ? '<span class="missing">Ask in chat</span>' : escapeHTML(row[h])}</td>`).join("")}</tr>`).join("") : `<tr><td class="table-empty" colspan="${headers.length}">${job ? "Click <b>Fill My Sheet</b> on the left to fill your spreadsheet." : "Click <b>Open / Upload File</b> on the left (or type what columns you want in the chat box) to start your spreadsheet."}</td></tr>`}
+            ${r?.rows.length ? (showAllRows ? r.rows : r.rows.slice(0, 200)).map((row) => `<tr>${headers.map((h) => `<td>${row[h] === null || row[h] === void 0 || row[h] === "" ? !release && r.rows.length <= 20 ? '<span class="missing">Ask in chat</span>' : "" : escapeHTML(row[h])}</td>`).join("")}</tr>`).join("") : `<tr><td class="table-empty" colspan="${headers.length}">${job ? "Click <b>Fill My Sheet</b> on the left to fill your spreadsheet." : "Click <b>Open / Upload File</b> on the left (or type what columns you want in the chat box) to start your spreadsheet."}</td></tr>`}
           </tbody>
         </table>
       </div>
+      ${r?.rows && r.rows.length > 200 ? `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-top:8px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;font-size:12.5px;color:var(--muted)"><span>Showing <b>${showAllRows ? r.rows.length : 200}</b> of <b>${r.rows.length}</b> rows in live preview \u2014 all <b>${r.rows.length}</b> rows are included when you click <b>Download Excel (.XLSX)</b>.</span><button id="toggle-all-rows" class="btn small">${showAllRows ? "Show First 200 Rows" : `Show All ${r.rows.length} Rows`}</button></div>` : ""}
     </section>
   </div>`;
+    if ($2("toggle-all-rows")) $2("toggle-all-rows").addEventListener("click", () => {
+      showAllRows = !showAllRows;
+      studio();
+    });
     if ($2("start-guide-inline")) $2("start-guide-inline").addEventListener("click", () => void startInteractiveGuide(0));
     document.querySelectorAll("[data-vcard]").forEach((card) => card.addEventListener("click", () => void busy(card, async () => {
       const act = card.dataset.vcard;
@@ -29087,21 +29093,45 @@
       use_workbook_rules: false
     };
   }
+  var HEADER_KEYWORDS_RE = /\b(id|no|number|adm|admission|lurits|cemis|student|learner|pupil|first|firstname|name|names|forename|given|surname|last|lastname|family|dob|birth|birthdate|gender|sex|grade|gr|class|stream|phone|cell|cellphone|mobile|tel|telephone|contact|email|e-mail|parent|guardian|mother|father|nok|payer|account|address|subject|subjects|mark|marks|percentage|level|term|average|total|subtotal|amount|fee|balance|status|site|branch|location|store|item|sku|code|description|qty|quantity|units|price|cost|rate|category|supplier|vendor|customer|client|period|month|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i;
+  function isDataValueCell(val) {
+    if (val === null || val === void 0) return false;
+    const s = String(val).trim();
+    if (!s) return false;
+    if (s.includes("@") && s.includes(".")) return true;
+    if (/^(?:\+27|0)[1-9]\d{7,8}$/.test(s.replace(/[\s()-]/g, ""))) return true;
+    if (/^\d{10,13}$/.test(s.replace(/\s+/g, ""))) return true;
+    if (/^(?:grade|gr\.?)\s*\d{1,2}[a-z]?$/i.test(s)) return true;
+    if (/^\d{1,2}\s*[a-fA-F]$/.test(s)) return true;
+    if (/^[MFmf]$/.test(s)) return true;
+    if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(s) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$/.test(s)) return true;
+    return false;
+  }
   function pickHeaderIndex(matrix) {
-    let bestIdx = 0, bestScore = -999;
-    for (let i = 0; i < Math.min(matrix.length, 25); i++) {
+    let bestIdx = 0, bestScore = -9999;
+    for (let i = 0; i < Math.min(matrix.length, 15); i++) {
       const row = matrix[i] || [];
       const filled = row.filter((v) => v !== void 0 && v !== null && String(v).trim() !== "");
+      if (filled.length < 2) continue;
       const textCells = filled.filter((v) => typeof v === "string" && !v.trim().startsWith("=") && Number.isNaN(Number(v)));
-      if (textCells.length < 2 || textCells.length < filled.length * 0.65) continue;
+      if (textCells.length < 2) continue;
       const uniq = new Set(textCells.map((v) => String(v).trim().toLowerCase()));
-      if (uniq.size !== textCells.length) continue;
-      let score = textCells.length * 2 - i * 0.02;
+      if (uniq.size < 2) continue;
+      let score = textCells.length * 2 + uniq.size - i * 2.5;
+      let kwHits = 0, dataHits = 0;
+      for (const v of filled) {
+        const s = String(v).trim();
+        if (isDataValueCell(v)) dataHits++;
+        else if (typeof v === "string" && HEADER_KEYWORDS_RE.test(s)) kwHits++;
+      }
+      score += kwHits * 6;
+      score -= dataHits * 14;
+      if (typeof row[0] === "number" || /^\d+$/.test(String(row[0] ?? "").trim())) score -= 12;
       if (textCells.some((v) => {
         const s = String(v).trim().toLowerCase();
-        return s.length > 35 || s.includes(":") || /^(synthetic|fy20|report|prepared|confidential|summary|page |date)/.test(s);
-      })) score -= 8;
-      if (["total", "subtotal", "grand total"].includes(String(textCells[0] || "").trim().toLowerCase())) score -= 10;
+        return s.length > 55 || /^(synthetic|fy20|report generated|prepared by|confidential|summary —|summary -|page \d)/.test(s);
+      })) score -= 10;
+      if (["total", "subtotal", "grand total"].includes(String(textCells[0] || "").trim().toLowerCase())) score -= 15;
       let lastCol = row.length - 1;
       while (lastCol >= 0 && (row[lastCol] === void 0 || row[lastCol] === null || String(row[lastCol]).trim() === "")) lastCol--;
       const contiguous = lastCol >= 1 && row.slice(0, lastCol + 1).every((v) => v !== void 0 && v !== null && String(v).trim() !== "");
@@ -29119,18 +29149,108 @@
   }
   function matrixToTable(sheet, matrix) {
     if (!matrix.length) return { sheet, headers: ["Col1"], rows: [] };
-    const hIdx = pickHeaderIndex(matrix);
-    const rawHead = matrix[hIdx] || [];
-    let endCol = rawHead.length;
-    while (endCol > 0 && (rawHead[endCol - 1] === void 0 || rawHead[endCol - 1] === null || String(rawHead[endCol - 1]).trim() === "")) endCol--;
-    const headers = rawHead.slice(0, Math.max(1, endCol)).map((h, i) => String(h || `Col${i + 1}`).trim());
+    let hIdx = pickHeaderIndex(matrix);
+    const candRow = matrix[hIdx] || [];
+    const candDataHits = candRow.filter((v) => isDataValueCell(v)).length;
+    const candKwHits = candRow.filter((v) => typeof v === "string" && !isDataValueCell(v) && HEADER_KEYWORDS_RE.test(String(v))).length;
+    const headerless = candDataHits >= 2 && candKwHits === 0;
+    let maxCols = 0;
+    for (let i = 0; i < Math.min(matrix.length, 40); i++) {
+      const r = matrix[i] || [];
+      let len = r.length;
+      while (len > 0 && (r[len - 1] === void 0 || r[len - 1] === null || String(r[len - 1]).trim() === "")) len--;
+      if (len > maxCols) maxCols = len;
+    }
+    maxCols = Math.max(1, maxCols);
+    let rawHeaders = [];
+    let dataStartIdx = hIdx + 1;
+    if (headerless) {
+      dataStartIdx = 0;
+      const sampleRows = matrix.slice(0, Math.min(matrix.length, 40));
+      let seenLearnerNames = 0;
+      let seenParentNames = 0;
+      for (let c = 0; c < maxCols; c++) {
+        const vals = sampleRows.map((r) => r?.[c]).filter((v) => v !== void 0 && v !== null && String(v).trim() !== "");
+        const strs2 = vals.map((v) => String(v).trim());
+        if (!strs2.length) {
+          rawHeaders.push(`Col${c + 1}`);
+          continue;
+        }
+        const isEmail = strs2.filter((s) => s.includes("@") && s.includes(".")).length >= Math.max(1, strs2.length * 0.3);
+        const isPhone = strs2.filter((s) => /^(?:\+27|0)[1-9]\d{7,8}$/.test(s.replace(/[\s()-]/g, "")) || /^[1-9]\d{8}$/.test(s.replace(/[\s()-]/g, ""))).length >= Math.max(1, strs2.length * 0.3);
+        const isGrade = strs2.filter((s) => /^(?:grade|gr\.?)\s*\d{1,2}[a-z]?$/i.test(s)).length >= Math.max(1, strs2.length * 0.3);
+        const isClass = strs2.filter((s) => /^\d{1,2}\s*[a-fA-F]$/.test(s)).length >= Math.max(1, strs2.length * 0.3);
+        const isGender = strs2.filter((s) => /^(?:m|f|male|female)$/i.test(s)).length >= Math.max(1, strs2.length * 0.5);
+        const isDob = strs2.filter((s) => /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(s) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$/.test(s)).length >= Math.max(1, strs2.length * 0.3);
+        const isId = c === 0 && strs2.filter((s) => /^\d+$/.test(s) || /^[A-Za-z]+\d+$/.test(s)).length >= Math.max(1, strs2.length * 0.5);
+        const isAllCapsWord = strs2.filter((s) => /^[A-Z\s'-]{2,}$/.test(s) && !/^(?:M|F|GRADE.*)$/.test(s)).length >= Math.max(1, strs2.length * 0.4);
+        const isAlphaName = strs2.filter((s) => /^[A-Za-z\s'-]{2,}$/.test(s) && Number.isNaN(Number(s))).length >= Math.max(1, strs2.length * 0.5);
+        if (isId) rawHeaders.push("Student ID");
+        else if (isDob) rawHeaders.push("Date of Birth");
+        else if (isGender) rawHeaders.push("Gender");
+        else if (isGrade) rawHeaders.push("Grade");
+        else if (isClass) rawHeaders.push("Class");
+        else if (isEmail) rawHeaders.push(c <= 8 ? "Learner Email" : `Parent Email ${c}`);
+        else if (isPhone) rawHeaders.push(c <= 8 ? "Learner Phone" : `Parent Phone ${c}`);
+        else if (isAlphaName) {
+          if (c <= 5 && seenLearnerNames < 2) {
+            if (seenLearnerNames === 0 && isAllCapsWord) rawHeaders.push("Last Name");
+            else if (seenLearnerNames === 0) rawHeaders.push("First Name");
+            else rawHeaders.push(rawHeaders.includes("Last Name") ? "First Name" : "Last Name");
+            seenLearnerNames++;
+          } else {
+            if (isAllCapsWord && !rawHeaders.some((h) => h.startsWith("Parent Last Name"))) rawHeaders.push(`Parent Last Name ${seenParentNames}`);
+            else rawHeaders.push(seenParentNames % 2 === 0 ? `Parent First Name ${seenParentNames}` : `Parent Last Name ${seenParentNames}`);
+            seenParentNames++;
+          }
+        } else {
+          rawHeaders.push(`Col${c + 1}`);
+        }
+      }
+    } else {
+      const rawHead = matrix[hIdx] || [];
+      const prevRow = hIdx > 0 ? matrix[hIdx - 1] || [] : [];
+      let endCol = Math.max(rawHead.length, maxCols);
+      while (endCol > 0 && (rawHead[endCol - 1] === void 0 || rawHead[endCol - 1] === null || String(rawHead[endCol - 1]).trim() === "") && matrix.slice(hIdx + 1, hIdx + 15).every((r) => !r || r[endCol - 1] === void 0 || r[endCol - 1] === null || String(r[endCol - 1]).trim() === "")) endCol--;
+      endCol = Math.max(1, endCol);
+      const seenCounts = {};
+      for (let i = 0; i < endCol; i++) {
+        let h = String(rawHead[i] ?? "").trim();
+        const groupPrefix = String(prevRow[i] ?? "").trim();
+        if (!h && groupPrefix && !isDataValueCell(groupPrefix)) h = groupPrefix;
+        if (!h) h = `Col${i + 1}`;
+        const normH = h.toLowerCase().replace(/_/g, " ").trim();
+        seenCounts[normH] = (seenCounts[normH] || 0) + 1;
+        const occ = seenCounts[normH];
+        if (occ > 1) {
+          if (/^(first\s*name|firstname|name|names|given\s*name|forename)$/.test(normH)) {
+            h = occ === 2 ? "Parent First Name" : `Parent ${occ - 1} First Name`;
+          } else if (/^(last\s*name|lastname|surname|family\s*name)$/.test(normH)) {
+            h = occ === 2 ? "Parent Last Name" : `Parent ${occ - 1} Last Name`;
+          } else if (/^(email|e-mail|email\s*address|contact\s*email)$/.test(normH)) {
+            h = occ === 2 ? "Parent Email" : `Parent ${occ - 1} Email`;
+          } else if (/^(phone|cell|cellphone|mobile|tel|telephone|contact|contact\s*number|cell\s*no|phone\s*number)$/.test(normH)) {
+            h = occ === 2 ? "Parent Phone" : `Parent ${occ - 1} Phone`;
+          } else {
+            h = `${h} (${occ})`;
+          }
+        }
+        rawHeaders.push(h);
+      }
+    }
+    const finalCounts = {};
+    const headers = rawHeaders.map((h) => {
+      const k = h.toLowerCase();
+      finalCounts[k] = (finalCounts[k] || 0) + 1;
+      return finalCounts[k] > 1 ? `${h} (${finalCounts[k]})` : h;
+    });
     const headNorm = headers.map((h) => h.toLowerCase());
     const ignoredLabels = /* @__PURE__ */ new Set(["subtotal", "total", "grand total", "sum", "average", "notes", "source:"]);
     const rows = [];
-    for (const r of matrix.slice(hIdx + 1)) {
+    for (const r of matrix.slice(dataStartIdx)) {
       if (!r || r.every((v) => v === void 0 || v === null || String(v).trim() === "")) continue;
       const rNorm = headers.map((_, i) => String(r[i] ?? "").trim().toLowerCase());
-      if (rNorm.every((v, i) => v === headNorm[i])) continue;
+      if (!headerless && rNorm.every((v, i) => v === headNorm[i])) continue;
       const firstVal = String(r[0] ?? "").trim().toLowerCase();
       if (ignoredLabels.has(firstVal)) continue;
       const obj = {};
@@ -29702,25 +29822,30 @@
         }
       }
     }
-    if (j.unmappedTargets?.length && j.unusedSources?.length) {
-      const tgt = j.unmappedTargets[0];
+    const optionalTargets = /* @__PURE__ */ new Set(["subjects", "subject", "enrolled subjects", "subject list", "courses", "modules", "parent email", "email", "notes", "comments", "total"]);
+    const blockingUnmapped = (j.unmappedTargets || []).filter((t) => !optionalTargets.has(t.toLowerCase().trim()));
+    const mappedCount = headers.length - (j.unmappedTargets || []).length;
+    if (blockingUnmapped.length && j.unusedSources?.length && mappedCount < Math.ceil(headers.length * 0.5)) {
+      const tgt = blockingUnmapped[0];
       j.state = "HELD";
       j.report.status = "HELD";
       j.report.passed_checks = 19;
       j.report.questions = [{ id: `unmapped-${tgt}`, text: `Which column should go into ${tgt}?`, evidence: `Output!${tgt}`, kind: "mapping" }];
-      addMsg(`I loaded ${rows.length} rows into '${j.title}', but I need a quick clarification: which column from your file should go into '${tgt}'? You can pick it from the dropdown under '${tgt}' on the table, or reply here in chat (available columns: ${j.unusedSources.join(", ")}).`);
+      addMsg(`I loaded ${rows.length} rows into '${j.title}', but I need a quick clarification: which column from your file should go into '${tgt}'? You can pick it from the dropdown under '${tgt}' on the table, or reply here in chat (available columns: ${j.unusedSources.slice(0, 10).join(", ")}).`);
       return;
     }
     delete j.missingCell;
-    for (const r of rows) {
-      for (const h of headers) {
-        if (h === "Total") continue;
-        if (r[h] === null || r[h] === void 0 || r[h] === "") {
-          j.missingCell = { entity: String(r[keyCol] || "Row"), category: h };
-          break;
+    if (j.isPivot && rows.length <= 20) {
+      for (const r of rows) {
+        for (const h of headers) {
+          if (h === "Total") continue;
+          if (r[h] === null || r[h] === void 0 || r[h] === "") {
+            j.missingCell = { entity: String(r[keyCol] || "Row"), category: h };
+            break;
+          }
         }
+        if (j.missingCell) break;
       }
-      if (j.missingCell) break;
     }
     if (j.missingCell) {
       const { entity, category } = j.missingCell;
@@ -29738,7 +29863,7 @@
     if (!s.knowledge.some((k) => k.template_name === j.title)) {
       s.knowledge.push({ id: uid(), template_name: j.title, mapping_origin: j.mapping_origin, headers, active: true, plan: j.plan });
     }
-    addMsg(`All done! QMS released this workbook (21/21 checks passed, ${rows.length} rows across ${headers.join(", ")}). Tell me what you'd like to edit or click Download XLSX!`, "verdict");
+    addMsg(`All done! I matched and formatted ${rows.length} rows into '${j.title}' across ${headers.join(", ")}. You can adjust any column using the dropdowns at the top of the table or click Download Excel (.XLSX)!`, "verdict");
   }
   function confirmStaticProposal(s, j) {
     if (!j.proposal) return j;
@@ -29991,21 +30116,32 @@
             ["category", "type", "group", "department", "dept", "class", "family"],
             ["customer", "client", "buyer", "account", "customer name"],
             ["supplier", "vendor", "manufacturer", "partner", "supplier name"],
-            ["student id", "learner id", "admission no", "admission number", "lurits", "lurits no", "student no", "student number", "learner no"],
-            ["first name", "firstname", "learner first name", "student first name", "given name", "forenames"],
-            ["last name", "lastname", "surname", "learner surname", "student surname", "family name"],
-            ["date of birth", "dob", "birth date", "birthdate", "learner dob"],
-            ["grade", "gr", "class grade", "student grade", "learner grade", "year level"],
-            ["subjects", "subject", "enrolled subjects", "subject list", "courses", "modules"],
-            ["parent first name", "parent firstname", "guardian first name", "parent given name"],
-            ["parent last name", "parent lastname", "parent surname", "guardian surname", "guardian last name"],
-            ["parent email", "guardian email", "email", "email address", "contact email"],
-            ["parent phone", "parent cell", "guardian phone", "guardian cell", "cellphone", "cell number", "phone number", "mobile", "telephone", "contact number"]
+            ["student id", "learner id", "admission no", "admission number", "adm no", "adm", "lurits", "lurits no", "cemis", "cemis no", "student no", "student number", "learner no", "learner number", "no", "no.", "#", "row", "seq", "id number", "sa id", "sa id number"],
+            ["first name", "firstname", "learner first name", "student first name", "given name", "forenames", "forename", "names", "first names", "learner name", "student name", "preferred name", "christian name"],
+            ["last name", "lastname", "surname", "learner surname", "student surname", "family name", "learnersurname"],
+            ["date of birth", "dob", "birth date", "birthdate", "learner dob", "d.o.b", "d.o.b.", "birth"],
+            ["grade", "gr", "gr.", "class grade", "student grade", "learner grade", "year level", "curr grade", "current grade", "grade/class"],
+            ["subjects", "subject", "enrolled subjects", "subject list", "courses", "modules", "subject package"],
+            ["parent first name", "parent firstname", "guardian first name", "parent given name", "parent name", "guardian name", "mother name", "mother first name", "father name", "father first name", "parent 1 first name", "parent 1 name", "parent 2 first name", "parent 2 name", "account holder name", "payer name", "nok name"],
+            ["parent last name", "parent lastname", "parent surname", "guardian surname", "guardian last name", "mother surname", "mother last name", "father surname", "father last name", "parent 1 last name", "parent 1 surname", "parent 2 last name", "parent 2 surname"],
+            ["parent email", "guardian email", "mother email", "father email", "parent 1 email", "parent 2 email", "account email", "payer email", "email", "email address", "e-mail", "contact email", "learner email"],
+            ["parent phone", "parent cell", "guardian phone", "guardian cell", "mother cell", "mother phone", "father cell", "father phone", "parent 1 phone", "parent 1 cell", "parent 2 phone", "parent 2 cell", "parent contact", "guardian contact", "cellphone", "cell number", "cell", "cell no", "phone", "phone number", "mobile", "telephone", "tel", "contact number", "learner phone"]
           ];
+          const ACADEMIC_SUBJECT_RE = /\b(math|mathematics|mathematical|english|afrikaans|isizulu|zulu|isixhosa|xhosa|sesotho|sotho|sepedi|pedi|setswana|tswana|tshivenda|venda|xitsonga|tsonga|siswati|swati|isindebele|ndebele|science|sciences|physical|physics|chemistry|life|biology|natural|social|accounting|business|economics|geography|history|technology|tech|cat|computer|it|information|arts|creative|dramatic|drama|music|visual|ems|orientation|tourism|hospitality|consumer|agricultural|agriculture|engineering|egd|religion|language|hl|fal|sal)\b/i;
+          const toTitleCaseName = (s2) => {
+            if (!s2) return s2;
+            if (s2 === s2.toUpperCase() || s2 === s2.toLowerCase()) {
+              return s2.split(/\s+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+            }
+            return s2;
+          };
           const fmtField = (th, val) => {
             if (val === null || val === void 0 || String(val).trim() === "") return null;
             const n = th.toLowerCase().replace(/_/g, " ").trim();
             const s2 = String(val).trim();
+            if (["first name", "firstname", "last name", "lastname", "surname", "parent first name", "parent last name", "guardian first name", "guardian surname"].includes(n)) {
+              return toTitleCaseName(s2);
+            }
             if (["grade", "gr", "class grade", "student grade", "learner grade", "year level"].includes(n)) {
               const m = s2.match(/^(?:grade|gr\.?|g)?\s*(\d{1,2}[a-zA-Z]?)$/i);
               return m ? `Grade ${m[1]}` : s2;
@@ -30033,7 +30169,7 @@
             return !["-", "\u2014", "--", "n/a", "na", "none", "null", "nil", "no", "false", "not taken", "exempt", "absent"].includes(s2.toLowerCase());
           };
           const colType = (psObj, colName) => {
-            const vals = psObj.rows.map((r) => r[colName]).filter((v) => v !== null && v !== void 0 && String(v).trim() !== "");
+            const vals = psObj.rows.slice(0, 50).map((r) => r[colName]).filter((v) => v !== null && v !== void 0 && String(v).trim() !== "");
             if (!vals.length) return "any";
             const numC = vals.filter((v) => typeof v === "number" || !Number.isNaN(Number(v)) && String(v).trim() !== "").length;
             if (numC >= vals.length * 0.7) return "numeric";
@@ -30044,7 +30180,7 @@
           const expType = (th) => {
             const n = th.toLowerCase().replace(/_/g, " ");
             if (/\b(qty|quantity|units|count|price|cost|rate|total|amount|revenue|sales|value|sum|boxes|crates)\b/.test(n)) return "numeric";
-            if (/\b(item|sku|code|id|part|ref)\b/.test(n) && !n.includes("student")) return "code";
+            if (/\b(item|sku|code|part|ref)\b/.test(n) && !n.includes("student")) return "code";
             if (/\b(description|name|title|details|site|branch|location|store|customer|supplier|vendor|category|status)\b/.test(n)) return "text";
             return "any";
           };
@@ -30082,17 +30218,94 @@
                 const shNorm = sh.toLowerCase().replace(/_/g, " ").trim();
                 return candSet.has(shNorm) && isCompat(et, colType(ps, sh));
               });
-              if (matches.length === 1) {
-                sFieldMap[th] = matches[0];
-                usedSrc.add(matches[0]);
+              if (matches.length >= 1) {
+                const exact = matches.find((m) => m.toLowerCase().replace(/_/g, " ").trim() === thNorm) || matches[0];
+                sFieldMap[th] = exact;
+                usedSrc.add(exact);
                 allCovered.add(th);
-                if (!fieldMap[th]) fieldMap[th] = matches[0];
+                if (!fieldMap[th]) fieldMap[th] = exact;
+              }
+            }
+            for (const th of headers) {
+              if (sFieldMap[th] || th === "Total" || listTargets.includes(th)) continue;
+              const thNorm = th.toLowerCase().replace(/_/g, " ").trim();
+              const avail = ps.headers.filter((sh) => !usedSrc.has(sh));
+              let hit;
+              if (thNorm.includes("student id") || thNorm.includes("learner id")) {
+                hit = avail.find((sh) => /\b(adm|student|learner|lurits|cemis|id|no)\b/i.test(sh));
+              } else if (thNorm === "first name") {
+                hit = avail.find((sh) => /\b(first|given|forename|learner\s*name|name|names)\b/i.test(sh) && !/\b(parent|guardian|mother|father|last|surname)\b/i.test(sh));
+              } else if (thNorm === "last name" || thNorm === "surname") {
+                hit = avail.find((sh) => /\b(surname|last|family)\b/i.test(sh) && !/\b(parent|guardian|mother|father)\b/i.test(sh));
+              } else if (thNorm.includes("birth") || thNorm === "dob") {
+                hit = avail.find((sh) => /\b(dob|birth)\b/i.test(sh));
+              } else if (thNorm === "grade") {
+                hit = avail.find((sh) => /\b(grade|gr|level)\b/i.test(sh) && !/average/i.test(sh));
+              } else if (thNorm.includes("parent") && thNorm.includes("first")) {
+                hit = avail.find((sh) => /\b(parent|guardian|mother|father|nok|payer)\b/i.test(sh) && /\b(first|name|names)\b/i.test(sh) && !/surname|last/i.test(sh)) || avail.find((sh) => /\b(first|name|names)\b/i.test(sh) && !/surname|last/i.test(sh));
+              } else if (thNorm.includes("parent") && (thNorm.includes("last") || thNorm.includes("surname"))) {
+                hit = avail.find((sh) => /\b(parent|guardian|mother|father|nok|payer)\b/i.test(sh) && /\b(surname|last)\b/i.test(sh)) || avail.find((sh) => /\b(surname|last)\b/i.test(sh));
+              } else if (thNorm.includes("email")) {
+                hit = avail.find((sh) => /email|e-mail|mail/i.test(sh));
+              } else if (thNorm.includes("phone") || thNorm.includes("cell")) {
+                hit = avail.filter((sh) => /phone|cell|mobile|tel|contact/i.test(sh)).pop();
+              }
+              if (hit) {
+                sFieldMap[th] = hit;
+                usedSrc.add(hit);
+                allCovered.add(th);
+                if (!fieldMap[th]) fieldMap[th] = hit;
+              }
+            }
+            const sampleRows = ps.rows.slice(0, 40);
+            if (sampleRows.length) {
+              const colStats = ps.headers.map((sh, cIdx) => {
+                const vals = sampleRows.map((r) => r[sh]).filter((v) => v !== null && v !== void 0 && String(v).trim() !== "");
+                const strs2 = vals.map((v) => String(v).trim());
+                const n = strs2.length || 1;
+                return {
+                  sh,
+                  cIdx,
+                  filled: strs2.length,
+                  isEmail: strs2.filter((s2) => s2.includes("@") && s2.includes(".")).length / n >= 0.3,
+                  isPhone: strs2.filter((s2) => /^(?:\+27|0)[1-9]\d{7,8}$/.test(s2.replace(/[\s()-]/g, "")) || /^[1-9]\d{8}$/.test(s2.replace(/[\s()-]/g, ""))).length / n >= 0.3,
+                  isGrade: strs2.filter((s2) => /^(?:grade|gr\.?)\s*\d{1,2}[a-z]?$/i.test(s2)).length / n >= 0.3,
+                  isDob: strs2.filter((s2) => /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(s2) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$/.test(s2)).length / n >= 0.3,
+                  isGender: strs2.filter((s2) => /^(?:m|f|male|female)$/i.test(s2)).length / n >= 0.5,
+                  isClass: strs2.filter((s2) => /^\d{1,2}\s*[a-fA-F]$/.test(s2)).length / n >= 0.3,
+                  isId: cIdx === 0 && strs2.filter((s2) => /^\d+$/.test(s2) || /^[A-Za-z]+\d+$/.test(s2)).length / n >= 0.5,
+                  isAllCapsName: strs2.filter((s2) => /^[A-Z\s'-]{2,}$/.test(s2) && !/^(?:M|F|GRADE.*)$/.test(s2)).length / n >= 0.4,
+                  isPersonName: strs2.filter((s2) => /^[A-Za-z\s'-]{2,}$/.test(s2) && Number.isNaN(Number(s2)) && !/^(?:m|f|male|female|grade\s*\d+)$/i.test(s2)).length / n >= 0.5
+                };
+              });
+              const assignPattern = (th, pred, pickLast = false) => {
+                if (sFieldMap[th]) return;
+                const cands = colStats.filter((st) => !usedSrc.has(st.sh) && st.filled > 0 && pred(st));
+                const chosen = pickLast ? cands[cands.length - 1] : cands[0];
+                if (chosen) {
+                  sFieldMap[th] = chosen.sh;
+                  usedSrc.add(chosen.sh);
+                  allCovered.add(th);
+                  if (!fieldMap[th]) fieldMap[th] = chosen.sh;
+                }
+              };
+              for (const th of headers) {
+                const thN = th.toLowerCase().trim();
+                if (thN === "student id" || thN === "learner id") assignPattern(th, (st) => st.isId);
+                else if (thN === "date of birth" || thN === "dob") assignPattern(th, (st) => st.isDob);
+                else if (thN === "grade") assignPattern(th, (st) => st.isGrade);
+                else if (thN === "last name" || thN === "surname") assignPattern(th, (st) => st.cIdx <= 5 && st.isPersonName && st.isAllCapsName) || assignPattern(th, (st) => st.cIdx <= 5 && st.isPersonName);
+                else if (thN === "first name") assignPattern(th, (st) => st.cIdx <= 5 && st.isPersonName);
+                else if (thN === "parent first name") assignPattern(th, (st) => st.cIdx >= 6 && st.isPersonName && !st.isAllCapsName, true) || assignPattern(th, (st) => st.cIdx >= 6 && st.isPersonName);
+                else if (thN === "parent last name") assignPattern(th, (st) => st.cIdx >= 6 && st.isPersonName && st.isAllCapsName, true) || assignPattern(th, (st) => st.cIdx >= 6 && st.isPersonName, true);
+                else if (thN.includes("email")) assignPattern(th, (st) => st.isEmail, true);
+                else if (thN.includes("phone") || thN.includes("cell")) assignPattern(th, (st) => st.isPhone, true);
               }
             }
             let sPeriod = "", sCols = [];
             if (listTargets.length && !sFieldMap[listTargets[0]]) {
-              const candSubj = ps.headers.filter((sh) => !usedSrc.has(sh) && !nonListAliases.has(sh.toLowerCase().replace(/_/g, " ").trim()) && !skipMeta.has(sh.toLowerCase().trim()));
-              if (candSubj.length >= 2) {
+              const candSubj = ps.headers.filter((sh) => !usedSrc.has(sh) && !nonListAliases.has(sh.toLowerCase().replace(/_/g, " ").trim()) && !skipMeta.has(sh.toLowerCase().trim()) && ACADEMIC_SUBJECT_RE.test(sh));
+              if (candSubj.length >= 1) {
                 sPeriod = listTargets[0];
                 sCols = candSubj;
                 allCovered.add(sPeriod);
@@ -30139,15 +30352,59 @@
             }
           } else {
             const sp = sourcePlans[0];
-            rows = parsed.rows.map((r) => {
+            const allH = parsed.headers;
+            const emailCols = allH.filter((h) => /email|mail/i.test(h) || parsed.rows.slice(0, 25).some((r) => String(r[h] ?? "").includes("@")));
+            const phoneCols = allH.filter((h) => /phone|cell|mobile|tel/i.test(h) || parsed.rows.slice(0, 25).some((r) => /^(?:\+27|0)[1-9]\d{7,8}$/.test(String(r[h] ?? "").replace(/[\s()-]/g, ""))));
+            const rightCols = allH.slice(Math.min(6, allH.length));
+            const parentFirstCols = rightCols.filter((h) => /first|name/i.test(h) && !/surname|last|email|phone|cell/i.test(h));
+            const parentLastCols = rightCols.filter((h) => /surname|last/i.test(h));
+            rows = parsed.rows.map((r, rIdx) => {
               const obj = {};
               headers.forEach((h) => {
                 const sc = sp.field_map[h];
-                obj[h] = sc ? fmtField(h, r[sc]) : null;
+                let val = sc ? fmtField(h, r[sc]) : null;
+                const hn = h.toLowerCase().trim();
+                if (val === null || val === "") {
+                  if (hn === "student id" && r[allH[0]] !== null && r[allH[0]] !== void 0) {
+                    val = String(r[allH[0]]);
+                  } else if (hn === "parent email") {
+                    for (const ec of [...emailCols].reverse()) {
+                      if (r[ec]) {
+                        val = fmtField(h, r[ec]);
+                        break;
+                      }
+                    }
+                  } else if (hn === "parent phone") {
+                    for (const pc of [...phoneCols].reverse()) {
+                      if (r[pc]) {
+                        val = fmtField(h, r[pc]);
+                        break;
+                      }
+                    }
+                  } else if (hn === "parent first name") {
+                    for (const fc of parentFirstCols) {
+                      if (r[fc]) {
+                        val = fmtField(h, r[fc]);
+                        break;
+                      }
+                    }
+                  } else if (hn === "parent last name") {
+                    for (const lc of parentLastCols) {
+                      if (r[lc]) {
+                        val = fmtField(h, r[lc]);
+                        break;
+                      }
+                    }
+                  }
+                }
+                obj[h] = val;
               });
               if (sp.period && sp.columns.length) {
                 const taken = sp.columns.filter((c) => isPresentMark(r[c])).map((c) => c.replace(/\s*(?:\(%?\)|%|mark|percent|percentage)\s*$/i, "").trim() || c.trim());
                 obj[sp.period] = taken.join("; ");
+              }
+              if (headers.includes("Student ID") && (obj["Student ID"] === null || obj["Student ID"] === "")) {
+                obj["Student ID"] = `STU${String(rIdx + 1).padStart(4, "0")}`;
               }
               return obj;
             });
@@ -30162,6 +30419,7 @@
           state: "MAPPED",
           trace_id: uid().slice(0, 12),
           caseName: "custom",
+          isPivot,
           customHeaders: headers,
           customRows: rows,
           rawSourceRows: parsed.rows,
