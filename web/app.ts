@@ -1935,7 +1935,7 @@ let memStaticState:any=null;
 function loadStaticState():any{
   if(memStaticState)return memStaticState;
   try{
-    const raw=localStorage.getItem('sheetqms_static_state_v3');
+    const raw=localStorage.getItem('sheetqms_static_state_v6');
     if(raw){
       const parsed=JSON.parse(raw);
       if(parsed&&parsed.jobs){
@@ -1961,7 +1961,7 @@ function loadStaticState():any{
 }
 function saveStaticState(s:any){
   memStaticState=s;
-  try{localStorage.setItem('sheetqms_static_state_v3',JSON.stringify(s))}catch{}
+  try{localStorage.setItem('sheetqms_static_state_v6',JSON.stringify(s))}catch{}
 }
 
 function makeStaticSampleJob(caseName:string):any{
@@ -2075,8 +2075,13 @@ const HEADER_KEYWORDS_RE=/\b(id|no|number|accession|adm|admission|lurits|cemis|s
 
 function extractDobFromSaId(rawVal:any):{id13:string|null;dob:string|null}{
   if(rawVal===null||rawVal===undefined)return {id13:null,dob:null};
-  const digits=String(rawVal).trim().replace(/[\s-]/g,'');
-  if(!/^\d{11,13}$/.test(digits))return {id13:null,dob:null};
+  let s=String(rawVal).trim().replace(/\.0+$/,'');
+  if(/^\d+(\.\d+)?e\+\d+$/i.test(s)){
+    const n=Number(s);
+    if(Number.isFinite(n))s=Math.round(n).toString();
+  }
+  const digits=s.replace(/[\s-]/g,'');
+  if(!/^\d{10,13}$/.test(digits))return {id13:null,dob:null};
   const padded=digits.padStart(13,'0');
   const yy=Number(padded.slice(0,2));
   const mm=Number(padded.slice(2,4));
@@ -2085,6 +2090,90 @@ function extractDobFromSaId(rawVal:any):{id13:string|null;dob:string|null}{
   const year=yy<=26?2000+yy:1900+yy;
   const dob=`${String(year).padStart(4,'0')}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
   return {id13:padded,dob};
+}
+
+const MONTH_NAME_MAP:Record<string,number>={jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,april:4,may:5,jun:6,june:6,jul:7,july:7,aug:8,august:8,sep:9,sept:9,september:9,oct:10,october:10,nov:11,november:11,dec:12,december:12};
+
+function normalizeDateValue(rawVal:any):string|null{
+  if(rawVal===null||rawVal===undefined)return null;
+  if(rawVal instanceof Date&&!Number.isNaN(rawVal.getTime())){
+    const adj=new Date(rawVal.getTime()+12*3600*1000);
+    return adj.toISOString().slice(0,10);
+  }
+  if(typeof rawVal==='number'&&Number.isFinite(rawVal)){
+    // Excel serial date (between 1968 and 2036: 25000..50000)
+    if(rawVal>=20000&&rawVal<=50000&&Math.floor(rawVal)===rawVal){
+      const dt=new Date(Math.round((rawVal-25569)*86400*1000)+12*3600*1000);
+      if(!Number.isNaN(dt.getTime()))return dt.toISOString().slice(0,10);
+    }
+  }
+  const s=String(rawVal).trim();
+  if(!s)return null;
+  // 1. YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD (with optional time)
+  const m1=s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\b|T|\s)/);
+  if(m1){
+    const y=Number(m1[1]),mo=Number(m1[2]),d=Number(m1[3]);
+    if(y>=1900&&y<=2100&&mo>=1&&mo<=12&&d>=1&&d<=31){
+      return `${String(y).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+  }
+  // 2. DD/MM/YYYY or DD-MM-YYYY or MM/DD/YYYY
+  const m2=s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:\b|\s|$)/);
+  if(m2){
+    let d=Number(m2[1]),mo=Number(m2[2]);
+    const y=Number(m2[3]);
+    if(mo>12&&d<=12){const tmp=d;d=mo;mo=tmp}
+    if(y>=1900&&y<=2100&&mo>=1&&mo<=12&&d>=1&&d<=31){
+      return `${String(y).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+  }
+  // 3. 2-digit year DD/MM/YY or YY/MM/DD
+  const m3=s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/);
+  if(m3){
+    const a=Number(m3[1]),b=Number(m3[2]),c=Number(m3[3]);
+    if(b>=1&&b<=12&&a>=1&&a<=31){
+      const y=c<=26?2000+c:1900+c;
+      return `${String(y).padStart(4,'0')}-${String(b).padStart(2,'0')}-${String(a).padStart(2,'0')}`;
+    }
+  }
+  // 4. Month-name date: "14 May 2011", "14-May-2011", "14-May-11", "May 14, 2011"
+  const m4=s.match(/^(\d{1,2})[\s./-]+([A-Za-z]{3,9})[\s,./-]+(\d{2,4})$/);
+  if(m4){
+    const d=Number(m4[1]),mo=MONTH_NAME_MAP[m4[2].toLowerCase()];
+    let y=Number(m4[3]);
+    if(y<100)y=y<=26?2000+y:1900+y;
+    if(mo&&d>=1&&d<=31&&y>=1900&&y<=2100){
+      return `${String(y).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+  }
+  const m5=s.match(/^([A-Za-z]{3,9})[\s.-]+(\d{1,2})[,\s.-]+(\d{2,4})$/);
+  if(m5){
+    const mo=MONTH_NAME_MAP[m5[1].toLowerCase()],d=Number(m5[2]);
+    let y=Number(m5[3]);
+    if(y<100)y=y<=26?2000+y:1900+y;
+    if(mo&&d>=1&&d<=31&&y>=1900&&y<=2100){
+      return `${String(y).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+  }
+  // 5. Compact 8-digit YYYYMMDD (e.g. 20100524)
+  if(/^(?:19|20)\d{6}$/.test(s)){
+    const y=Number(s.slice(0,4)),mo=Number(s.slice(4,6)),d=Number(s.slice(6,8));
+    if(mo>=1&&mo<=12&&d>=1&&d<=31){
+      return `${String(y).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+  }
+  // 6. Excel serial date stored as string "40677"
+  if(/^\d{5}$/.test(s)){
+    const num=Number(s);
+    if(num>=25000&&num<=50000){
+      const dt=new Date(Math.round((num-25569)*86400*1000)+12*3600*1000);
+      if(!Number.isNaN(dt.getTime()))return dt.toISOString().slice(0,10);
+    }
+  }
+  // 7. 10-to-13 digit SA ID / Accession Number
+  const {dob}=extractDobFromSaId(s);
+  if(dob)return dob;
+  return null;
 }
 
 function isDataValueCell(val:any):boolean{
@@ -2228,14 +2317,18 @@ function matrixToTable(sheet:string,matrix:any[][]):{sheet:string;headers:string
     // Composite vertically merged header cells across hIdx-2, hIdx-1, hIdx, and optional sub-header hIdx+1
     const composited:string[]=[];
     for(let i=0;i<endCol;i++){
-      let h=String(rawHead[i]??'').trim();
-      if(!h&&nextIsSubHeader)h=String(nextRow[i]??'').trim();
+      let h=String(rawHead[i]??'').replace(/\s+/g,' ').trim();
+      const subH=nextIsSubHeader?String(nextRow[i]??'').replace(/\s+/g,' ').trim():'';
+      const p1=String(prevRow1[i]??'').replace(/\s+/g,' ').trim();
+      const p2=String(prevRow2[i]??'').replace(/\s+/g,' ').trim();
+      if(!h&&subH)h=subH;
+      else if(h&&subH&&!HEADER_KEYWORDS_RE.test(h)&&HEADER_KEYWORDS_RE.test(subH))h=subH;
       if(!h){
-        const p1=String(prevRow1[i]??'').trim();
         if(p1&&!isDataValueCell(p1)&&p1.length<45)h=p1;
+      }else if(!HEADER_KEYWORDS_RE.test(h)&&p1&&HEADER_KEYWORDS_RE.test(p1)&&!isDataValueCell(p1)&&p1.length<45){
+        h=p1;
       }
       if(!h){
-        const p2=String(prevRow2[i]??'').trim();
         if(p2&&!isDataValueCell(p2)&&p2.length<45)h=p2;
       }
       // Clean multi-line GDE Mark Schedule comment header ("Codes: P (Achieved)... Report General Comment")
@@ -2253,19 +2346,26 @@ function matrixToTable(sheet:string,matrix:any[][]):{sheet:string;headers:string
     const isLastRole=(s:string)=>/^(last\s*name|lastname|surname|family\s*name|learner\s*surname|student\s*surname)$/i.test(s);
     const isPhoneRole=(s:string)=>/^(phone|cell|cell#|cell\s*#|cell\s*no|cellphone|mobile|tel|telephone|contact|contact\s*no|contact\s*number|phone\s*number)$/i.test(s);
     const isEmailRole=(s:string)=>/^(email|e-mail|email\s*address|mail|contact\s*email)$/i.test(s);
+    const isDobRole=(s:string)=>/^(date\s*of\s*birth|dob|d\.o\.b\.?|birth\s*date|birthdate|learner\s*dob)$/i.test(s);
+    const isExplicitParentEmailRole=(s:string)=>/\b(parent|guardian|father|mother)\b.*\b(email|e-mail)\b/i.test(s);
 
-    let firstRoleCount=0,lastRoleCount=0,emailRoleCount=0;
+    let firstRoleCount=0,lastRoleCount=0,dobRoleCount=0;
     // Find where the first Parent Name/Surname column starts (any 2nd occurrence of FirstName or LastName role, typically after Grade/Class)
-    let firstParentColIdx=999;
+    let firstParentColIdx=999,lastParentColIdx=-1;
+    let genericEmailAfterParentCount=0;
     {
       let fc=0,lc=0;
       for(let i=0;i<composited.length;i++){
         const n=composited[i].toLowerCase().replace(/_/g,' ').trim();
-        if(isFirstRole(n)){fc++;if(fc===2&&i<firstParentColIdx)firstParentColIdx=i}
-        if(isLastRole(n)){lc++;if(lc===2&&i<firstParentColIdx)firstParentColIdx=i}
+        if(isFirstRole(n)){fc++;if(fc===2&&i<firstParentColIdx)firstParentColIdx=i;if(fc>=2)lastParentColIdx=Math.max(lastParentColIdx,i+2)}
+        if(isLastRole(n)){lc++;if(lc===2&&i<firstParentColIdx)firstParentColIdx=i;if(lc>=2)lastParentColIdx=Math.max(lastParentColIdx,i+1)}
+      }
+      for(let i=0;i<composited.length;i++){
+        const n=composited[i].toLowerCase().replace(/_/g,' ').trim();
+        if(isEmailRole(n)&&i>=firstParentColIdx&&i<=lastParentColIdx)genericEmailAfterParentCount++;
       }
     }
-    let parentPhoneCount=0;
+    let parentPhoneCount=0,parentEmailCount=0;
     for(let i=0;i<composited.length;i++){
       let h=composited[i];
       const normH=h.toLowerCase().replace(/_/g,' ').trim();
@@ -2291,11 +2391,20 @@ function matrixToTable(sheet:string,matrix:any[][]):{sheet:string;headers:string
           else h=`Parent ${parentPhoneCount} Phone`;
         }
       }else if(isEmailRole(normH)){
-        emailRoleCount++;
-        if(i<firstParentColIdx&&firstParentColIdx<999&&emailRoleCount===1)h='Learner Email';
-        else if(emailRoleCount===1)h='Parent 1 Email';
-        else if(emailRoleCount===2)h='Parent 2 Email';
-        else h=`Parent ${emailRoleCount} Email`;
+        // On a 2-parent Bio sheet (Father + Mother blocks), a single generic 'Email' column is the Learner's email, NOT a Parent Email!
+        if(firstParentColIdx<999&&(i<firstParentColIdx||i>lastParentColIdx||genericEmailAfterParentCount<2)){
+          h='Learner Email';
+        }else if(firstParentColIdx<999){
+          parentEmailCount++;
+          h=`Parent ${parentEmailCount} Email`;
+        }
+      }else if(isExplicitParentEmailRole(normH)){
+        parentEmailCount++;
+        h=firstParentColIdx<999?`Parent ${parentEmailCount} Email`:'Parent Email';
+      }else if(isDobRole(normH)){
+        dobRoleCount++;
+        if(dobRoleCount===1)h='Date of Birth';
+        else h=`Parent ${dobRoleCount-1} Date of Birth`;
       }
       rawHeaders.push(h);
     }
@@ -2303,22 +2412,25 @@ function matrixToTable(sheet:string,matrix:any[][]):{sheet:string;headers:string
 
   // Ensure every header string is unique
   const finalCounts:Record<string,number>={};
-  const headers=rawHeaders.map(h=>{
+  const baseHeaders=rawHeaders.map(h=>{
     const k=h.toLowerCase();
     finalCounts[k]=(finalCounts[k]||0)+1;
     return finalCounts[k]>1?`${h} (${finalCounts[k]})`:h;
   });
+  const headers=[...baseHeaders];
 
   const hasCombinedLearnerName=headers.some(h=>/^(learner\s*name|student\s*name|full\s*name|pupil\s*name)$/i.test(h))&&(!headers.includes('First Name')||!headers.includes('Last Name'));
   const combinedNameCol=headers.find(h=>/^(learner\s*name|student\s*name|full\s*name|pupil\s*name)$/i.test(h));
-  const saIdCol=headers.find(h=>/^(accession\s*number|accession\s*no|sa\s*id|sa\s*id\s*number|id\s*number|identity\s*number)$/i.test(h));
+  const saIdCols=headers.filter(h=>/\b(accession|sa\s*id|id\s*number|id\s*no|identity\s*number|identity\s*no|cemis|lurits)\b/i.test(h)&&!/parent|guardian|father|mother/i.test(h));
+  const dobCols=headers.filter(h=>/\b(date\s*of\s*birth|dob|d\.o\.b|birth\s*date|birthdate|birth)\b/i.test(h)&&!/parent|guardian|father|mother|place|country|cert/i.test(h));
   const hasParentBlocks=headers.some(h=>h.startsWith('Parent 1 ')||h.startsWith('Parent 2 '));
+  const hasExplicitParentEmails=headers.some(h=>h==='Parent 1 Email'||h==='Parent 2 Email'||/^(parent|guardian|father|mother)\s*email$/i.test(h));
 
   if(hasCombinedLearnerName){
     if(!headers.includes('Last Name'))headers.push('Last Name');
     if(!headers.includes('First Name'))headers.push('First Name');
   }
-  if(saIdCol&&!headers.some(h=>/^(date\s*of\s*birth|dob|birth\s*date)$/i.test(h))){
+  if((saIdCols.length||dobCols.length)&&!headers.includes('Date of Birth')){
     headers.push('Date of Birth');
   }
   if(bannerGrade&&!headers.some(h=>/^(grade|gr|learner\s*grade)$/i.test(h))){
@@ -2328,20 +2440,21 @@ function matrixToTable(sheet:string,matrix:any[][]):{sheet:string;headers:string
     if(!headers.includes('Parent First Name'))headers.push('Parent First Name');
     if(!headers.includes('Parent Last Name'))headers.push('Parent Last Name');
     if(!headers.includes('Parent Phone'))headers.push('Parent Phone');
-    if(!headers.includes('Parent Email'))headers.push('Parent Email');
+    if(hasExplicitParentEmails&&!headers.includes('Parent Email'))headers.push('Parent Email');
   }
 
-  const headNorm=headers.map(h=>h.toLowerCase());
+  const headNorm=baseHeaders.map(h=>h.toLowerCase());
   const ignoredLabels=new Set(['subtotal','total','grand total','sum','average','notes','source:']);
   const rows:Record<string,any>[]=[];
+  let anyRowHasDob=false;
   for(const r of matrix.slice(dataStartIdx)){
     if(!r||r.every(v=>v===undefined||v===null||String(v).trim()===''))continue;
-    const rNorm=rawHeaders.map((_,i)=>String(r[i]??'').trim().toLowerCase());
+    const rNorm=baseHeaders.map((_,i)=>String(r[i]??'').trim().toLowerCase());
     if(!headerless&&rNorm.every((v,i)=>v===headNorm[i]))continue;
     const firstVal=String(r[0]??'').trim().toLowerCase();
     if(ignoredLabels.has(firstVal))continue;
     const obj:Record<string,any>={};
-    rawHeaders.forEach((h,i)=>{
+    baseHeaders.forEach((h,i)=>{
       const v=r[i];
       obj[h]=v===undefined||v===null||v===''?null:v;
     });
@@ -2358,17 +2471,47 @@ function matrixToTable(sheet:string,matrix:any[][]):{sheet:string;headers:string
         obj['Last Name']=parts.slice(1).join(' ')||null;
       }
     }
-    // 2. Extract Date of Birth (YYYY-MM-DD) & 13-digit SA ID from Accession Number / SA ID Number
-    if(saIdCol&&obj[saIdCol]!==null&&obj[saIdCol]!==undefined){
-      const {id13,dob}=extractDobFromSaId(obj[saIdCol]);
-      if(id13)obj[saIdCol]=id13;
-      if(dob&&!obj['Date of Birth'])obj['Date of Birth']=dob;
+    // 2. Normalize Date of Birth from any DOB / Birth Date column OR SA ID / Accession Number column (or fallback cell scan)
+    let resolvedDob:string|null=normalizeDateValue(obj['Date of Birth']);
+    if(!resolvedDob){
+      for(const dc of dobCols){
+        resolvedDob=normalizeDateValue(obj[dc]);
+        if(resolvedDob)break;
+      }
+    }
+    for(const ic of saIdCols){
+      if(obj[ic]!==null&&obj[ic]!==undefined){
+        const {id13,dob}=extractDobFromSaId(obj[ic]);
+        if(id13)obj[ic]=id13;
+        if(dob&&!resolvedDob)resolvedDob=dob;
+      }
+    }
+    // Fallback: if Date of Birth is still missing on a school sheet row, check all cells on the row for a birth date (1990..2022) or 13-digit SA ID
+    if(!resolvedDob&&(hasParentBlocks||hasCombinedLearnerName||bannerGrade)){
+      for(let cIdx=0;cIdx<baseHeaders.length;cIdx++){
+        const ch=baseHeaders[cIdx];
+        if(/phone|cell|tel|mobile|parent|guardian|father|mother|average|rank|total|mark|\(\s*gr/i.test(ch))continue;
+        const cellVal=r[cIdx];
+        if(cellVal===null||cellVal===undefined||cellVal==='')continue;
+        // Skip small integers (row numbers / grades / marks)
+        if(typeof cellVal==='number'&&cellVal<19000)continue;
+        if(typeof cellVal==='string'&&/^\d{1,9}([.,]\d+)?$/.test(cellVal.trim())&&!/^(?:19|20)\d{6}$/.test(cellVal.trim()))continue;
+        const candDob=normalizeDateValue(cellVal);
+        if(candDob){
+          const yr=Number(candDob.slice(0,4));
+          if(yr>=1990&&yr<=2022){resolvedDob=candDob;break}
+        }
+      }
+    }
+    if(resolvedDob){
+      obj['Date of Birth']=resolvedDob;
+      anyRowHasDob=true;
     }
     // 3. Populate Grade from banner / "(Gr 10)" header if Grade column is not in the sheet
     if(bannerGrade&&!obj['Grade']){
       obj['Grade']=bannerGrade;
     }
-    // 4. Resolve ONE single parent (Father if available, else Mother) so Parent First Name & Parent Last Name never mix!
+    // 4. Resolve ONE single parent (Father if available, else Mother) so Parent First Name, Last Name, Phone & Email never cross-mix!
     if(hasParentBlocks){
       const p1First=obj['Parent 1 First Name']?String(obj['Parent 1 First Name']).trim():'';
       const p1Last=obj['Parent 1 Last Name']?String(obj['Parent 1 Last Name']).trim():'';
@@ -2383,21 +2526,24 @@ function matrixToTable(sheet:string,matrix:any[][]):{sheet:string;headers:string
       if(p1First||p1Last){
         obj['Parent First Name']=p1First||null;
         obj['Parent Last Name']=p1Last||null;
-        obj['Parent Phone']=cleanPhone(obj['Parent 1 Phone'])||cleanPhone(obj['Parent 2 Phone'])||cleanPhone(obj['Learner Phone'])||null;
-        obj['Parent Email']=obj['Parent 1 Email']||obj['Parent 2 Email']||obj['Learner Email']||null;
+        obj['Parent Phone']=cleanPhone(obj['Parent 1 Phone'])||null;
+        obj['Parent Email']=hasExplicitParentEmails?(obj['Parent 1 Email']||null):null;
       }else if(p2First||p2Last){
         obj['Parent First Name']=p2First||null;
         obj['Parent Last Name']=p2Last||null;
-        obj['Parent Phone']=cleanPhone(obj['Parent 2 Phone'])||cleanPhone(obj['Parent 1 Phone'])||cleanPhone(obj['Learner Phone'])||null;
-        obj['Parent Email']=obj['Parent 2 Email']||obj['Parent 1 Email']||obj['Learner Email']||null;
+        obj['Parent Phone']=cleanPhone(obj['Parent 2 Phone'])||null;
+        obj['Parent Email']=hasExplicitParentEmails?(obj['Parent 2 Email']||null):null;
       }else{
         obj['Parent First Name']=null;
         obj['Parent Last Name']=null;
-        obj['Parent Phone']=cleanPhone(obj['Parent 1 Phone'])||cleanPhone(obj['Parent 2 Phone'])||cleanPhone(obj['Learner Phone'])||null;
-        obj['Parent Email']=obj['Parent 1 Email']||obj['Parent 2 Email']||obj['Learner Email']||null;
+        obj['Parent Phone']=cleanPhone(obj['Parent 1 Phone'])||cleanPhone(obj['Parent 2 Phone'])||null;
+        obj['Parent Email']=hasExplicitParentEmails?(obj['Parent 1 Email']||obj['Parent 2 Email']||null):null;
       }
     }
     rows.push(obj);
+  }
+  if(anyRowHasDob&&!headers.includes('Date of Birth')){
+    headers.push('Date of Birth');
   }
   return {sheet,headers,rows};
 }
@@ -2436,14 +2582,22 @@ async function parseUploadedFileSheets(file:File):Promise<Array<{name:string;she
           const ws=wb.Sheets[sName];
           if(!ws)continue;
           const rawMatrix=XLSX.utils.sheet_to_json<any[]>(ws,{header:1,defval:null,raw:true});
-          const matrix:any[][]=rawMatrix.map(row=>(row||[]).map(cell=>{
+          const fmtMatrix=XLSX.utils.sheet_to_json<any[]>(ws,{header:1,defval:null,raw:false});
+          const matrix:any[][]=rawMatrix.map((row,rIdx)=>(row||[]).map((cell,cIdx)=>{
             if(cell instanceof Date&&!Number.isNaN(cell.getTime())){
-              return cell.toISOString().slice(0,10);
+              return new Date(cell.getTime()+12*3600*1000).toISOString().slice(0,10);
+            }
+            if(typeof cell==='number'){
+              const fmtCell=fmtMatrix[rIdx]?.[cIdx];
+              if(typeof fmtCell==='string'&&fmtCell.trim()&&(/[-/.]/.test(fmtCell)||/[A-Za-z]{3}/.test(fmtCell))){
+                const dNorm=normalizeDateValue(fmtCell.trim());
+                if(dNorm)return dNorm;
+              }
             }
             if(typeof cell==='string'){
               const s=cell.trim();
               if(!s)return null;
-              if(!/^0\d+/.test(s)&&!/^\d{11,}$/.test(s)&&!Number.isNaN(Number(s)))return Number(s);
+              if(!/^0\d+/.test(s)&&!/^\d{10,}$/.test(s)&&!Number.isNaN(Number(s)))return Number(s);
               return s;
             }
             return cell;
@@ -2481,14 +2635,22 @@ async function parseUploadedFile(file:File):Promise<{name:string;sheet:string;he
         const ws=wb.Sheets[chosenName];
         if(ws){
           const rawMatrix=XLSX.utils.sheet_to_json<any[]>(ws,{header:1,defval:null,raw:true});
-          const matrix:any[][]=rawMatrix.map(row=>(row||[]).map(cell=>{
+          const fmtMatrix=XLSX.utils.sheet_to_json<any[]>(ws,{header:1,defval:null,raw:false});
+          const matrix:any[][]=rawMatrix.map((row,rIdx)=>(row||[]).map((cell,cIdx)=>{
             if(cell instanceof Date&&!Number.isNaN(cell.getTime())){
-              return cell.toISOString().slice(0,10);
+              return new Date(cell.getTime()+12*3600*1000).toISOString().slice(0,10);
+            }
+            if(typeof cell==='number'){
+              const fmtCell=fmtMatrix[rIdx]?.[cIdx];
+              if(typeof fmtCell==='string'&&fmtCell.trim()&&(/[-/.]/.test(fmtCell)||/[A-Za-z]{3}/.test(fmtCell))){
+                const dNorm=normalizeDateValue(fmtCell.trim());
+                if(dNorm)return dNorm;
+              }
             }
             if(typeof cell==='string'){
               const s=cell.trim();
               if(!s)return null;
-              if(!/^0\d+/.test(s)&&!/^\d{11,}$/.test(s)&&!Number.isNaN(Number(s)))return Number(s);
+              if(!/^0\d+/.test(s)&&!/^\d{10,}$/.test(s)&&!Number.isNaN(Number(s)))return Number(s);
               return s;
             }
             return cell;
@@ -3180,6 +3342,7 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
       }
       const keyCol=headers.find(h=>!periodSet.has(h.toLowerCase())&&h.toLowerCase()!=='total')||headers[0]||'Site';
       let rows:Record<string,any>[]=[];
+      const mergedRawRows:Record<string,any>[]=[];
       let unmappedTargets:string[]=[];
       let unusedSources:string[]=[];
       const fieldMap:Record<string,string>={};
@@ -3258,8 +3421,8 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
           ['subjects','subject','enrolled subjects','subject list','courses','modules','subject package'],
           ['parent first name','parent firstname','guardian first name','parent given name','parent name','guardian name','mother name','mother first name','father name','father first name','parent 1 first name','parent 1 name','parent 2 first name','parent 2 name','account holder name','payer name','nok name'],
           ['parent last name','parent lastname','parent surname','guardian surname','guardian last name','mother surname','mother last name','father surname','father last name','parent 1 last name','parent 1 surname','parent 2 last name','parent 2 surname'],
-          ['parent email','guardian email','mother email','father email','parent 1 email','parent 2 email','account email','payer email','email','email address','e-mail','contact email','learner email'],
-          ['parent phone','parent cell','guardian phone','guardian cell','mother cell','mother phone','father cell','father phone','parent 1 phone','parent 1 cell','parent 2 phone','parent 2 cell','parent contact','guardian contact','cellphone','cell number','cell','cell#','cell #','cell no','phone','phone number','mobile','telephone','tel','contact number','learner phone']
+          ['parent email','guardian email','mother email','father email','parent 1 email','parent 2 email','account email','payer email'],
+          ['parent phone','parent cell','guardian phone','guardian cell','mother cell','mother phone','father cell','father phone','parent 1 phone','parent 1 cell','parent 2 phone','parent 2 cell','parent contact','guardian contact','cellphone','cell number','cell','cell#','cell #','cell no','phone','phone number','mobile','telephone','tel','contact number']
         ];
         const ACADEMIC_SUBJECT_RE=/\b(math|mathematics|mathematical|literacy|english|afrikaans|isizulu|zulu|isixhosa|xhosa|sesotho|sotho|sepedi|pedi|setswana|tswana|tshivenda|venda|xitsonga|tsonga|siswati|swati|isindebele|ndebele|science|sciences|physical|physics|chemistry|life|biology|natural|social|accounting|business|economics|geography|history|technology|tech|cat|computer|applications|it|information|arts|creative|dramatic|drama|music|visual|ems|orientation|tourism|hospitality|consumer|agricultural|agriculture|engineering|egd|religion|language|additional|home\s+language|hl|fal|sal)\b|\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)/i;
         const NON_SUBJECT_HEADER_RE=/\b(average|rank|total|subtotal|code|codes|comment|deviation|obtained|number|accession|gender|learner\s*name|student\s*name|first\s*name|last\s*name|surname|parent|guardian|mother|father|phone|cell|email|dob|birth|class)\b|^(home\s+language|first\s+additional\s+language|second\s+additional\s+language|language\s+of\s+learning.*|lolts?|preferred\s+language)$/i;
@@ -3289,13 +3452,7 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
             return m?`Grade ${m[1]}`:s;
           }
           if(['date of birth','dob','birth date','birthdate','learner dob'].includes(n)){
-            const m1=s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
-            if(m1)return `${m1[1].padStart(4,'0')}-${m1[2].padStart(2,'0')}-${m1[3].padStart(2,'0')}`;
-            const m2=s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
-            if(m2)return `${m2[3].padStart(4,'0')}-${m2[2].padStart(2,'0')}-${m2[1].padStart(2,'0')}`;
-            const {dob}=extractDobFromSaId(s);
-            if(dob)return dob;
-            return s;
+            return normalizeDateValue(val)||s;
           }
           if(/phone|cell|mobile|telephone|contact number/.test(n)){
             if(/^0+$/.test(s))return null;
@@ -3390,17 +3547,20 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
             }else if(thNorm==='last name'||thNorm==='surname'){
               hit=avail.find(sh=>/\b(surname|last|family)\b/i.test(sh)&&!/\b(parent|guardian|mother|father)\b/i.test(sh));
             }else if(thNorm.includes('birth')||thNorm==='dob'){
-              hit=avail.find(sh=>/\b(dob|birth)\b/i.test(sh));
+              hit=avail.find(sh=>/(?:dob|birth)/i.test(sh)&&!/parent|guardian|father|mother/i.test(sh));
             }else if(thNorm==='grade'){
               hit=avail.find(sh=>/\b(grade|gr|level)\b/i.test(sh)&&!/average|\(\s*gr/i.test(sh));
             }else if(thNorm.includes('parent')&&thNorm.includes('first')){
               hit=avail.find(sh=>/^parent\s*first\s*name$/i.test(sh))||avail.find(sh=>/\b(parent|guardian|mother|father|nok|payer)\b/i.test(sh)&&/\b(first|name|names)\b/i.test(sh)&&!/surname|last/i.test(sh));
             }else if(thNorm.includes('parent')&&(thNorm.includes('last')||thNorm.includes('surname'))){
               hit=avail.find(sh=>/^parent\s*last\s*name$/i.test(sh))||avail.find(sh=>/\b(parent|guardian|mother|father|nok|payer)\b/i.test(sh)&&/\b(surname|last)\b/i.test(sh));
+            }else if(thNorm.includes('parent')&&thNorm.includes('email')){
+              // Only map Parent Email if the sheet has an explicit Parent/Guardian/Father/Mother Email column (NEVER map Learner Email or generic Email on a school Bio sheet!)
+              hit=avail.find(sh=>/^parent\s*email$/i.test(sh))||avail.find(sh=>/\b(parent|guardian|father|mother|nok|payer)\b.*\b(email|e-mail)\b/i.test(sh));
             }else if(thNorm.includes('email')){
-              hit=avail.find(sh=>/^parent\s*email$/i.test(sh))||avail.find(sh=>/email|e-mail|mail/i.test(sh));
+              hit=avail.find(sh=>/email|e-mail/i.test(sh));
             }else if(thNorm.includes('phone')||thNorm.includes('cell')){
-              hit=avail.find(sh=>/^parent\s*phone$/i.test(sh))||avail.filter(sh=>/phone|cell|mobile|tel|contact/i.test(sh)).pop();
+              hit=avail.find(sh=>/^parent\s*phone$/i.test(sh))||avail.filter(sh=>(/phone|cell|mobile|tel|contact/i.test(sh))&&!/^learner\s*phone$/i.test(sh)).pop();
             }
             if(hit){
               sFieldMap[th]=hit;
@@ -3410,6 +3570,7 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
             }
           }
           // Tier 3: Data-Content Pattern Match across actual rows
+          const isBioParentSheet=ps.headers.some(sh=>sh.startsWith('Parent 1 ')||sh.startsWith('Parent 2 '))&&!ps.headers.some(sh=>/\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)/i.test(sh));
           const sampleRows=ps.rows.slice(0,40);
           if(sampleRows.length){
             const colStats=ps.headers.map((sh,cIdx)=>{
@@ -3421,7 +3582,7 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
                 isEmail:strs.filter(s=>s.includes('@')&&s.includes('.')).length/n>=0.3,
                 isPhone:strs.filter(s=>/^(?:\+27|0)[1-9]\d{7,8}$/.test(s.replace(/[\s()-]/g,''))||/^[1-9]\d{8}$/.test(s.replace(/[\s()-]/g,''))).length/n>=0.3,
                 isGrade:strs.filter(s=>/^(?:grade|gr\.?)\s*\d{1,2}[a-z]?$/i.test(s)).length/n>=0.3,
-                isDob:strs.filter(s=>/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(s)||/^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$/.test(s)).length/n>=0.3,
+                isDob:strs.filter(s=>Boolean(normalizeDateValue(s))&&!/^\d{1,4}$/.test(s)).length/n>=0.3,
                 isGender:strs.filter(s=>/^(?:m|f|male|female)$/i.test(s)).length/n>=0.5,
                 isClass:strs.filter(s=>/^\d{1,2}\s*[a-fA-F]$/.test(s)).length/n>=0.3,
                 isId:cIdx<=1&&strs.filter(s=>/^\d+$/.test(s)||/^[A-Za-z]+\d+$/.test(s)).length/n>=0.5,
@@ -3449,13 +3610,12 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
               else if(thN==='first name')assignPattern(th,st=>st.cIdx<=5&&st.isPersonName);
               else if(thN==='parent first name')assignPattern(th,st=>st.cIdx>=6&&st.isPersonName&&!st.isAllCapsName,true)||assignPattern(th,st=>st.cIdx>=6&&st.isPersonName);
               else if(thN==='parent last name')assignPattern(th,st=>st.cIdx>=6&&st.isPersonName&&st.isAllCapsName,true)||assignPattern(th,st=>st.cIdx>=6&&st.isPersonName,true);
-              else if(thN.includes('email'))assignPattern(th,st=>st.isEmail,true);
+              else if(thN.includes('email')&&!thN.includes('parent'))assignPattern(th,st=>st.isEmail,true);
               else if(thN.includes('phone')||thN.includes('cell'))assignPattern(th,st=>st.isPhone,true);
             }
           }
 
           let sPeriod='',sCols:string[]=[];
-          const isBioParentSheet=ps.headers.some(sh=>sh.startsWith('Parent 1 ')||sh.startsWith('Parent 2 '))&&!ps.headers.some(sh=>/\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)/i.test(sh));
           if(listTargets.length&&!sFieldMap[listTargets[0]]&&!isBioParentSheet){
             // Only collapse horizontal columns into Subjects if their header names match real academic subjects (or have '(Gr 10)') and are NOT summary/comment/bio-language columns!
             const candSubj=ps.headers.filter(sh=>!usedSrc.has(sh)&&!nonListAliases.has(sh.toLowerCase().replace(/_/g,' ').trim())&&!skipMeta.has(sh.toLowerCase().trim())&&!NON_SUBJECT_HEADER_RE.test(sh.trim())&&ACADEMIC_SUBJECT_RE.test(sh));
@@ -3484,7 +3644,8 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
           const byRealId:Record<string,Record<string,any>>={};
           const byExactName:Record<string,Record<string,any>[]>={};
           const byShortName:Record<string,Record<string,any>[]>={};
-          const rowMeta=new WeakMap<Record<string,any>,{grade:string;gender:string;matchedMarks:boolean;hl?:string;fal?:string}>();
+          const bySurname:Record<string,Record<string,any>[]>={};
+          const rowMeta=new WeakMap<Record<string,any>,{grade:string;gender:string;matchedMarks:boolean;sourceIdx:number;rawRow:Record<string,any>;hl?:string;fal?:string}>();
 
           const normGender=(r:Record<string,any>):string=>{
             const gv=r['Gender']??r['gender']??r['Sex']??r['sex'];
@@ -3515,13 +3676,17 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
               const firstWord=fn.split(/\s+/)[0];
               const shortKey=`${ln}|${firstWord}`;
               (byShortName[shortKey]=byShortName[shortKey]||[]).push(rec);
+              (bySurname[ln]=bySurname[ln]||[]).push(rec);
             }
           };
 
-          const findBestNameMatch=(cands:Record<string,any>[]|undefined,objGr:string,objGen:string,isMarksSheet:boolean):Record<string,any>|undefined=>{
+          const findBestNameMatch=(cands:Record<string,any>[]|undefined,objGr:string,objGen:string,isMarksSheet:boolean,pIdx:number,requireTokenOverlapFrom?:string):Record<string,any>|undefined=>{
             if(!cands||!cands.length)return undefined;
+            const queryTokens=requireTokenOverlapFrom?requireTokenOverlapFrom.split(/\s+/).filter(t=>t.length>=2):[];
             const filtered=cands.filter(c=>{
               const meta=rowMeta.get(c);
+              // NEVER merge two rows that come from the SAME sheet (e.g. two learners on the Bio sheet)!
+              if(meta?.sourceIdx===pIdx)return false;
               if(isMarksSheet&&meta?.matchedMarks)return false;
               const cGr=String(c['Grade']||meta?.grade||'').trim().toLowerCase();
               // STRICT GRADE LOCK: Never match a Grade 10 Mark Schedule learner to a Grade 8, 9, 11, or 12 learner on the Bio sheet!
@@ -3529,6 +3694,10 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
               const cGen=meta?.gender||'';
               // STRICT GENDER LOCK: If both sheets provide Gender (M/F), require Gender to match!
               if(objGen&&cGen&&cGen!==objGen)return false;
+              if(queryTokens.length){
+                const cFnTokens=String(c['First Name']||'').trim().toLowerCase().split(/\s+/).filter(t=>t.length>=2);
+                if(!queryTokens.some(qt=>cFnTokens.includes(qt)))return false;
+              }
               return true;
             });
             return filtered[0];
@@ -3542,6 +3711,9 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
               Object.entries(sp.field_map as Record<string,string>).forEach(([th,sh])=>{
                 obj[th]=fmtField(th,r[sh]);
               });
+              if((!obj['Date of Birth']||obj['Date of Birth']==='')&&r['Date of Birth']){
+                obj['Date of Birth']=fmtField('Date of Birth',r['Date of Birth']);
+              }
               if(sp.period&&sp.columns.length){
                 const taken=sp.columns.filter((c:string)=>isPresentMark(r[c])).map((c:string)=>cleanSubjectName(c));
                 obj[sp.period]=taken.join('; ');
@@ -3561,26 +3733,34 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
               const exactKey=fn&&ln?`${ln}|${fn}`:'';
               const shortKey=fn&&ln?`${ln}|${fn.split(/\s+/)[0]}`:'';
 
-              let targetRec=isRealId?byRealId[kVal]:undefined;
-              if(!targetRec&&exactKey)targetRec=findBestNameMatch(byExactName[exactKey],objGr,objGen,isMarksSheet);
-              if(!targetRec&&shortKey)targetRec=findBestNameMatch(byShortName[shortKey],objGr,objGen,isMarksSheet);
+              let targetRec=isRealId&&byRealId[kVal]&&rowMeta.get(byRealId[kVal])?.sourceIdx!==pIdx?byRealId[kVal]:undefined;
+              if(!targetRec&&exactKey)targetRec=findBestNameMatch(byExactName[exactKey],objGr,objGen,isMarksSheet,pIdx);
+              if(!targetRec&&shortKey)targetRec=findBestNameMatch(byShortName[shortKey],objGr,objGen,isMarksSheet,pIdx);
+              if(!targetRec&&ln&&fn)targetRec=findBestNameMatch(bySurname[ln],objGr,objGen,isMarksSheet,pIdx,fn);
 
               if(!targetRec){
                 targetRec={};
                 headers.forEach(h=>{targetRec![h]=null});
                 rows.push(targetRec);
+                const mergedRaw:Record<string,any>={...r};
+                mergedRawRows.push(mergedRaw);
                 Object.entries(obj).forEach(([k,v])=>{
                   if(v!==null&&v!==undefined&&v!=='')targetRec![k]=v;
                 });
-                rowMeta.set(targetRec,{grade:objGr,gender:objGen,matchedMarks:isMarksSheet,hl:rowHL||undefined,fal:rowFAL||undefined});
+                rowMeta.set(targetRec,{grade:objGr,gender:objGen,matchedMarks:isMarksSheet,sourceIdx:pIdx,rawRow:mergedRaw,hl:rowHL||undefined,fal:rowFAL||undefined});
                 indexRec(targetRec);
               }else{
-                const prevMeta=rowMeta.get(targetRec)||{grade:objGr,gender:objGen,matchedMarks:false};
+                const prevMeta=rowMeta.get(targetRec)||{grade:objGr,gender:objGen,matchedMarks:false,sourceIdx:0,rawRow:{}};
                 if(isMarksSheet)prevMeta.matchedMarks=true;
                 if(!prevMeta.grade&&objGr)prevMeta.grade=objGr;
                 if(!prevMeta.gender&&objGen)prevMeta.gender=objGen;
                 if(!prevMeta.hl&&rowHL)prevMeta.hl=rowHL;
                 if(!prevMeta.fal&&rowFAL)prevMeta.fal=rowFAL;
+                Object.entries(r).forEach(([rk,rv])=>{
+                  if(rv!==null&&rv!==undefined&&rv!==''&&(prevMeta.rawRow[rk]===undefined||prevMeta.rawRow[rk]===null||prevMeta.rawRow[rk]==='')){
+                    prevMeta.rawRow[rk]=rv;
+                  }
+                });
                 rowMeta.set(targetRec,prevMeta);
                 Object.entries(obj).forEach(([k,v])=>{
                   if(v===null||v===undefined||v==='')return;
@@ -3643,10 +3823,14 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
               const taken=sp.columns.filter((c:string)=>isPresentMark(r[c])).map((c:string)=>cleanSubjectName(c));
               obj[sp.period]=taken.join('; ');
             }
+            if((!obj['Date of Birth']||obj['Date of Birth']==='')&&r['Date of Birth']){
+              obj['Date of Birth']=fmtField('Date of Birth',r['Date of Birth']);
+            }
             if((!obj['Date of Birth']||obj['Date of Birth']==='')&&obj['Student ID']){
               const {dob}=extractDobFromSaId(obj['Student ID']);
               if(dob)obj['Date of Birth']=dob;
             }
+            if(obj['Date of Birth'])allCovered.add('Date of Birth');
             if(headers.includes('Student ID')&&(obj['Student ID']===null||obj['Student ID']==='')){
               obj['Student ID']=`STU${String(rIdx+1).padStart(4,'0')}`;
             }
@@ -3674,9 +3858,10 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
       }
 
       const id=uid(),now=new Date().toISOString();
+      const rawSourceRowsForJob=(!isPivot&&parsedSources.length>1)?(rows.map((_,i)=>(typeof mergedRawRows!=='undefined'&&mergedRawRows[i])?mergedRawRows[i]:(parsed.rows[i]||{}))):parsed.rows;
       const j:any={
         id,title:tplParsed.name,created:now,state:'MAPPED',trace_id:uid().slice(0,12),caseName:'custom',isPivot,
-        customHeaders:headers,customRows:rows,rawSourceRows:parsed.rows,unmappedTargets,unusedSources,run_done:true,
+        customHeaders:headers,customRows:rows,rawSourceRows:rawSourceRowsForJob,unmappedTargets,unusedSources,run_done:true,
         profiles:{template:{name:tplParsed.name,sheets:[{name:tplParsed.sheet,headers}]},sources:parsedSources.map((ps,idx)=>({id:`source-${idx+1}`,name:ps.name,sheets:[{name:ps.sheet,headers:ps.headers,preview:ps.rows.slice(0,5).map(r=>ps.headers.map(h=>r[h]))}]}))},
         plan:{destination:{mode:isPivot?'pivot':'direct',sheet:'Output',key:keyCol,period:'',value:'',categories:isPivot?tplPeriods:[],total:headers.includes('Total')?'Total':'',header_row:1},sources:finalSources,rules:[],questions:[]},
         report:{
@@ -3839,7 +4024,11 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
         if(j.rawSourceRows){
           j.customRows.forEach((r:any,idx:number)=>{
             const raw=j.rawSourceRows[idx]||{};
-            r[tgtCol]=srcCol?(raw[srcCol]??null):null;
+            let mappedVal=srcCol?(raw[srcCol]??null):null;
+            if(mappedVal!==null&&['date of birth','dob','birth date','birthdate','learner dob'].includes(tgtCol.toLowerCase().trim())){
+              mappedVal=normalizeDateValue(mappedVal)||mappedVal;
+            }
+            r[tgtCol]=mappedVal;
           });
         }
         evaluateCustomJob(s,j);
@@ -3963,4 +4152,5 @@ document.addEventListener('keydown',e=>{
     else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
   }
 });
+(window as any).__localApi=localApi;
 void(async()=>{try{boot=await api('/api/bootstrap');if(boot.session_present&&!boot.demo_mode){const r=await api('/api/auth/session');await signedIn(r)}else loginPage()}catch(e){$('root').innerHTML='<div class="loading">Unable to reach the application. Reload the page.</div>'}})();

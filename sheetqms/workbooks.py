@@ -272,14 +272,28 @@ def csv_rows(path):
     return rows
 
 
+_MONTH_MAP = {
+    'jan': 1, 'january': 1, 'feb': 2, 'february': 2, 'mar': 3, 'march': 3,
+    'apr': 4, 'april': 4, 'may': 5, 'jun': 6, 'june': 6,
+    'jul': 7, 'july': 7, 'aug': 8, 'august': 8, 'sep': 9, 'sept': 9, 'september': 9,
+    'oct': 10, 'october': 10, 'nov': 11, 'november': 11, 'dec': 12, 'december': 12,
+}
+
+
 def _extract_dob_from_sa_id_str(raw_val) -> tuple[str | None, str | None]:
     if raw_val is None or isinstance(raw_val, bool):
         return None, None
-    s = str(raw_val).strip()
-    if not s or not re.fullmatch(r'\d+', s):
+    s = re.sub(r'\.0+$', '', str(raw_val).strip())
+    if re.fullmatch(r'\d+(?:\.\d+)?[eE]\+\d+', s):
+        try:
+            s = str(int(round(float(s))))
+        except Exception:
+            pass
+    s_clean = re.sub(r'[\s-]', '', s)
+    if not s_clean or not re.fullmatch(r'\d+', s_clean):
         return None, None
-    digits = s
-    if len(digits) in (11, 12):
+    digits = s_clean
+    if 10 <= len(digits) <= 12:
         padded = digits.zfill(13)
         mm_p, dd_p = int(padded[2:4]), int(padded[4:6])
         if 1 <= mm_p <= 12 and 1 <= dd_p <= 31:
@@ -291,6 +305,76 @@ def _extract_dob_from_sa_id_str(raw_val) -> tuple[str | None, str | None]:
         return None, None
     century = 2000 if yy <= 26 else 1900
     return f'{century + yy:04d}-{mm:02d}-{dd:02d}', digits
+
+
+def _normalize_date_str(raw_val) -> str | None:
+    if raw_val is None or isinstance(raw_val, bool):
+        return None
+    if isinstance(raw_val, (datetime, date)):
+        return raw_val.strftime('%Y-%m-%d')
+    if isinstance(raw_val, (int, float, Decimal)):
+        num = float(raw_val)
+        if 20000 <= num <= 50000:
+            from datetime import timedelta
+            dt = date(1899, 12, 30) + timedelta(days=int(round(num)))
+            if 1955 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+    s = str(raw_val).strip()
+    if not s:
+        return None
+    m_iso = re.match(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s].*)?$', s)
+    if m_iso:
+        y, m, d = int(m_iso.group(1)), int(m_iso.group(2)), int(m_iso.group(3))
+        if 1 <= m <= 12 and 1 <= d <= 31 and 1900 <= y <= 2035:
+            return f'{y:04d}-{m:02d}-{d:02d}'
+    m_dmy4 = re.match(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:\s.*)?$', s)
+    if m_dmy4:
+        a, b, y = int(m_dmy4.group(1)), int(m_dmy4.group(2)), int(m_dmy4.group(3))
+        if 1900 <= y <= 2035:
+            if 1 <= b <= 12 and 1 <= a <= 31:
+                return f'{y:04d}-{b:02d}-{a:02d}'
+            if 1 <= a <= 12 and 1 <= b <= 31:
+                return f'{y:04d}-{a:02d}-{b:02d}'
+    m_dmy2 = re.match(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$', s)
+    if m_dmy2:
+        a, b, c = int(m_dmy2.group(1)), int(m_dmy2.group(2)), int(m_dmy2.group(3))
+        if 1 <= b <= 12 and 1 <= a <= 31:
+            yr = 2000 + c if c <= 26 else 1900 + c
+            return f'{yr:04d}-{b:02d}-{a:02d}'
+        if 1 <= b <= 12 and 1 <= c <= 31:
+            yr = 2000 + a if a <= 26 else 1900 + a
+            return f'{yr:04d}-{b:02d}-{c:02d}'
+    m_mon1 = re.match(r'^(\d{1,2})[\s./-]+([A-Za-z]{3,9})[\s,./-]+(\d{2,4})$', s)
+    if m_mon1:
+        d = int(m_mon1.group(1))
+        mon = _MONTH_MAP.get(m_mon1.group(2).lower())
+        yr = int(m_mon1.group(3))
+        if yr < 100:
+            yr = 2000 + yr if yr <= 26 else 1900 + yr
+        if mon and 1 <= d <= 31 and 1900 <= yr <= 2035:
+            return f'{yr:04d}-{mon:02d}-{d:02d}'
+    m_mon2 = re.match(r'^([A-Za-z]{3,9})[\s./-]+(\d{1,2})[\s,./-]+(\d{2,4})$', s)
+    if m_mon2:
+        mon = _MONTH_MAP.get(m_mon2.group(1).lower())
+        d = int(m_mon2.group(2))
+        yr = int(m_mon2.group(3))
+        if yr < 100:
+            yr = 2000 + yr if yr <= 26 else 1900 + yr
+        if mon and 1 <= d <= 31 and 1900 <= yr <= 2035:
+            return f'{yr:04d}-{mon:02d}-{d:02d}'
+    if re.fullmatch(r'(?:19|20)\d{6}', s):
+        y, m, d = int(s[:4]), int(s[4:6]), int(s[6:8])
+        if 1 <= m <= 12 and 1 <= d <= 31:
+            return f'{y:04d}-{m:02d}-{d:02d}'
+    if re.fullmatch(r'\d{5}(?:\.0+)?', s):
+        serial = int(round(float(s)))
+        if 20000 <= serial <= 50000:
+            from datetime import timedelta
+            dt = date(1899, 12, 30) + timedelta(days=serial)
+            if 1955 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+    dob, _ = _extract_dob_from_sa_id_str(s)
+    return dob
 
 
 def _title_case_person(val) -> str | None:
@@ -407,6 +491,10 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
         last_roles = {'last name', 'lastname', 'surname', 'family name'}
         phone_roles = {'phone', 'cell', 'cell#', 'cell #', 'cell no', 'cellphone', 'mobile', 'tel', 'telephone', 'contact', 'contact number'}
         email_roles = {'email', 'e-mail', 'email address', 'mail', 'contact email'}
+        def _is_dob_col(n_str: str) -> bool:
+            if not n_str or 'place' in n_str or 'country' in n_str or 'certificate' in n_str:
+                return False
+            return n_str in {'date of birth', 'dob', 'birth date', 'birthdate', 'date_of_birth', 'learner dob', 'd.o.b', 'd.o.b.', 'birth'} or bool(re.search(r'(?:^|[\s_.-])(dob|birth\s*date|birthdate|date\s*of\s*birth)(?:$|[\s_.-])', n_str))
         first_parent_col = 999
         fc, lc = 0, 0
         for i, cell in enumerate(h_row):
@@ -419,33 +507,56 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
                 lc += 1
                 if lc == 2 and i < first_parent_col:
                     first_parent_col = i
-        f_cnt, l_cnt, p_cnt, e_cnt = 0, 0, 0, 0
-        clean_h = []
+        email_cols_after_parent = sum(1 for i, cell in enumerate(h_row) if i >= first_parent_col and (norm(cell) in email_roles or bool(re.search(r'\b(parent|guardian|father|mother)\b.*\b(email|e-mail)\b', norm(cell)))))
+        f_cnt, l_cnt, p_cnt, e_cnt, dob_cnt = 0, 0, 0, 0, 0
+        raw_clean_h = []
         for i, cell in enumerate(h_row):
-            raw_s = str(cell or '').strip() or f'Col{i + 1}'
+            raw_s = re.sub(r'\s+', ' ', str(cell or '').strip()) or f'Col{i + 1}'
             n = norm(raw_s)
             if n in first_roles:
                 f_cnt += 1
-                clean_h.append('First Name' if f_cnt == 1 else f'Parent {f_cnt - 1} First Name')
+                raw_clean_h.append('First Name' if f_cnt == 1 else f'Parent {f_cnt - 1} First Name')
             elif n in last_roles:
                 l_cnt += 1
-                clean_h.append('Last Name' if l_cnt == 1 else f'Parent {l_cnt - 1} Last Name')
+                raw_clean_h.append('Last Name' if l_cnt == 1 else f'Parent {l_cnt - 1} Last Name')
             elif n in phone_roles:
                 if i < first_parent_col:
-                    clean_h.append('Learner Phone')
+                    raw_clean_h.append('Learner Phone')
                 else:
                     p_cnt += 1
-                    clean_h.append(f'Parent {p_cnt} Phone')
-            elif n in email_roles:
-                if i < first_parent_col and e_cnt == 0:
-                    clean_h.append('Learner Email')
+                    raw_clean_h.append(f'Parent {p_cnt} Phone')
+            elif n in email_roles or bool(re.search(r'\b(parent|guardian|father|mother)\b.*\b(email|e-mail)\b', n)):
+                is_explicit_parent_em = bool(re.search(r'\b(parent|guardian|father|mother)\b', n))
+                if not is_explicit_parent_em and (i < first_parent_col or email_cols_after_parent == 1):
+                    raw_clean_h.append('Learner Email')
                 else:
                     e_cnt += 1
-                    clean_h.append(f'Parent {e_cnt} Email')
+                    raw_clean_h.append(f'Parent {e_cnt} Email')
+            elif _is_dob_col(n):
+                is_explicit_parent_dob = bool(re.search(r'\b(parent|guardian|father|mother)\b', n))
+                if not is_explicit_parent_dob and dob_cnt == 0:
+                    dob_cnt += 1
+                    raw_clean_h.append('Date of Birth')
+                else:
+                    dob_cnt += 1
+                    raw_clean_h.append(f'Parent {max(1, dob_cnt - 1)} Date of Birth')
             else:
-                clean_h.append(raw_s)
+                raw_clean_h.append(raw_s)
+        seen_h: dict[str, int] = {}
+        clean_h: list[str] = []
+        for h_item in raw_clean_h:
+            cnt = seen_h.get(h_item, 0) + 1
+            seen_h[h_item] = cnt
+            clean_h.append(h_item if cnt == 1 else f'{h_item} ({cnt})')
         idx_map = {h: i for i, h in enumerate(clean_h)}
-        clean_h.extend(['Parent First Name', 'Parent Last Name', 'Parent Phone', 'Parent Email'])
+        has_explicit_parent_emails = ('Parent 1 Email' in idx_map) or ('Parent 2 Email' in idx_map)
+        has_dob_col = 'Date of Birth' in idx_map
+        sa_id_idxs = [i for i, h in enumerate(clean_h) if bool(re.search(r'\b(id|accession|identity|lurits|cemis)\b', h, re.I)) and not bool(re.search(r'parent|guardian|father|mother', h, re.I))]
+        clean_h.extend(['Parent First Name', 'Parent Last Name', 'Parent Phone'])
+        if has_explicit_parent_emails:
+            clean_h.append('Parent Email')
+        if not has_dob_col:
+            clean_h.append('Date of Birth')
         out_rows[header_idx] = clean_h
         for r_i in range(header_idx + 1, len(out_rows)):
             r = list(out_rows[r_i])
@@ -464,13 +575,47 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
                     return ''
                 return s
 
+            # Normalize learner Date of Birth on the row (from Date of Birth column, SA ID column, or date cell scan)
+            resolved_dob = None
+            if has_dob_col:
+                dob_ci = idx_map['Date of Birth']
+                if dob_ci < len(r) and r[dob_ci] is not None:
+                    resolved_dob = _normalize_date_str(r[dob_ci])
+            if not resolved_dob:
+                for sid_i in sa_id_idxs:
+                    if sid_i < len(r) and r[sid_i] is not None:
+                        resolved_dob, padded_id = _extract_dob_from_sa_id_str(r[sid_i])
+                        if padded_id:
+                            r[sid_i] = padded_id
+                        if resolved_dob:
+                            break
+            if not resolved_dob:
+                for c_idx, cell_v in enumerate(r):
+                    if c_idx >= first_parent_col and clean_h[c_idx].startswith(('Parent 1 ', 'Parent 2 ')):
+                        continue
+                    cand_d = _normalize_date_str(cell_v)
+                    if cand_d and 1990 <= int(cand_d[:4]) <= 2022:
+                        resolved_dob = cand_d
+                        break
+            if has_dob_col and resolved_dob:
+                r[idx_map['Date of Birth']] = resolved_dob
+
             p1_fn, p1_ln, p1_ph, p1_em = _cell_str('Parent 1 First Name'), _cell_str('Parent 1 Last Name'), _cell_str('Parent 1 Phone'), _cell_str('Parent 1 Email')
             p2_fn, p2_ln, p2_ph, p2_em = _cell_str('Parent 2 First Name'), _cell_str('Parent 2 Last Name'), _cell_str('Parent 2 Phone'), _cell_str('Parent 2 Email')
-            use_p1 = bool(p1_fn or p1_ln) or (not p2_fn and not p2_ln and bool(p1_ph or p1_em))
-            if use_p1:
-                r.extend([_title_case_person(p1_fn), _title_case_person(p1_ln), p1_ph or None, p1_em or None])
+            if p1_fn or p1_ln:
+                r.extend([_title_case_person(p1_fn), _title_case_person(p1_ln), p1_ph or None])
+                if has_explicit_parent_emails:
+                    r.append(p1_em or None)
+            elif p2_fn or p2_ln:
+                r.extend([_title_case_person(p2_fn), _title_case_person(p2_ln), p2_ph or None])
+                if has_explicit_parent_emails:
+                    r.append(p2_em or None)
             else:
-                r.extend([_title_case_person(p2_fn), _title_case_person(p2_ln), p2_ph or None, p2_em or None])
+                r.extend([None, None, p1_ph or p2_ph or None])
+                if has_explicit_parent_emails:
+                    r.append(p1_em or p2_em or None)
+            if not has_dob_col:
+                r.append(resolved_dob)
             out_rows[r_i] = r
         return out_rows
 

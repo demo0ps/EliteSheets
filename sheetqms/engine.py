@@ -16,7 +16,7 @@ from openpyxl.utils import get_column_letter, range_boundaries
 
 from .models import MappingPlan, DestinationPlan, SourcePlan, Rule, Question, Check, Report
 from .store import canonical, digest
-from .workbooks import book_rows, norm, public_value, builtin_aliases_for, PERIOD_TOKENS
+from .workbooks import book_rows, norm, public_value, builtin_aliases_for, PERIOD_TOKENS, _normalize_date_str
 
 
 MAX_NORMALIZED_RECORDS = 50000
@@ -435,19 +435,10 @@ def format_field_value(target_field: str, value, numeric_fields: set[str], confi
             return f'Grade {m.group(1)}'
         return s
     if nf in {'date of birth', 'dob', 'birth date', 'birthdate', 'date_of_birth', 'learner dob'}:
-        if hasattr(value, 'strftime'):
-            return value.strftime('%Y-%m-%d')
-        s = str(value).strip()
-        m1 = re.match(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})', s)
-        if m1:
-            return f'{int(m1[1]):04d}-{int(m1[2]):02d}-{int(m1[3]):02d}'
-        m2 = re.match(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', s)
-        if m2:
-            return f'{int(m2[3]):04d}-{int(m2[2]):02d}-{int(m2[1]):02d}'
-        sa = validate_and_repair_sa_id(s)
-        if sa.get('dob'):
-            return sa['dob']
-        return s
+        norm_dt = _normalize_date_str(value)
+        if norm_dt:
+            return norm_dt
+        return str(value).strip()
     if any(w in nf for w in ('phone', 'cell', 'mobile', 'telephone', 'contact number')):
         if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
             d = Decimal(str(value))
@@ -808,6 +799,7 @@ def build_rows(records, destination, rules):
             by_real_key: dict[str, tuple[int, str]] = {}
             by_exact_name: dict[tuple[str, str], list[tuple[int, str]]] = {}
             by_short_name: dict[tuple[str, str], list[tuple[int, str]]] = {}
+            by_surname: dict[str, list[tuple[int, str]]] = {}
             row_grades: dict[int, str] = {}
             row_genders: dict[int, str] = {}
             row_hls: dict[int, str] = {}
@@ -817,7 +809,7 @@ def build_rows(records, destination, rules):
             def _is_real_key(kv: str) -> bool:
                 return bool(kv and (len(kv) >= 6 or not kv.isdigit()))
 
-            def _pick_candidate(cands: list[tuple[int, str]], reg: str, rec_gr: str, rec_gen: str, is_marks: bool) -> int | None:
+            def _pick_candidate(cands: list[tuple[int, str]], reg: str, rec_gr: str, rec_gen: str, is_marks: bool, fn_tokens: set[str] | None = None) -> int | None:
                 for idx, r_reg in cands:
                     if r_reg == reg:
                         continue
@@ -831,6 +823,10 @@ def build_rows(records, destination, rules):
                     # STRICT GENDER LOCK: If both sheets provide Gender (M/F), require Gender to match!
                     if rec_gen and c_gen and c_gen != rec_gen:
                         continue
+                    if fn_tokens:
+                        c_fn_tokens = {t for t in norm(rows[idx].get('First Name') or rows[idx].get('first_name')).split() if len(t) >= 2}
+                        if not (fn_tokens & c_fn_tokens):
+                            continue
                     return idx
                 return None
 
@@ -855,6 +851,10 @@ def build_rows(records, destination, rules):
                     target_idx = _pick_candidate(by_exact_name[exact_nm], reg, rec_gr, rec_gen, is_marks)
                 if target_idx is None and short_nm and short_nm in by_short_name:
                     target_idx = _pick_candidate(by_short_name[short_nm], reg, rec_gr, rec_gen, is_marks)
+                if target_idx is None and ln and fn and ln in by_surname:
+                    fn_tok_set = {t for t in fn.split() if len(t) >= 2}
+                    if fn_tok_set:
+                        target_idx = _pick_candidate(by_surname[ln], reg, rec_gr, rec_gen, is_marks, fn_tok_set)
                 if target_idx is not None:
                     merged_row = rows[target_idx]
                     if is_marks:
@@ -902,6 +902,8 @@ def build_rows(records, destination, rules):
                         by_exact_name.setdefault(exact_nm, []).append((new_idx, reg))
                     if short_nm:
                         by_short_name.setdefault(short_nm, []).append((new_idx, reg))
+                    if ln:
+                        by_surname.setdefault(ln, []).append((new_idx, reg))
                     provenance.append({'record_id': record['id'], 'target_row': destination.header_row + new_idx + 1, 'target_fields': list(data), 'sources': record['refs'], 'operation': record.get('operation', 'column mapping')})
             _fill_caps_senior_phase(rows, row_hls, row_fals)
             return rows, provenance, questions
