@@ -37,16 +37,16 @@ BUILTIN_SYNONYMS = [
     ['customer', 'client', 'buyer', 'account', 'customer name', 'client name'],
     ['supplier', 'vendor', 'manufacturer', 'partner', 'supplier name', 'vendor name'],
     ['notes', 'comments', 'remarks', 'memo', 'observation'],
-    ['student id', 'learner id', 'admission no', 'admission number', 'lurits', 'lurits no', 'student no', 'student number', 'learner no', 'student_id'],
+    ['student id', 'learner id', 'accession number', 'accession no', 'admission no', 'admission number', 'lurits', 'lurits no', 'student no', 'student number', 'learner no', 'student_id', 'sa id', 'sa id number', 'id number', 'number', 'no', 'no.'],
     ['first name', 'firstname', 'learner first name', 'student first name', 'given name', 'forenames', 'first_name'],
     ['last name', 'lastname', 'surname', 'learner surname', 'student surname', 'family name', 'last_name'],
     ['date of birth', 'dob', 'birth date', 'birthdate', 'date_of_birth', 'learner dob'],
     ['grade', 'gr', 'class grade', 'student grade', 'learner grade', 'year level'],
     ['subjects', 'subject', 'enrolled subjects', 'subject list', 'courses', 'modules'],
-    ['parent first name', 'parent firstname', 'guardian first name', 'parent_first_name', 'parent given name'],
-    ['parent last name', 'parent lastname', 'parent surname', 'guardian surname', 'guardian last name', 'parent_last_name'],
-    ['parent email', 'guardian email', 'email', 'email address', 'parent_email', 'contact email'],
-    ['parent phone', 'parent cell', 'guardian phone', 'guardian cell', 'cellphone', 'cell number', 'phone number', 'mobile', 'telephone', 'contact number', 'parent_phone'],
+    ['parent first name', 'parent firstname', 'guardian first name', 'parent_first_name', 'parent given name', 'parent 1 first name', 'parent 2 first name', 'father name', 'mother name'],
+    ['parent last name', 'parent lastname', 'parent surname', 'guardian surname', 'guardian last name', 'parent_last_name', 'parent 1 last name', 'parent 2 last name', 'father surname', 'mother surname'],
+    ['parent email', 'guardian email', 'email', 'email address', 'parent_email', 'contact email', 'parent 1 email', 'parent 2 email'],
+    ['parent phone', 'parent cell', 'guardian phone', 'guardian cell', 'cellphone', 'cell number', 'cell#', 'cell #', 'phone number', 'mobile', 'telephone', 'contact number', 'parent_phone', 'parent 1 phone', 'parent 2 phone'],
     ['jan', 'january'], ['feb', 'february'], ['mar', 'march'], ['apr', 'april'], ['jun', 'june'],
     ['jul', 'july'], ['aug', 'august'], ['sep', 'sept', 'september'], ['oct', 'october'], ['nov', 'november'], ['dec', 'december'],
 ]
@@ -272,12 +272,217 @@ def csv_rows(path):
     return rows
 
 
+def _extract_dob_from_sa_id_str(raw_val) -> tuple[str | None, str | None]:
+    if raw_val is None or isinstance(raw_val, bool):
+        return None, None
+    s = str(raw_val).strip()
+    if not s or not re.fullmatch(r'\d+', s):
+        return None, None
+    digits = s
+    if len(digits) in (11, 12):
+        padded = digits.zfill(13)
+        mm_p, dd_p = int(padded[2:4]), int(padded[4:6])
+        if 1 <= mm_p <= 12 and 1 <= dd_p <= 31:
+            digits = padded
+    if len(digits) != 13:
+        return None, None
+    yy, mm, dd = int(digits[:2]), int(digits[2:4]), int(digits[4:6])
+    if not (1 <= mm <= 12 and 1 <= dd <= 31):
+        return None, None
+    century = 2000 if yy <= 26 else 1900
+    return f'{century + yy:04d}-{mm:02d}-{dd:02d}', digits
+
+
+def _title_case_person(val) -> str | None:
+    if val is None:
+        return None
+    s = str(val).strip()
+    if not s:
+        return None
+    if s.isupper() or s.islower():
+        return ' '.join(w[:1].upper() + w[1:].lower() for w in s.split() if w)
+    return s
+
+
+def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]:
+    if not rows or len(rows) < 2:
+        return rows
+    # Scan top 35 rows for either a SA-SAMS / GDE Learner-Parent Bio header row (duplicate Name/Surname/Cell#)
+    # or a GDE Mark Schedule header row (Accession Number + Learner Name).
+    banner_grade: str | None = None
+    for r in rows[:20]:
+        for cell in (r or []):
+            if not isinstance(cell, str):
+                continue
+            m = re.search(r'(?:for\s*:\s*grade\s*|grade\s*:\s*|\(\s*gr(?:ade)?\.?\s*)(\d{1,2})\b', cell, re.I)
+            if m:
+                banner_grade = f'Grade {int(m.group(1))}'
+                break
+        if banner_grade:
+            break
+
+    header_idx: int | None = None
+    mode: str | None = None
+    for idx, r in enumerate(rows[:35]):
+        norms = [norm(v) for v in (r or []) if v is not None and str(v).strip()]
+        if not norms:
+            continue
+        if any('accession' in n for n in norms) and any('learner name' in n or 'student name' in n for n in norms):
+            header_idx = idx
+            mode = 'gde_marks'
+            break
+        name_cnt = sum(1 for n in norms if n in {'first name', 'firstname', 'name', 'names', 'given name'})
+        sur_cnt = sum(1 for n in norms if n in {'last name', 'lastname', 'surname'})
+        if name_cnt >= 2 and sur_cnt >= 2:
+            header_idx = idx
+            mode = 'bio_parents'
+            break
+
+    if header_idx is None or mode is None:
+        return rows
+
+    out_rows = [list(r) for r in rows]
+    h_row = list(out_rows[header_idx])
+    while h_row and (h_row[-1] is None or str(h_row[-1]).strip() == ''):
+        h_row.pop()
+
+    if mode == 'gde_marks':
+        # Clean long comment header and composite any blank header cells from h_idx-1 / h_idx-2
+        clean_h: list[str] = []
+        for c_i, cell in enumerate(h_row):
+            hs = str(cell or '').strip()
+            if not hs and header_idx > 0 and c_i < len(out_rows[header_idx - 1]):
+                p1 = str(out_rows[header_idx - 1][c_i] or '').strip()
+                if p1 and len(p1) < 45:
+                    hs = p1
+            if re.search(r'report\s+general\s+comment', hs, re.I):
+                hs = 'Report General Comment'
+            if not hs:
+                hs = f'Col{c_i + 1}'
+            if not banner_grade:
+                gm = re.search(r'\(\s*gr(?:ade)?\.?\s*(\d{1,2})\s*\)', hs, re.I)
+                if gm:
+                    banner_grade = f'Grade {int(gm.group(1))}'
+            clean_h.append(hs)
+        acc_idx = next((i for i, h in enumerate(clean_h) if 'accession' in norm(h)), None)
+        lname_idx = next((i for i, h in enumerate(clean_h) if norm(h) in {'learner name', 'student name', 'full name'}), None)
+        has_grade = any(norm(h) == 'grade' for h in clean_h)
+        clean_h.extend(['Last Name', 'First Name', 'Date of Birth'])
+        if banner_grade and not has_grade:
+            clean_h.append('Grade')
+        out_rows[header_idx] = clean_h
+        for r_i in range(header_idx + 1, len(out_rows)):
+            r = list(out_rows[r_i])
+            if not any(v is not None and str(v).strip() != '' for v in r):
+                continue
+            while len(r) < len(h_row):
+                r.append(None)
+            r = r[:len(h_row)]
+            # Split "SURNAME, FirstName, MiddleName"
+            ln_val, fn_val = None, None
+            if lname_idx is not None and lname_idx < len(r) and r[lname_idx] is not None:
+                raw_nm = str(r[lname_idx]).strip()
+                if ',' in raw_nm:
+                    parts = [p.strip() for p in raw_nm.split(',') if p.strip()]
+                    if len(parts) >= 2:
+                        ln_val = _title_case_person(parts[0])
+                        fn_val = _title_case_person(' '.join(parts[1:]))
+                elif ' ' in raw_nm:
+                    parts = raw_nm.split()
+                    ln_val = _title_case_person(parts[0])
+                    fn_val = _title_case_person(' '.join(parts[1:]))
+            dob_val = None
+            if acc_idx is not None and acc_idx < len(r) and r[acc_idx] is not None:
+                dob_val, padded_id = _extract_dob_from_sa_id_str(r[acc_idx])
+                if padded_id:
+                    r[acc_idx] = padded_id
+            r.extend([ln_val, fn_val, dob_val])
+            if banner_grade and not has_grade:
+                r.append(banner_grade)
+            out_rows[r_i] = r
+        return out_rows
+
+    if mode == 'bio_parents':
+        first_roles = {'first name', 'firstname', 'name', 'names', 'given name', 'forename'}
+        last_roles = {'last name', 'lastname', 'surname', 'family name'}
+        phone_roles = {'phone', 'cell', 'cell#', 'cell #', 'cell no', 'cellphone', 'mobile', 'tel', 'telephone', 'contact', 'contact number'}
+        email_roles = {'email', 'e-mail', 'email address', 'mail', 'contact email'}
+        first_parent_col = 999
+        fc, lc = 0, 0
+        for i, cell in enumerate(h_row):
+            n = norm(cell)
+            if n in first_roles:
+                fc += 1
+                if fc == 2 and i < first_parent_col:
+                    first_parent_col = i
+            if n in last_roles:
+                lc += 1
+                if lc == 2 and i < first_parent_col:
+                    first_parent_col = i
+        f_cnt, l_cnt, p_cnt, e_cnt = 0, 0, 0, 0
+        clean_h = []
+        for i, cell in enumerate(h_row):
+            raw_s = str(cell or '').strip() or f'Col{i + 1}'
+            n = norm(raw_s)
+            if n in first_roles:
+                f_cnt += 1
+                clean_h.append('First Name' if f_cnt == 1 else f'Parent {f_cnt - 1} First Name')
+            elif n in last_roles:
+                l_cnt += 1
+                clean_h.append('Last Name' if l_cnt == 1 else f'Parent {l_cnt - 1} Last Name')
+            elif n in phone_roles:
+                if i < first_parent_col:
+                    clean_h.append('Learner Phone')
+                else:
+                    p_cnt += 1
+                    clean_h.append(f'Parent {p_cnt} Phone')
+            elif n in email_roles:
+                if i < first_parent_col and e_cnt == 0:
+                    clean_h.append('Learner Email')
+                else:
+                    e_cnt += 1
+                    clean_h.append(f'Parent {e_cnt} Email')
+            else:
+                clean_h.append(raw_s)
+        idx_map = {h: i for i, h in enumerate(clean_h)}
+        clean_h.extend(['Parent First Name', 'Parent Last Name', 'Parent Phone', 'Parent Email'])
+        out_rows[header_idx] = clean_h
+        for r_i in range(header_idx + 1, len(out_rows)):
+            r = list(out_rows[r_i])
+            if not any(v is not None and str(v).strip() != '' for v in r):
+                continue
+            while len(r) < len(h_row):
+                r.append(None)
+            r = r[:len(h_row)]
+
+            def _cell_str(col_name: str) -> str:
+                ci = idx_map.get(col_name)
+                if ci is None or ci >= len(r) or r[ci] is None:
+                    return ''
+                s = str(r[ci]).strip()
+                if col_name.endswith('Phone') and re.fullmatch(r'0+', s):
+                    return ''
+                return s
+
+            p1_fn, p1_ln, p1_ph, p1_em = _cell_str('Parent 1 First Name'), _cell_str('Parent 1 Last Name'), _cell_str('Parent 1 Phone'), _cell_str('Parent 1 Email')
+            p2_fn, p2_ln, p2_ph, p2_em = _cell_str('Parent 2 First Name'), _cell_str('Parent 2 Last Name'), _cell_str('Parent 2 Phone'), _cell_str('Parent 2 Email')
+            use_p1 = bool(p1_fn or p1_ln) or (not p2_fn and not p2_ln and bool(p1_ph or p1_em))
+            if use_p1:
+                r.extend([_title_case_person(p1_fn), _title_case_person(p1_ln), p1_ph or None, p1_em or None])
+            else:
+                r.extend([_title_case_person(p2_fn), _title_case_person(p2_ln), p2_ph or None, p2_em or None])
+            out_rows[r_i] = r
+        return out_rows
+
+    return rows
+
+
 def book_rows(path: Path, data_only=False):
     check_file(path)
     if path.suffix.lower() == '.csv':
-        return {'CSV': csv_rows(path)}
+        return {k: _normalize_school_sheet_rows(v) for k, v in {'CSV': csv_rows(path)}.items()}
     if path.suffix.lower() == '.xls':
-        return xls_rows(path)
+        return {k: _normalize_school_sheet_rows(v) for k, v in xls_rows(path).items()}
     try:
         wb = load_workbook(path, read_only=True, data_only=data_only, keep_links=False)
     except Exception as exc:
@@ -291,7 +496,8 @@ def book_rows(path: Path, data_only=False):
             total += ws.max_row * ws.max_column
             if total > MAX_CELLS:
                 raise ValueError('Workbook exceeds the one-million-cell inspection limit.')
-            result[ws.title] = [list(row) for row in ws.iter_rows(values_only=True)]
+            raw_sheet = [list(row) for row in ws.iter_rows(values_only=True)]
+            result[ws.title] = _normalize_school_sheet_rows(raw_sheet) if norm(ws.title) not in RULE_SHEETS else raw_sheet
     finally:
         wb.close()
     return result
@@ -313,8 +519,8 @@ def candidate_headers(rows, bold_rows=None):
         # Penalize data rows containing emails, phone numbers, or specific Grade X values
         if any('@' in str(v) or re.fullmatch(r'(?:\+27|0)[1-9]\d{7,8}', re.sub(r'[\s()-]', '', str(v))) or re.fullmatch(r'grade\s*\d{1,2}[a-z]?', str(v).strip(), re.I) for v in text):
             score -= 18
-        # Penalize banner/title/metadata rows so real column headers below them win (never penalize 'Date of Birth')
-        if any(len(str(v).strip()) > 35 or ':' in str(v) or norm(v).startswith(('synthetic', 'fy20', 'report', 'prepared', 'confidential', 'summary —', 'summary -', 'page ', 'date:')) for v in text):
+        # Penalize banner/title/metadata rows so real column headers below them win (never penalize 'Date of Birth' or wide header rows with >=6 columns)
+        if len(text) <= 5 and any(len(str(v).strip()) > 45 or ':' in str(v) or norm(v).startswith(('synthetic', 'fy20', 'report', 'prepared', 'confidential', 'summary —', 'summary -', 'page ', 'date:', 'school:', 'district:')) for v in text):
             score -= 8
         # Penalize total/subtotal summary rows so they are never picked as headers
         if norm(text[0]) in {'total', 'subtotal', 'grand total'}:

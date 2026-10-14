@@ -481,6 +481,8 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
                 key_col = next((h for h in src_headers if h not in period_cols and norm(h) not in {'total', 'subtotal'}), 'Site')
                 out_headers = ['Site' if norm(key_col) in {'branch', 'location', 'site', 'store'} else key_col] + period_cols + ['Total']
                 ws.append(out_headers)
+            elif any('accession' in norm(h) or norm(h).startswith(('parent 1 ', 'parent 2 ')) or re.search(r'\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)', h, re.I) for h in src_headers) or (len(source_bytes) >= 2 and {'first name', 'last name', 'grade'} <= {norm(h) for h in src_headers}):
+                ws.append(['Student ID', 'First Name', 'Last Name', 'Date of Birth', 'Grade', 'Subjects', 'Parent First Name', 'Parent Last Name', 'Parent Email', 'Parent Phone'])
             else:
                 ws.append(src_headers)
             bio = BytesIO()

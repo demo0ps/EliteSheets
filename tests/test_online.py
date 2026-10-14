@@ -678,6 +678,107 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     assert xls_job['report']['rows'][0]['Student ID'] == 'STU010'
     assert xls_job['report']['rows'][0]['Parent Phone'] == '0825551234'
 
+    # 5. GDE Learner & Parent Info Sheet + GDE Internal School Mark Schedule Join (Stanza Bopape Secondary School)
+    # Template: 10-column Student System Import template
+    tpl_wb = Workbook()
+    tpl_ws = tpl_wb.active
+    tpl_ws.title = 'Students'
+    tpl_ws.append(['Student ID', 'First Name', 'Last Name', 'Date of Birth', 'Grade', 'Subjects', 'Parent First Name', 'Parent Last Name', 'Parent Email', 'Parent Phone'])
+    tpl_bio = BytesIO()
+    tpl_wb.save(tpl_bio)
+
+    # Sheet 1: Learner & Parent Info Sheet (duplicate Name | Surname | Cell# for Father and Mother)
+    bio_wb = Workbook()
+    bio_ws = bio_wb.active
+    bio_ws.title = 'Learner_Parent_Info'
+    bio_ws.append(['Number', 'Surname', 'First Name', 'Gender', 'Grade', 'Class', 'Cell#', 'Name', 'Surname', 'Cell#', 'Name', 'Surname', 'Cell#'])
+    bio_ws.append([1, 'APHANE', 'Amogelang', 'F', 'Grade 09', '9E', '', '', '', '', 'Dikeledi', 'APHANE', '0713163980'])
+    bio_ws.append([5, 'APHANE', 'Thato', 'F', 'Grade 10', '10B', '0768507537', 'Matsobane', 'APHANE', '0609003212', 'Dipuo', 'APHANE', '0827077099'])
+    bio_ws.append([6, 'ASSEGAAI', 'Onalenna', 'F', 'Grade 10', '10F', '', '', '', '', 'Johannah', 'APHANE', '0714364266'])
+    bio_ws.append([17, 'BALOYI', 'Phendile', 'F', 'Grade 10', '10A', '', 'Justice', 'BALOYI', '0783496897', 'Thandi', 'SKHOSANA', '0724344056'])
+    bio_bytes = BytesIO()
+    bio_wb.save(bio_bytes)
+
+    # Sheet 2: GDE Internal School Mark Schedule (11 banner rows + Row 12 header with Accession Number, Learner Name, and (Gr 10) subjects)
+    marks_wb = Workbook()
+    marks_ws = marks_wb.active
+    marks_ws.title = 'Mark_Schedule'
+    marks_ws.append(['GAUTENG DEPARTMENT OF EDUCATION'])
+    marks_ws.append(['INTERNAL SCHOOL MARK SCHEDULE'])
+    marks_ws.append(['School: Stanza Bopape Secondary School'])
+    marks_ws.append(['For: Grade 10'])
+    for _ in range(7):
+        marks_ws.append([None])
+    marks_ws.append([
+        'Number', 'Accession Number', 'Learner Name', 'Gender', 'Learner Average Obtained', 'Learner Average (All subjects)', 'Learner Rank',
+        'Accounting (Gr 10)', 'Business Studies (Gr 10)', 'Computer Applications Technology (Gr 10)', 'Consumer Studies (Gr 10)',
+        'Economics (Gr 10)', 'English First Additional Language (Gr 10)', 'Life Orientation (Gr 10)', 'Life Sciences (Gr 10)',
+        'Mathematical Literacy (Gr 10)', 'Mathematics (Gr 10)', 'Physical Sciences (Gr 10)', 'Sepedi Home Language (Gr 10)',
+        'Learner Total', 'Code', 'Codes: P (Achieved) | NP (Not Achieved)\nReport General Comment', 'Deviation Comment'
+    ])
+    marks_ws.append([
+        1, '0905245292081', 'APHANE, Thato, Bonolo', 'F', '42,71', '42,71', 274,
+        None, None, None, '44,00', None, '45,00', '53,00', '53,00', None, '16,00', '27,00', '61,00',
+        299, 'NP', 'Needs improvement in Mathematics', None
+    ])
+    marks_ws.append([
+        2, '0907271190086', 'ASSEGAAI, Onalenna', 'F', '41,43', '41,43', 292,
+        None, '18,00', '44,00', None, '56,00', '40,00', '39,00', None, '37,00', None, None, '56,00',
+        290, 'NP', None, None
+    ])
+    marks_ws.append([
+        5, '0909290643084', 'BALOYI, Phendile, Prodence', 'F', '41,57', '41,57', 290,
+        '26,00', '41,00', None, None, '50,00', '48,00', '49,00', None, None, '19,00', None, '58,00',
+        291, 'NP', None, None
+    ])
+    marks_bytes = BytesIO()
+    marks_wb.save(marks_bytes)
+
+    gde_res = c.post('/api/jobs', data={'request_id': 'gde-two-sheet-join-001', 'title': 'Stanza-Bopape-Import.xlsx'}, files=[
+        ('target', ('student-import-template.xlsx', tpl_bio.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+        ('sources', ('learner-parent-info.xlsx', bio_bytes.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+        ('sources', ('gde-grade10-mark-schedule.xlsx', marks_bytes.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+    ])
+    assert gde_res.status_code == 200, gde_res.text
+    gde_job = gde_res.json()
+    if not gde_job.get('report'):
+        gde_job = c.post(f'/api/jobs/{gde_job["id"]}/run', json={}).json()
+    gde_rows = gde_job['report']['rows']
+    # All 4 Bio learners are kept (keep_all_bio_learners)
+    assert len(gde_rows) == 4
+    # Row 0: Amogelang Aphane (Grade 9, not in Grade 10 Mark Schedule -> kept with Mother Dikeledi Aphane)
+    assert gde_rows[0]['First Name'] == 'Amogelang'
+    assert gde_rows[0]['Last Name'] == 'Aphane'
+    assert gde_rows[0]['Grade'] == 'Grade 9'
+    assert gde_rows[0]['Parent First Name'] == 'Dikeledi'
+    assert gde_rows[0]['Parent Last Name'] == 'Aphane'
+    assert gde_rows[0]['Parent Phone'] == '0713163980'
+    # Row 1: Thato Aphane (matched to 'APHANE, Thato, Bonolo' on Mark Schedule -> DOB 2009-05-24, Father Matsobane Aphane, (Gr 10) stripped from Subjects)
+    assert gde_rows[1]['Student ID'] == '0905245292081'
+    assert gde_rows[1]['First Name'] == 'Thato'
+    assert gde_rows[1]['Last Name'] == 'Aphane'
+    assert gde_rows[1]['Date of Birth'] == '2009-05-24'
+    assert gde_rows[1]['Grade'] == 'Grade 10'
+    assert gde_rows[1]['Subjects'] == 'Consumer Studies; English First Additional Language; Life Orientation; Life Sciences; Mathematics; Physical Sciences; Sepedi Home Language'
+    assert gde_rows[1]['Parent First Name'] == 'Matsobane'
+    assert gde_rows[1]['Parent Last Name'] == 'Aphane'
+    assert gde_rows[1]['Parent Phone'] == '0609003212'
+    # Row 2: Onalenna Assegaai (Father blank -> Mother Johannah Aphane selected as 1 unit; Mother's surname 'Aphane' preserved!)
+    assert gde_rows[2]['Student ID'] == '0907271190086'
+    assert gde_rows[2]['Date of Birth'] == '2009-07-27'
+    assert gde_rows[2]['Parent First Name'] == 'Johannah'
+    assert gde_rows[2]['Parent Last Name'] == 'Aphane'
+    assert gde_rows[2]['Parent Phone'] == '0714364266'
+    assert gde_rows[2]['Subjects'] == 'Business Studies; Computer Applications Technology; Economics; English First Additional Language; Life Orientation; Mathematical Literacy; Sepedi Home Language'
+    # Row 3: Phendile Baloyi (Father Justice Baloyi selected as 1 unit, never mixing with Mother Thandi Skhosana!)
+    assert gde_rows[3]['Student ID'] == '0909290643084'
+    assert gde_rows[3]['Date of Birth'] == '2009-09-29'
+    assert gde_rows[3]['Parent First Name'] == 'Justice'
+    assert gde_rows[3]['Parent Last Name'] == 'Baloyi'
+    assert gde_rows[3]['Parent Phone'] == '0783496897'
+    assert gde_rows[3]['Subjects'] == 'Accounting; Business Studies; Economics; English First Additional Language; Life Orientation; Mathematics; Sepedi Home Language'
+
+
 
 
 

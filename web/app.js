@@ -27368,6 +27368,7 @@
     })));
     if ($2("new-job")) $2("new-job").addEventListener("click", () => {
       job = null;
+      window.__lastUploadedSources = [];
       studio();
     });
     if ($2("load-example")) $2("load-example").addEventListener("click", () => void busy($2("load-example"), async () => {
@@ -27381,21 +27382,34 @@
       await showPage("workspace");
       if ($2("sample-case")) $2("sample-case").value = caseValue;
     }));
-    const selection = () => {
-      const src = $2("source-files").files;
+    let stagedSources = [];
+    const renderStagedFiles = () => {
       const fld = $2("folder-files").files;
       const target = $2("target-file").files;
       const validFolderFiles = Array.from(fld || []).filter((f) => /\.(xlsx|xls|csv)$/i.test(f.name));
-      $2("file-list").innerHTML = [...Array.from(src || []), ...validFolderFiles, ...Array.from(target || [])].map((f) => `<span class="file-chip">${escapeHTML(f.webkitRelativePath || f.name)}</span>`).join("");
-      $2("inspect-files").disabled = !src?.length && !validFolderFiles.length && !target?.length;
+      const srcChips = stagedSources.map((f, idx) => `<span class="file-chip">${escapeHTML(f.name)} <button type="button" data-rm-src="${idx}" style="background:none;border:none;color:inherit;cursor:pointer;font-weight:700;padding:0 2px" aria-label="Remove ${escapeHTML(f.name)}">\xD7</button></span>`).join("");
+      const otherChips = [...validFolderFiles, ...Array.from(target || [])].map((f) => `<span class="file-chip">${escapeHTML(f.webkitRelativePath || f.name)}</span>`).join("");
+      $2("file-list").innerHTML = srcChips + otherChips;
+      document.querySelectorAll("[data-rm-src]").forEach((btn) => btn.addEventListener("click", () => {
+        stagedSources.splice(Number(btn.dataset.rmSrc), 1);
+        renderStagedFiles();
+      }));
+      $2("inspect-files").disabled = !stagedSources.length && !validFolderFiles.length && !target?.length;
     };
-    $2("source-files").addEventListener("change", selection);
-    $2("folder-files").addEventListener("change", selection);
-    $2("target-file").addEventListener("change", selection);
+    $2("source-files").addEventListener("change", () => {
+      const newlyPicked = Array.from($2("source-files").files || []);
+      for (const nf of newlyPicked) {
+        if (!stagedSources.some((ef) => ef.name === nf.name && ef.size === nf.size)) {
+          stagedSources.push(nf);
+        }
+      }
+      renderStagedFiles();
+    });
+    $2("folder-files").addEventListener("change", renderStagedFiles);
+    $2("target-file").addEventListener("change", renderStagedFiles);
     $2("inspect-files").addEventListener("click", () => void busy($2("inspect-files"), async () => {
       const f = new FormData();
       const targetFiles = $2("target-file").files;
-      const srcFiles = $2("source-files").files;
       const fldFiles = Array.from($2("folder-files").files || []).filter((fl) => /\.(xlsx|xls|csv)$/i.test(fl.name));
       if (targetFiles?.length) f.append("target", targetFiles[0]);
       if (fldFiles.length) {
@@ -27404,8 +27418,14 @@
         f.append("title", "Folder Batch Master Consolidation");
         job = await api("/api/jobs/batch-folder", f);
       } else {
-        if (srcFiles?.length) {
-          for (const file of Array.from(srcFiles)) f.append("sources", file);
+        let filesToSend = [...stagedSources];
+        const prevFiles = window.__lastUploadedSources || [];
+        if (filesToSend.length === 1 && prevFiles.length >= 1 && job && !prevFiles.some((pf) => pf.name === filesToSend[0].name && pf.size === filesToSend[0].size)) {
+          filesToSend = [...prevFiles, ...filesToSend];
+        }
+        if (filesToSend.length) {
+          window.__lastUploadedSources = filesToSend;
+          for (const file of filesToSend) f.append("sources", file);
         } else if (targetFiles?.length) {
           f.append("sources", targetFiles[0]);
         }
@@ -29093,7 +29113,20 @@
       use_workbook_rules: false
     };
   }
-  var HEADER_KEYWORDS_RE = /\b(id|no|number|adm|admission|lurits|cemis|student|learner|pupil|first|firstname|name|names|forename|given|surname|last|lastname|family|dob|birth|birthdate|gender|sex|grade|gr|class|stream|phone|cell|cellphone|mobile|tel|telephone|contact|email|e-mail|parent|guardian|mother|father|nok|payer|account|address|subject|subjects|mark|marks|percentage|level|term|average|total|subtotal|amount|fee|balance|status|site|branch|location|store|item|sku|code|description|qty|quantity|units|price|cost|rate|category|supplier|vendor|customer|client|period|month|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i;
+  var HEADER_KEYWORDS_RE = /\b(id|no|number|accession|adm|admission|lurits|cemis|student|learner|pupil|first|firstname|name|names|forename|given|surname|last|lastname|family|dob|birth|birthdate|gender|sex|grade|gr|class|stream|phone|cell|cellphone|mobile|tel|telephone|contact|email|e-mail|parent|guardian|mother|father|nok|payer|account|address|subject|subjects|mark|marks|percentage|level|term|average|rank|total|subtotal|code|comment|deviation|accounting|business|economics|geography|history|mathematics|mathematical|literacy|sciences|science|english|afrikaans|isizulu|sepedi|setswana|sesotho|isixhosa|tourism|orientation|technology|consumer|amount|fee|balance|status|site|branch|location|store|item|sku|description|qty|quantity|units|price|cost|rate|category|supplier|vendor|customer|client|period|month|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b|cell\s*#|\(\s*gr\.?\s*\d+/i;
+  function extractDobFromSaId(rawVal) {
+    if (rawVal === null || rawVal === void 0) return { id13: null, dob: null };
+    const digits = String(rawVal).trim().replace(/[\s-]/g, "");
+    if (!/^\d{11,13}$/.test(digits)) return { id13: null, dob: null };
+    const padded = digits.padStart(13, "0");
+    const yy = Number(padded.slice(0, 2));
+    const mm = Number(padded.slice(2, 4));
+    const dd = Number(padded.slice(4, 6));
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return { id13: digits.length === 13 ? digits : null, dob: null };
+    const year = yy <= 26 ? 2e3 + yy : 1900 + yy;
+    const dob = `${String(year).padStart(4, "0")}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+    return { id13: padded, dob };
+  }
   function isDataValueCell(val) {
     if (val === null || val === void 0) return false;
     const s = String(val).trim();
@@ -29105,11 +29138,12 @@
     if (/^\d{1,2}\s*[a-fA-F]$/.test(s)) return true;
     if (/^[MFmf]$/.test(s)) return true;
     if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(s) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$/.test(s)) return true;
+    if (/^[A-Z][A-Z\s'-]+,\s*[A-Za-z]+/.test(s)) return true;
     return false;
   }
   function pickHeaderIndex(matrix) {
     let bestIdx = 0, bestScore = -9999;
-    for (let i = 0; i < Math.min(matrix.length, 15); i++) {
+    for (let i = 0; i < Math.min(matrix.length, 35); i++) {
       const row = matrix[i] || [];
       const filled = row.filter((v) => v !== void 0 && v !== null && String(v).trim() !== "");
       if (filled.length < 2) continue;
@@ -29117,7 +29151,7 @@
       if (textCells.length < 2) continue;
       const uniq = new Set(textCells.map((v) => String(v).trim().toLowerCase()));
       if (uniq.size < 2) continue;
-      let score = textCells.length * 2 + uniq.size - i * 2.5;
+      let score = textCells.length * 2 + uniq.size - i * 0.25;
       let kwHits = 0, dataHits = 0;
       for (const v of filled) {
         const s = String(v).trim();
@@ -29125,12 +29159,12 @@
         else if (typeof v === "string" && HEADER_KEYWORDS_RE.test(s)) kwHits++;
       }
       score += kwHits * 6;
-      score -= dataHits * 14;
-      if (typeof row[0] === "number" || /^\d+$/.test(String(row[0] ?? "").trim())) score -= 12;
-      if (textCells.some((v) => {
+      score -= dataHits * 15;
+      if (typeof row[0] === "number" || /^\d+$/.test(String(row[0] ?? "").trim())) score -= 14;
+      if (filled.length <= 4 && textCells.some((v) => {
         const s = String(v).trim().toLowerCase();
-        return s.length > 55 || /^(synthetic|fy20|report generated|prepared by|confidential|summary —|summary -|page \d)/.test(s);
-      })) score -= 10;
+        return s.length > 45 || /^(synthetic|fy20|report generated|prepared by|confidential|summary —|summary -|page \d|gauteng|department of education|district:|circuit:|emis:|internal school|for:\s*grade|all learners|code:\s*all)/.test(s);
+      })) score -= 15;
       if (["total", "subtotal", "grand total"].includes(String(textCells[0] || "").trim().toLowerCase())) score -= 15;
       let lastCol = row.length - 1;
       while (lastCol >= 0 && (row[lastCol] === void 0 || row[lastCol] === null || String(row[lastCol]).trim() === "")) lastCol--;
@@ -29154,8 +29188,19 @@
     const candDataHits = candRow.filter((v) => isDataValueCell(v)).length;
     const candKwHits = candRow.filter((v) => typeof v === "string" && !isDataValueCell(v) && HEADER_KEYWORDS_RE.test(String(v))).length;
     const headerless = candDataHits >= 2 && candKwHits === 0;
+    let bannerGrade = null;
+    for (let b = 0; b < hIdx; b++) {
+      for (const cell of matrix[b] || []) {
+        const m = String(cell ?? "").match(/\b(?:for:\s*)?(?:grade|gr\.?)\s*(\d{1,2})\b/i);
+        if (m) {
+          bannerGrade = `Grade ${Number(m[1])}`;
+          break;
+        }
+      }
+      if (bannerGrade) break;
+    }
     let maxCols = 0;
-    for (let i = 0; i < Math.min(matrix.length, 40); i++) {
+    for (let i = 0; i < Math.min(matrix.length, 45); i++) {
       const r = matrix[i] || [];
       let len = r.length;
       while (len > 0 && (r[len - 1] === void 0 || r[len - 1] === null || String(r[len - 1]).trim() === "")) len--;
@@ -29185,13 +29230,13 @@
         const isId = c === 0 && strs2.filter((s) => /^\d+$/.test(s) || /^[A-Za-z]+\d+$/.test(s)).length >= Math.max(1, strs2.length * 0.5);
         const isAllCapsWord = strs2.filter((s) => /^[A-Z\s'-]{2,}$/.test(s) && !/^(?:M|F|GRADE.*)$/.test(s)).length >= Math.max(1, strs2.length * 0.4);
         const isAlphaName = strs2.filter((s) => /^[A-Za-z\s'-]{2,}$/.test(s) && Number.isNaN(Number(s))).length >= Math.max(1, strs2.length * 0.5);
-        if (isId) rawHeaders.push("Student ID");
+        if (isId) rawHeaders.push("Number");
         else if (isDob) rawHeaders.push("Date of Birth");
         else if (isGender) rawHeaders.push("Gender");
         else if (isGrade) rawHeaders.push("Grade");
         else if (isClass) rawHeaders.push("Class");
-        else if (isEmail) rawHeaders.push(c <= 8 ? "Learner Email" : `Parent Email ${c}`);
-        else if (isPhone) rawHeaders.push(c <= 8 ? "Learner Phone" : `Parent Phone ${c}`);
+        else if (isEmail) rawHeaders.push(c <= 7 ? "Learner Email" : seenParentNames <= 2 ? "Parent 1 Email" : "Parent 2 Email");
+        else if (isPhone) rawHeaders.push(c <= 7 ? "Learner Phone" : seenParentNames <= 2 ? "Parent 1 Phone" : "Parent 2 Phone");
         else if (isAlphaName) {
           if (c <= 5 && seenLearnerNames < 2) {
             if (seenLearnerNames === 0 && isAllCapsWord) rawHeaders.push("Last Name");
@@ -29199,8 +29244,9 @@
             else rawHeaders.push(rawHeaders.includes("Last Name") ? "First Name" : "Last Name");
             seenLearnerNames++;
           } else {
-            if (isAllCapsWord && !rawHeaders.some((h) => h.startsWith("Parent Last Name"))) rawHeaders.push(`Parent Last Name ${seenParentNames}`);
-            else rawHeaders.push(seenParentNames % 2 === 0 ? `Parent First Name ${seenParentNames}` : `Parent Last Name ${seenParentNames}`);
+            const pNum = seenParentNames < 2 ? 1 : 2;
+            if (seenParentNames % 2 === 0) rawHeaders.push(`Parent ${pNum} First Name`);
+            else rawHeaders.push(`Parent ${pNum} Last Name`);
             seenParentNames++;
           }
         } else {
@@ -29209,31 +29255,85 @@
       }
     } else {
       const rawHead = matrix[hIdx] || [];
-      const prevRow = hIdx > 0 ? matrix[hIdx - 1] || [] : [];
+      const prevRow1 = hIdx > 0 ? matrix[hIdx - 1] || [] : [];
+      const prevRow2 = hIdx > 1 ? matrix[hIdx - 2] || [] : [];
+      const nextRow = matrix[hIdx + 1] || [];
+      const nextIsSubHeader = nextRow.length > 0 && nextRow.filter((v) => isDataValueCell(v)).length === 0 && typeof nextRow[0] !== "number" && !/^\d+$/.test(String(nextRow[0] ?? "").trim()) && nextRow.some((v) => typeof v === "string" && HEADER_KEYWORDS_RE.test(String(v)));
+      if (nextIsSubHeader) dataStartIdx = hIdx + 2;
       let endCol = Math.max(rawHead.length, maxCols);
-      while (endCol > 0 && (rawHead[endCol - 1] === void 0 || rawHead[endCol - 1] === null || String(rawHead[endCol - 1]).trim() === "") && matrix.slice(hIdx + 1, hIdx + 15).every((r) => !r || r[endCol - 1] === void 0 || r[endCol - 1] === null || String(r[endCol - 1]).trim() === "")) endCol--;
+      while (endCol > 0 && (rawHead[endCol - 1] === void 0 || rawHead[endCol - 1] === null || String(rawHead[endCol - 1]).trim() === "") && matrix.slice(dataStartIdx, dataStartIdx + 15).every((r) => !r || r[endCol - 1] === void 0 || r[endCol - 1] === null || String(r[endCol - 1]).trim() === "")) endCol--;
       endCol = Math.max(1, endCol);
-      const seenCounts = {};
+      const composited = [];
       for (let i = 0; i < endCol; i++) {
         let h = String(rawHead[i] ?? "").trim();
-        const groupPrefix = String(prevRow[i] ?? "").trim();
-        if (!h && groupPrefix && !isDataValueCell(groupPrefix)) h = groupPrefix;
+        if (!h && nextIsSubHeader) h = String(nextRow[i] ?? "").trim();
+        if (!h) {
+          const p1 = String(prevRow1[i] ?? "").trim();
+          if (p1 && !isDataValueCell(p1) && p1.length < 45) h = p1;
+        }
+        if (!h) {
+          const p2 = String(prevRow2[i] ?? "").trim();
+          if (p2 && !isDataValueCell(p2) && p2.length < 45) h = p2;
+        }
+        if (/report\s+general\s+comment/i.test(h)) h = "Report General Comment";
         if (!h) h = `Col${i + 1}`;
-        const normH = h.toLowerCase().replace(/_/g, " ").trim();
-        seenCounts[normH] = (seenCounts[normH] || 0) + 1;
-        const occ = seenCounts[normH];
-        if (occ > 1) {
-          if (/^(first\s*name|firstname|name|names|given\s*name|forename)$/.test(normH)) {
-            h = occ === 2 ? "Parent First Name" : `Parent ${occ - 1} First Name`;
-          } else if (/^(last\s*name|lastname|surname|family\s*name)$/.test(normH)) {
-            h = occ === 2 ? "Parent Last Name" : `Parent ${occ - 1} Last Name`;
-          } else if (/^(email|e-mail|email\s*address|contact\s*email)$/.test(normH)) {
-            h = occ === 2 ? "Parent Email" : `Parent ${occ - 1} Email`;
-          } else if (/^(phone|cell|cellphone|mobile|tel|telephone|contact|contact\s*number|cell\s*no|phone\s*number)$/.test(normH)) {
-            h = occ === 2 ? "Parent Phone" : `Parent ${occ - 1} Phone`;
-          } else {
-            h = `${h} (${occ})`;
+        if (!bannerGrade) {
+          const gm = h.match(/\(\s*(?:gr(?:ade)?\.?\s*)(\d{1,2})\s*\)/i);
+          if (gm) bannerGrade = `Grade ${Number(gm[1])}`;
+        }
+        composited.push(h);
+      }
+      const isFirstRole = (s) => /^(first\s*name|firstname|name|names|given\s*name|forename|student\s*first\s*name)$/i.test(s);
+      const isLastRole = (s) => /^(last\s*name|lastname|surname|family\s*name|learner\s*surname|student\s*surname)$/i.test(s);
+      const isPhoneRole = (s) => /^(phone|cell|cell#|cell\s*#|cell\s*no|cellphone|mobile|tel|telephone|contact|contact\s*no|contact\s*number|phone\s*number)$/i.test(s);
+      const isEmailRole = (s) => /^(email|e-mail|email\s*address|mail|contact\s*email)$/i.test(s);
+      let firstRoleCount = 0, lastRoleCount = 0, emailRoleCount = 0;
+      let firstParentColIdx = 999;
+      {
+        let fc = 0, lc = 0;
+        for (let i = 0; i < composited.length; i++) {
+          const n = composited[i].toLowerCase().replace(/_/g, " ").trim();
+          if (isFirstRole(n)) {
+            fc++;
+            if (fc === 2 && i < firstParentColIdx) firstParentColIdx = i;
           }
+          if (isLastRole(n)) {
+            lc++;
+            if (lc === 2 && i < firstParentColIdx) firstParentColIdx = i;
+          }
+        }
+      }
+      let parentPhoneCount = 0;
+      for (let i = 0; i < composited.length; i++) {
+        let h = composited[i];
+        const normH = h.toLowerCase().replace(/_/g, " ").trim();
+        if (isFirstRole(normH)) {
+          firstRoleCount++;
+          if (firstRoleCount === 1) h = "First Name";
+          else if (firstRoleCount === 2) h = "Parent 1 First Name";
+          else if (firstRoleCount === 3) h = "Parent 2 First Name";
+          else h = `Parent ${firstRoleCount - 1} First Name`;
+        } else if (isLastRole(normH)) {
+          lastRoleCount++;
+          if (lastRoleCount === 1) h = "Last Name";
+          else if (lastRoleCount === 2) h = "Parent 1 Last Name";
+          else if (lastRoleCount === 3) h = "Parent 2 Last Name";
+          else h = `Parent ${lastRoleCount - 1} Last Name`;
+        } else if (isPhoneRole(normH)) {
+          if (i < firstParentColIdx && firstParentColIdx < 999) {
+            h = "Learner Phone";
+          } else {
+            parentPhoneCount++;
+            if (parentPhoneCount === 1) h = firstParentColIdx < 999 ? "Parent 1 Phone" : "Parent Phone";
+            else if (parentPhoneCount === 2) h = "Parent 2 Phone";
+            else h = `Parent ${parentPhoneCount} Phone`;
+          }
+        } else if (isEmailRole(normH)) {
+          emailRoleCount++;
+          if (i < firstParentColIdx && firstParentColIdx < 999 && emailRoleCount === 1) h = "Learner Email";
+          else if (emailRoleCount === 1) h = "Parent 1 Email";
+          else if (emailRoleCount === 2) h = "Parent 2 Email";
+          else h = `Parent ${emailRoleCount} Email`;
         }
         rawHeaders.push(h);
       }
@@ -29244,20 +29344,88 @@
       finalCounts[k] = (finalCounts[k] || 0) + 1;
       return finalCounts[k] > 1 ? `${h} (${finalCounts[k]})` : h;
     });
+    const hasCombinedLearnerName = headers.some((h) => /^(learner\s*name|student\s*name|full\s*name|pupil\s*name)$/i.test(h)) && (!headers.includes("First Name") || !headers.includes("Last Name"));
+    const combinedNameCol = headers.find((h) => /^(learner\s*name|student\s*name|full\s*name|pupil\s*name)$/i.test(h));
+    const saIdCol = headers.find((h) => /^(accession\s*number|accession\s*no|sa\s*id|sa\s*id\s*number|id\s*number|identity\s*number)$/i.test(h));
+    const hasParentBlocks = headers.some((h) => h.startsWith("Parent 1 ") || h.startsWith("Parent 2 "));
+    if (hasCombinedLearnerName) {
+      if (!headers.includes("Last Name")) headers.push("Last Name");
+      if (!headers.includes("First Name")) headers.push("First Name");
+    }
+    if (saIdCol && !headers.some((h) => /^(date\s*of\s*birth|dob|birth\s*date)$/i.test(h))) {
+      headers.push("Date of Birth");
+    }
+    if (bannerGrade && !headers.some((h) => /^(grade|gr|learner\s*grade)$/i.test(h))) {
+      headers.push("Grade");
+    }
+    if (hasParentBlocks) {
+      if (!headers.includes("Parent First Name")) headers.push("Parent First Name");
+      if (!headers.includes("Parent Last Name")) headers.push("Parent Last Name");
+      if (!headers.includes("Parent Phone")) headers.push("Parent Phone");
+      if (!headers.includes("Parent Email")) headers.push("Parent Email");
+    }
     const headNorm = headers.map((h) => h.toLowerCase());
     const ignoredLabels = /* @__PURE__ */ new Set(["subtotal", "total", "grand total", "sum", "average", "notes", "source:"]);
     const rows = [];
     for (const r of matrix.slice(dataStartIdx)) {
       if (!r || r.every((v) => v === void 0 || v === null || String(v).trim() === "")) continue;
-      const rNorm = headers.map((_, i) => String(r[i] ?? "").trim().toLowerCase());
+      const rNorm = rawHeaders.map((_, i) => String(r[i] ?? "").trim().toLowerCase());
       if (!headerless && rNorm.every((v, i) => v === headNorm[i])) continue;
       const firstVal = String(r[0] ?? "").trim().toLowerCase();
       if (ignoredLabels.has(firstVal)) continue;
       const obj = {};
-      headers.forEach((h, i) => {
+      rawHeaders.forEach((h, i) => {
         const v = r[i];
         obj[h] = v === void 0 || v === null || v === "" ? null : v;
       });
+      if (hasCombinedLearnerName && combinedNameCol && obj[combinedNameCol]) {
+        const rawName = String(obj[combinedNameCol]).trim();
+        if (rawName.includes(",")) {
+          const parts = rawName.split(",").map((p) => p.trim()).filter(Boolean);
+          obj["Last Name"] = parts[0] || null;
+          obj["First Name"] = parts.slice(1).join(" ") || null;
+        } else {
+          const parts = rawName.split(/\s+/).filter(Boolean);
+          obj["First Name"] = parts[0] || null;
+          obj["Last Name"] = parts.slice(1).join(" ") || null;
+        }
+      }
+      if (saIdCol && obj[saIdCol] !== null && obj[saIdCol] !== void 0) {
+        const { id13, dob } = extractDobFromSaId(obj[saIdCol]);
+        if (id13) obj[saIdCol] = id13;
+        if (dob && !obj["Date of Birth"]) obj["Date of Birth"] = dob;
+      }
+      if (bannerGrade && !obj["Grade"]) {
+        obj["Grade"] = bannerGrade;
+      }
+      if (hasParentBlocks) {
+        const p1First = obj["Parent 1 First Name"] ? String(obj["Parent 1 First Name"]).trim() : "";
+        const p1Last = obj["Parent 1 Last Name"] ? String(obj["Parent 1 Last Name"]).trim() : "";
+        const p2First = obj["Parent 2 First Name"] ? String(obj["Parent 2 First Name"]).trim() : "";
+        const p2Last = obj["Parent 2 Last Name"] ? String(obj["Parent 2 Last Name"]).trim() : "";
+        const cleanPhone = (v) => {
+          if (!v) return null;
+          const s = String(v).trim();
+          if (/^0+$/.test(s)) return null;
+          return s;
+        };
+        if (p1First || p1Last) {
+          obj["Parent First Name"] = p1First || null;
+          obj["Parent Last Name"] = p1Last || null;
+          obj["Parent Phone"] = cleanPhone(obj["Parent 1 Phone"]) || cleanPhone(obj["Parent 2 Phone"]) || cleanPhone(obj["Learner Phone"]) || null;
+          obj["Parent Email"] = obj["Parent 1 Email"] || obj["Parent 2 Email"] || obj["Learner Email"] || null;
+        } else if (p2First || p2Last) {
+          obj["Parent First Name"] = p2First || null;
+          obj["Parent Last Name"] = p2Last || null;
+          obj["Parent Phone"] = cleanPhone(obj["Parent 2 Phone"]) || cleanPhone(obj["Parent 1 Phone"]) || cleanPhone(obj["Learner Phone"]) || null;
+          obj["Parent Email"] = obj["Parent 2 Email"] || obj["Parent 1 Email"] || obj["Learner Email"] || null;
+        } else {
+          obj["Parent First Name"] = null;
+          obj["Parent Last Name"] = null;
+          obj["Parent Phone"] = cleanPhone(obj["Parent 1 Phone"]) || cleanPhone(obj["Parent 2 Phone"]) || cleanPhone(obj["Learner Phone"]) || null;
+          obj["Parent Email"] = obj["Parent 1 Email"] || obj["Parent 2 Email"] || obj["Learner Email"] || null;
+        }
+      }
       rows.push(obj);
     }
     return { sheet, headers, rows };
@@ -29279,6 +29447,51 @@
     }
     out.push(cur.trim());
     return out;
+  }
+  async function parseUploadedFileSheets(file) {
+    const name = file.name || "uploaded.csv";
+    const lowerName = name.toLowerCase();
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    const isZip = bytes.length >= 4 && bytes[0] === 80 && bytes[1] === 75 && bytes[2] === 3 && bytes[3] === 4;
+    const isOleBiff = bytes.length >= 8 && bytes[0] === 208 && bytes[1] === 207 && bytes[2] === 17 && bytes[3] === 224;
+    const ruleSheets = /* @__PURE__ */ new Set(["rules", "instructions", "mapping rules", "business rules"]);
+    if (lowerName.endsWith(".xls") || lowerName.endsWith(".xlsx") || isOleBiff || isZip) {
+      try {
+        const wb = readSync(buf, { type: "array", cellDates: true });
+        if (wb && wb.SheetNames && wb.SheetNames.length) {
+          const outSheets = [];
+          for (const sName of wb.SheetNames) {
+            if (ruleSheets.has(sName.trim().toLowerCase())) continue;
+            const ws = wb.Sheets[sName];
+            if (!ws) continue;
+            const rawMatrix = utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+            const matrix = rawMatrix.map((row) => (row || []).map((cell) => {
+              if (cell instanceof Date && !Number.isNaN(cell.getTime())) {
+                return cell.toISOString().slice(0, 10);
+              }
+              if (typeof cell === "string") {
+                const s = cell.trim();
+                if (!s) return null;
+                if (!/^0\d+/.test(s) && !/^\d{11,}$/.test(s) && !Number.isNaN(Number(s))) return Number(s);
+                return s;
+              }
+              return cell;
+            })).filter((r) => r.some((x) => x !== null && x !== void 0 && x !== ""));
+            if (matrix.length) {
+              const tbl = matrixToTable(sName, matrix);
+              if (tbl.rows.length > 0 || outSheets.length === 0) {
+                outSheets.push({ name: wb.SheetNames.length > 1 ? `${name} (${sName})` : name, sheet: tbl.sheet, headers: tbl.headers, rows: tbl.rows });
+              }
+            }
+          }
+          if (outSheets.length) return outSheets;
+        }
+      } catch {
+      }
+    }
+    const single = await parseUploadedFile(file);
+    return [single];
   }
   async function parseUploadedFile(file) {
     const name = file.name || "uploaded.csv";
@@ -30036,11 +30249,20 @@
       const tplFile = body.get("target");
       const mainFile = srcFiles[0] || (tplFile instanceof File ? tplFile : null);
       if (mainFile) {
-        const parsedSources = await Promise.all((srcFiles.length ? srcFiles : [mainFile]).map((f) => parseUploadedFile(f)));
+        const parsedNested = await Promise.all((srcFiles.length ? srcFiles : [mainFile]).map((f) => parseUploadedFileSheets(f)));
+        const parsedSources = parsedNested.flat();
         const parsed = parsedSources[0];
-        const tplParsed = tplFile instanceof File && srcFiles.length ? await parseUploadedFile(tplFile) : parsed;
+        const hasExplicitTpl = Boolean(tplFile instanceof File && srcFiles.length);
+        const tplParsed = hasExplicitTpl ? await parseUploadedFile(tplFile) : parsed;
         const periodSet = /* @__PURE__ */ new Set(["jan", "january", "feb", "february", "mar", "march", "apr", "april", "may", "jun", "june", "jul", "july", "aug", "august", "sep", "sept", "september", "oct", "october", "nov", "november", "dec", "december", "q1", "q2", "q3", "q4"]);
         let headers = tplParsed.headers.length ? tplParsed.headers : parsed.headers;
+        if (!hasExplicitTpl) {
+          const allSrcHeaders = parsedSources.flatMap((ps) => ps.headers.map((h) => h.toLowerCase()));
+          const isSaSamsOrGdeSchool = allSrcHeaders.some((h) => h.includes("accession") || h.startsWith("parent 1 ") || h.startsWith("parent 2 ") || /\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)/i.test(h)) || parsedSources.length >= 2 && allSrcHeaders.includes("first name") && allSrcHeaders.includes("last name") && allSrcHeaders.includes("grade");
+          if (isSaSamsOrGdeSchool) {
+            headers = ["Student ID", "First Name", "Last Name", "Date of Birth", "Grade", "Subjects", "Parent First Name", "Parent Last Name", "Parent Email", "Parent Phone"];
+          }
+        }
         const tplPeriods = headers.filter((h) => periodSet.has(h.toLowerCase()));
         const isPivot = tplPeriods.length >= 2;
         if (isPivot && !(tplFile instanceof File && srcFiles.length) && !headers.some((h) => h.toLowerCase() === "total")) {
@@ -30116,8 +30338,8 @@
             ["category", "type", "group", "department", "dept", "class", "family"],
             ["customer", "client", "buyer", "account", "customer name"],
             ["supplier", "vendor", "manufacturer", "partner", "supplier name"],
-            ["student id", "learner id", "admission no", "admission number", "adm no", "adm", "lurits", "lurits no", "cemis", "cemis no", "student no", "student number", "learner no", "learner number", "no", "no.", "#", "row", "seq", "id number", "sa id", "sa id number"],
-            ["first name", "firstname", "learner first name", "student first name", "given name", "forenames", "forename", "names", "first names", "learner name", "student name", "preferred name", "christian name"],
+            ["student id", "learner id", "accession number", "accession no", "admission no", "admission number", "adm no", "adm", "lurits", "lurits no", "cemis", "cemis no", "student no", "student number", "learner no", "learner number", "sa id", "sa id number", "id number", "number", "no", "no.", "#", "row", "seq"],
+            ["first name", "firstname", "learner first name", "student first name", "given name", "forenames", "forename", "names", "first names", "student name", "preferred name", "christian name"],
             ["last name", "lastname", "surname", "learner surname", "student surname", "family name", "learnersurname"],
             ["date of birth", "dob", "birth date", "birthdate", "learner dob", "d.o.b", "d.o.b.", "birth"],
             ["grade", "gr", "gr.", "class grade", "student grade", "learner grade", "year level", "curr grade", "current grade", "grade/class"],
@@ -30125,9 +30347,13 @@
             ["parent first name", "parent firstname", "guardian first name", "parent given name", "parent name", "guardian name", "mother name", "mother first name", "father name", "father first name", "parent 1 first name", "parent 1 name", "parent 2 first name", "parent 2 name", "account holder name", "payer name", "nok name"],
             ["parent last name", "parent lastname", "parent surname", "guardian surname", "guardian last name", "mother surname", "mother last name", "father surname", "father last name", "parent 1 last name", "parent 1 surname", "parent 2 last name", "parent 2 surname"],
             ["parent email", "guardian email", "mother email", "father email", "parent 1 email", "parent 2 email", "account email", "payer email", "email", "email address", "e-mail", "contact email", "learner email"],
-            ["parent phone", "parent cell", "guardian phone", "guardian cell", "mother cell", "mother phone", "father cell", "father phone", "parent 1 phone", "parent 1 cell", "parent 2 phone", "parent 2 cell", "parent contact", "guardian contact", "cellphone", "cell number", "cell", "cell no", "phone", "phone number", "mobile", "telephone", "tel", "contact number", "learner phone"]
+            ["parent phone", "parent cell", "guardian phone", "guardian cell", "mother cell", "mother phone", "father cell", "father phone", "parent 1 phone", "parent 1 cell", "parent 2 phone", "parent 2 cell", "parent contact", "guardian contact", "cellphone", "cell number", "cell", "cell#", "cell #", "cell no", "phone", "phone number", "mobile", "telephone", "tel", "contact number", "learner phone"]
           ];
-          const ACADEMIC_SUBJECT_RE = /\b(math|mathematics|mathematical|english|afrikaans|isizulu|zulu|isixhosa|xhosa|sesotho|sotho|sepedi|pedi|setswana|tswana|tshivenda|venda|xitsonga|tsonga|siswati|swati|isindebele|ndebele|science|sciences|physical|physics|chemistry|life|biology|natural|social|accounting|business|economics|geography|history|technology|tech|cat|computer|it|information|arts|creative|dramatic|drama|music|visual|ems|orientation|tourism|hospitality|consumer|agricultural|agriculture|engineering|egd|religion|language|hl|fal|sal)\b/i;
+          const ACADEMIC_SUBJECT_RE = /\b(math|mathematics|mathematical|literacy|english|afrikaans|isizulu|zulu|isixhosa|xhosa|sesotho|sotho|sepedi|pedi|setswana|tswana|tshivenda|venda|xitsonga|tsonga|siswati|swati|isindebele|ndebele|science|sciences|physical|physics|chemistry|life|biology|natural|social|accounting|business|economics|geography|history|technology|tech|cat|computer|applications|it|information|arts|creative|dramatic|drama|music|visual|ems|orientation|tourism|hospitality|consumer|agricultural|agriculture|engineering|egd|religion|language|additional|home\s+language|hl|fal|sal)\b|\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)/i;
+          const NON_SUBJECT_HEADER_RE = /\b(average|rank|total|subtotal|code|codes|comment|deviation|obtained|number|accession|gender|learner\s*name|student\s*name|first\s*name|last\s*name|surname|parent|guardian|mother|father|phone|cell|email|dob|birth|class)\b/i;
+          const cleanSubjectName = (c) => {
+            return c.replace(/\s*\(\s*(?:gr(?:ade)?\.?\s*\d{1,2}[a-z]?|%|mark|marks|percent|percentage)\s*\)\s*$/i, "").replace(/\s*(?:%|mark|percent|percentage)\s*$/i, "").trim() || c.trim();
+          };
           const toTitleCaseName = (s2) => {
             if (!s2) return s2;
             if (s2 === s2.toUpperCase() || s2 === s2.toLowerCase()) {
@@ -30143,7 +30369,7 @@
               return toTitleCaseName(s2);
             }
             if (["grade", "gr", "class grade", "student grade", "learner grade", "year level"].includes(n)) {
-              const m = s2.match(/^(?:grade|gr\.?|g)?\s*(\d{1,2}[a-zA-Z]?)$/i);
+              const m = s2.match(/^(?:grade|gr\.?|g)?\s*0*(\d{1,2}[a-zA-Z]?)$/i);
               return m ? `Grade ${m[1]}` : s2;
             }
             if (["date of birth", "dob", "birth date", "birthdate", "learner dob"].includes(n)) {
@@ -30151,14 +30377,17 @@
               if (m1) return `${m1[1].padStart(4, "0")}-${m1[2].padStart(2, "0")}-${m1[3].padStart(2, "0")}`;
               const m2 = s2.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
               if (m2) return `${m2[3].padStart(4, "0")}-${m2[2].padStart(2, "0")}-${m2[1].padStart(2, "0")}`;
+              const { dob } = extractDobFromSaId(s2);
+              if (dob) return dob;
               return s2;
             }
             if (/phone|cell|mobile|telephone|contact number/.test(n)) {
+              if (/^0+$/.test(s2)) return null;
               const digits = s2.startsWith("+27") ? "0" + s2.slice(3).replace(/\D/g, "") : s2.replace(/[\s()-]/g, "");
               return /^[1-9]\d{8}$/.test(digits) ? "0" + digits : digits;
             }
             if (["subjects", "subject", "enrolled subjects", "subject list", "courses", "modules"].includes(n)) {
-              return s2.split(/[;,|]+/).map((p) => p.trim()).filter(Boolean).join("; ");
+              return s2.split(/[;,|]+/).map((p) => cleanSubjectName(p)).filter(Boolean).join("; ");
             }
             return val;
           };
@@ -30199,7 +30428,7 @@
             const grp = synGroups.find((g) => g.includes(thN));
             if (grp) grp.forEach((a) => nonListAliases.add(a));
           }
-          const skipMeta = /* @__PURE__ */ new Set(["total", "subtotal", "grand total", "average", "grade average", "class", "gender", "term", "age", "rank", "pass", "fail", "result", "comments", "notes"]);
+          const skipMeta = /* @__PURE__ */ new Set(["total", "subtotal", "grand total", "average", "grade average", "learner average obtained", "learner average (all subjects)", "learner rank", "learner total", "code", "report general comment", "deviation comment", "class", "gender", "term", "age", "rank", "pass", "fail", "result", "comments", "notes"]);
           const sourcePlans = [];
           const allCovered = /* @__PURE__ */ new Set();
           const allUnused = /* @__PURE__ */ new Set();
@@ -30211,19 +30440,26 @@
               if (th === "Total" && !ps.headers.some((sh) => sh.toLowerCase() === "total")) continue;
               const thNorm = th.toLowerCase().replace(/_/g, " ").trim();
               const grp = synGroups.find((g) => g.includes(thNorm));
-              const candSet = /* @__PURE__ */ new Set([thNorm, ...grp || []]);
+              const orderedAliases = [thNorm, ...grp || []];
               const et = expType(th);
-              const matches = ps.headers.filter((sh) => {
-                if (usedSrc.has(sh)) return false;
-                const shNorm = sh.toLowerCase().replace(/_/g, " ").trim();
-                return candSet.has(shNorm) && isCompat(et, colType(ps, sh));
-              });
-              if (matches.length >= 1) {
-                const exact = matches.find((m) => m.toLowerCase().replace(/_/g, " ").trim() === thNorm) || matches[0];
-                sFieldMap[th] = exact;
-                usedSrc.add(exact);
+              let chosenMatch;
+              for (const alias of orderedAliases) {
+                const hit = ps.headers.find((sh) => {
+                  if (usedSrc.has(sh)) return false;
+                  if (listTargets.includes(th) && NON_SUBJECT_HEADER_RE.test(sh)) return false;
+                  const shNorm = sh.toLowerCase().replace(/_/g, " ").trim();
+                  return shNorm === alias && isCompat(et, colType(ps, sh));
+                });
+                if (hit) {
+                  chosenMatch = hit;
+                  break;
+                }
+              }
+              if (chosenMatch) {
+                sFieldMap[th] = chosenMatch;
+                usedSrc.add(chosenMatch);
                 allCovered.add(th);
-                if (!fieldMap[th]) fieldMap[th] = exact;
+                if (!fieldMap[th]) fieldMap[th] = chosenMatch;
               }
             }
             for (const th of headers) {
@@ -30232,23 +30468,23 @@
               const avail = ps.headers.filter((sh) => !usedSrc.has(sh));
               let hit;
               if (thNorm.includes("student id") || thNorm.includes("learner id")) {
-                hit = avail.find((sh) => /\b(adm|student|learner|lurits|cemis|id|no)\b/i.test(sh));
+                hit = avail.find((sh) => /\b(accession|admission|adm|student|learner|lurits|cemis)\b/i.test(sh) && !/name|average|rank|total/i.test(sh)) || avail.find((sh) => /\b(id|number|no)\b/i.test(sh));
               } else if (thNorm === "first name") {
-                hit = avail.find((sh) => /\b(first|given|forename|learner\s*name|name|names)\b/i.test(sh) && !/\b(parent|guardian|mother|father|last|surname)\b/i.test(sh));
+                hit = avail.find((sh) => /\b(first|given|forename|names)\b/i.test(sh) && !/\b(parent|guardian|mother|father|last|surname|language|additional)\b|\(\s*gr/i.test(sh));
               } else if (thNorm === "last name" || thNorm === "surname") {
                 hit = avail.find((sh) => /\b(surname|last|family)\b/i.test(sh) && !/\b(parent|guardian|mother|father)\b/i.test(sh));
               } else if (thNorm.includes("birth") || thNorm === "dob") {
                 hit = avail.find((sh) => /\b(dob|birth)\b/i.test(sh));
               } else if (thNorm === "grade") {
-                hit = avail.find((sh) => /\b(grade|gr|level)\b/i.test(sh) && !/average/i.test(sh));
+                hit = avail.find((sh) => /\b(grade|gr|level)\b/i.test(sh) && !/average|\(\s*gr/i.test(sh));
               } else if (thNorm.includes("parent") && thNorm.includes("first")) {
-                hit = avail.find((sh) => /\b(parent|guardian|mother|father|nok|payer)\b/i.test(sh) && /\b(first|name|names)\b/i.test(sh) && !/surname|last/i.test(sh)) || avail.find((sh) => /\b(first|name|names)\b/i.test(sh) && !/surname|last/i.test(sh));
+                hit = avail.find((sh) => /^parent\s*first\s*name$/i.test(sh)) || avail.find((sh) => /\b(parent|guardian|mother|father|nok|payer)\b/i.test(sh) && /\b(first|name|names)\b/i.test(sh) && !/surname|last/i.test(sh));
               } else if (thNorm.includes("parent") && (thNorm.includes("last") || thNorm.includes("surname"))) {
-                hit = avail.find((sh) => /\b(parent|guardian|mother|father|nok|payer)\b/i.test(sh) && /\b(surname|last)\b/i.test(sh)) || avail.find((sh) => /\b(surname|last)\b/i.test(sh));
+                hit = avail.find((sh) => /^parent\s*last\s*name$/i.test(sh)) || avail.find((sh) => /\b(parent|guardian|mother|father|nok|payer)\b/i.test(sh) && /\b(surname|last)\b/i.test(sh));
               } else if (thNorm.includes("email")) {
-                hit = avail.find((sh) => /email|e-mail|mail/i.test(sh));
+                hit = avail.find((sh) => /^parent\s*email$/i.test(sh)) || avail.find((sh) => /email|e-mail|mail/i.test(sh));
               } else if (thNorm.includes("phone") || thNorm.includes("cell")) {
-                hit = avail.filter((sh) => /phone|cell|mobile|tel|contact/i.test(sh)).pop();
+                hit = avail.find((sh) => /^parent\s*phone$/i.test(sh)) || avail.filter((sh) => /phone|cell|mobile|tel|contact/i.test(sh)).pop();
               }
               if (hit) {
                 sFieldMap[th] = hit;
@@ -30273,9 +30509,9 @@
                   isDob: strs2.filter((s2) => /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(s2) || /^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$/.test(s2)).length / n >= 0.3,
                   isGender: strs2.filter((s2) => /^(?:m|f|male|female)$/i.test(s2)).length / n >= 0.5,
                   isClass: strs2.filter((s2) => /^\d{1,2}\s*[a-fA-F]$/.test(s2)).length / n >= 0.3,
-                  isId: cIdx === 0 && strs2.filter((s2) => /^\d+$/.test(s2) || /^[A-Za-z]+\d+$/.test(s2)).length / n >= 0.5,
-                  isAllCapsName: strs2.filter((s2) => /^[A-Z\s'-]{2,}$/.test(s2) && !/^(?:M|F|GRADE.*)$/.test(s2)).length / n >= 0.4,
-                  isPersonName: strs2.filter((s2) => /^[A-Za-z\s'-]{2,}$/.test(s2) && Number.isNaN(Number(s2)) && !/^(?:m|f|male|female|grade\s*\d+)$/i.test(s2)).length / n >= 0.5
+                  isId: cIdx <= 1 && strs2.filter((s2) => /^\d+$/.test(s2) || /^[A-Za-z]+\d+$/.test(s2)).length / n >= 0.5,
+                  isAllCapsName: strs2.filter((s2) => /^[A-Z\s'-]{2,}$/.test(s2) && !/^(?:M|F|NP|PG|RT|GRADE.*)$/.test(s2)).length / n >= 0.4,
+                  isPersonName: strs2.filter((s2) => /^[A-Za-z\s'-]{2,}$/.test(s2) && Number.isNaN(Number(s2)) && !/^(?:m|f|np|pg|rt|male|female|grade\s*\d+)$/i.test(s2)).length / n >= 0.5
                 };
               });
               const assignPattern = (th, pred, pickLast = false) => {
@@ -30304,7 +30540,7 @@
             }
             let sPeriod = "", sCols = [];
             if (listTargets.length && !sFieldMap[listTargets[0]]) {
-              const candSubj = ps.headers.filter((sh) => !usedSrc.has(sh) && !nonListAliases.has(sh.toLowerCase().replace(/_/g, " ").trim()) && !skipMeta.has(sh.toLowerCase().trim()) && ACADEMIC_SUBJECT_RE.test(sh));
+              const candSubj = ps.headers.filter((sh) => !usedSrc.has(sh) && !nonListAliases.has(sh.toLowerCase().replace(/_/g, " ").trim()) && !skipMeta.has(sh.toLowerCase().trim()) && !NON_SUBJECT_HEADER_RE.test(sh) && ACADEMIC_SUBJECT_RE.test(sh));
               if (candSubj.length >= 1) {
                 sPeriod = listTargets[0];
                 sCols = candSubj;
@@ -30320,88 +30556,111 @@
           unmappedTargets = headers.filter((th) => th !== "Total" && !allCovered.has(th));
           unusedSources = Array.from(allUnused);
           if (parsedSources.length > 1) {
-            const byKey = {};
-            const byName = {};
-            for (const sp of sourcePlans) {
+            const orderedPlans = [...sourcePlans].sort((a, b) => {
+              const aIsMarks = a.columns.length > 0 ? 1 : 0;
+              const bIsMarks = b.columns.length > 0 ? 1 : 0;
+              return aIsMarks - bIsMarks;
+            });
+            const byRealId = {};
+            const byExactName = {};
+            const byShortName = {};
+            const indexRec = (rec) => {
+              const kv = String(rec[keyCol] || "").trim().toLowerCase();
+              if (kv && (kv.length >= 6 || !/^\d+$/.test(kv))) byRealId[kv] = rec;
+              const fn = String(rec["First Name"] || "").trim().toLowerCase();
+              const ln = String(rec["Last Name"] || "").trim().toLowerCase();
+              if (fn && ln) {
+                const exactKey = `${ln}|${fn}`;
+                (byExactName[exactKey] = byExactName[exactKey] || []).push(rec);
+                const firstWord = fn.split(/\s+/)[0];
+                const shortKey = `${ln}|${firstWord}`;
+                (byShortName[shortKey] = byShortName[shortKey] || []).push(rec);
+              }
+            };
+            const findBestNameMatch = (cands, obj) => {
+              if (!cands || !cands.length) return void 0;
+              if (cands.length === 1) return cands[0];
+              const objGr = String(obj["Grade"] || "").trim().toLowerCase();
+              if (objGr) {
+                const grHit = cands.find((c) => String(c["Grade"] || "").trim().toLowerCase() === objGr);
+                if (grHit) return grHit;
+              }
+              return cands[0];
+            };
+            for (let pIdx = 0; pIdx < orderedPlans.length; pIdx++) {
+              const sp = orderedPlans[pIdx];
               for (const r of sp.ps.rows) {
                 const obj = {};
                 Object.entries(sp.field_map).forEach(([th, sh]) => {
                   obj[th] = fmtField(th, r[sh]);
                 });
                 if (sp.period && sp.columns.length) {
-                  const taken = sp.columns.filter((c) => isPresentMark(r[c])).map((c) => c.replace(/\s*(?:\(%?\)|%|mark|percent|percentage)\s*$/i, "").trim() || c.trim());
+                  const taken = sp.columns.filter((c) => isPresentMark(r[c])).map((c) => cleanSubjectName(c));
                   obj[sp.period] = taken.join("; ");
                 }
+                if ((!obj["Date of Birth"] || obj["Date of Birth"] === "") && obj[keyCol]) {
+                  const { dob } = extractDobFromSaId(obj[keyCol]);
+                  if (dob) obj["Date of Birth"] = dob;
+                }
                 const kVal = String(obj[keyCol] || "").trim().toLowerCase();
-                const fnLn = `${String(obj["First Name"] || "").trim().toLowerCase()}|${String(obj["Last Name"] || "").trim().toLowerCase()}`;
-                let targetRec = kVal ? byKey[kVal] : void 0;
-                if (!targetRec && fnLn !== "|" && byName[fnLn]) targetRec = byName[fnLn];
+                const isRealId = Boolean(kVal && (kVal.length >= 6 || !/^\d+$/.test(kVal)));
+                const fn = String(obj["First Name"] || "").trim().toLowerCase();
+                const ln = String(obj["Last Name"] || "").trim().toLowerCase();
+                const exactKey = fn && ln ? `${ln}|${fn}` : "";
+                const shortKey = fn && ln ? `${ln}|${fn.split(/\s+/)[0]}` : "";
+                let targetRec = isRealId ? byRealId[kVal] : void 0;
+                if (!targetRec && exactKey) targetRec = findBestNameMatch(byExactName[exactKey], obj);
+                if (!targetRec && shortKey) targetRec = findBestNameMatch(byShortName[shortKey], obj);
                 if (!targetRec) {
                   targetRec = {};
                   headers.forEach((h) => {
                     targetRec[h] = null;
                   });
                   rows.push(targetRec);
+                  Object.entries(obj).forEach(([k, v]) => {
+                    if (v !== null && v !== void 0 && v !== "") targetRec[k] = v;
+                  });
+                  indexRec(targetRec);
+                } else {
+                  Object.entries(obj).forEach(([k, v]) => {
+                    if (v === null || v === void 0 || v === "") return;
+                    const cur = targetRec[k];
+                    if (k === keyCol && isRealId && cur && /^\d{1,5}$/.test(String(cur).trim())) {
+                      targetRec[k] = v;
+                    } else if (cur === null || cur === void 0 || cur === "") {
+                      targetRec[k] = v;
+                    }
+                  });
+                  if (isRealId) byRealId[kVal] = targetRec;
                 }
-                Object.entries(obj).forEach(([k, v]) => {
-                  if ((targetRec[k] === null || targetRec[k] === void 0 || targetRec[k] === "") && v !== null && v !== void 0 && v !== "") targetRec[k] = v;
-                });
-                if (kVal) byKey[kVal] = targetRec;
-                if (fnLn !== "|") byName[fnLn] = targetRec;
               }
             }
           } else {
             const sp = sourcePlans[0];
             const allH = parsed.headers;
-            const emailCols = allH.filter((h) => /email|mail/i.test(h) || parsed.rows.slice(0, 25).some((r) => String(r[h] ?? "").includes("@")));
-            const phoneCols = allH.filter((h) => /phone|cell|mobile|tel/i.test(h) || parsed.rows.slice(0, 25).some((r) => /^(?:\+27|0)[1-9]\d{7,8}$/.test(String(r[h] ?? "").replace(/[\s()-]/g, ""))));
-            const rightCols = allH.slice(Math.min(6, allH.length));
-            const parentFirstCols = rightCols.filter((h) => /first|name/i.test(h) && !/surname|last|email|phone|cell/i.test(h));
-            const parentLastCols = rightCols.filter((h) => /surname|last/i.test(h));
             rows = parsed.rows.map((r, rIdx) => {
               const obj = {};
               headers.forEach((h) => {
                 const sc = sp.field_map[h];
                 let val = sc ? fmtField(h, r[sc]) : null;
                 const hn = h.toLowerCase().trim();
+                if ((val === null || val === "") && r[h] !== void 0 && r[h] !== null && r[h] !== "") {
+                  val = fmtField(h, r[h]);
+                }
                 if (val === null || val === "") {
                   if (hn === "student id" && r[allH[0]] !== null && r[allH[0]] !== void 0) {
                     val = String(r[allH[0]]);
-                  } else if (hn === "parent email") {
-                    for (const ec of [...emailCols].reverse()) {
-                      if (r[ec]) {
-                        val = fmtField(h, r[ec]);
-                        break;
-                      }
-                    }
-                  } else if (hn === "parent phone") {
-                    for (const pc of [...phoneCols].reverse()) {
-                      if (r[pc]) {
-                        val = fmtField(h, r[pc]);
-                        break;
-                      }
-                    }
-                  } else if (hn === "parent first name") {
-                    for (const fc of parentFirstCols) {
-                      if (r[fc]) {
-                        val = fmtField(h, r[fc]);
-                        break;
-                      }
-                    }
-                  } else if (hn === "parent last name") {
-                    for (const lc of parentLastCols) {
-                      if (r[lc]) {
-                        val = fmtField(h, r[lc]);
-                        break;
-                      }
-                    }
                   }
                 }
                 obj[h] = val;
               });
               if (sp.period && sp.columns.length) {
-                const taken = sp.columns.filter((c) => isPresentMark(r[c])).map((c) => c.replace(/\s*(?:\(%?\)|%|mark|percent|percentage)\s*$/i, "").trim() || c.trim());
+                const taken = sp.columns.filter((c) => isPresentMark(r[c])).map((c) => cleanSubjectName(c));
                 obj[sp.period] = taken.join("; ");
+              }
+              if ((!obj["Date of Birth"] || obj["Date of Birth"] === "") && obj["Student ID"]) {
+                const { dob } = extractDobFromSaId(obj["Student ID"]);
+                if (dob) obj["Date of Birth"] = dob;
               }
               if (headers.includes("Student ID") && (obj["Student ID"] === null || obj["Student ID"] === "")) {
                 obj["Student ID"] = `STU${String(rIdx + 1).padStart(4, "0")}`;

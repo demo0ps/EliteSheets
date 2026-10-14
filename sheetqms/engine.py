@@ -61,7 +61,7 @@ def expected_field_type(field: str, rules) -> str:
             return 'numeric'
     if nf in PERIOD_TOKENS or tokens & {'qty', 'quantity', 'units', 'count', 'price', 'cost', 'rate', 'total', 'amount', 'revenue', 'sales', 'value', 'sum', 'boxes', 'crates', 'weight', 'score'}:
         return 'numeric'
-    if tokens & {'item', 'sku', 'code', 'id', 'part', 'ref'}:
+    if (tokens & {'item', 'sku', 'code', 'id', 'part', 'ref'}) and not (tokens & {'student', 'learner', 'national', 'sa', 'accession', 'admission', 'employee'}):
         return 'code'
     if tokens & {'description', 'name', 'title', 'details', 'notes', 'site', 'branch', 'location', 'store', 'customer', 'client', 'supplier', 'vendor', 'category', 'status', 'type', 'department'}:
         return 'text'
@@ -239,20 +239,39 @@ def infer_plan(job):
                     matches = [m for m in raw_matches if compatible_type(exp_t, col_types.get(m, 'any'))]
                     if not matches and raw_matches and any(norm(m) == norm(field) for m in raw_matches):
                         matches = [m for m in raw_matches if norm(m) == norm(field)]
-                    if not matches and is_auto_template:
-                        ftoks = set(re.findall(r'[a-z0-9]+', norm(field))) - {'the', 'and', 'for', 'of', 'in', 'to'}
+                    if len(matches) > 1:
+                        exact_m = [m for m in matches if norm(m) == norm(field)]
+                        if len(exact_m) == 1:
+                            matches = exact_m
+                        else:
+                            ordered_pref = [norm(a) for a in ([field] + template['aliases'].get(field, []) + builtin_aliases_for(field))]
+                            for pref in ordered_pref:
+                                pref_hit = [m for m in matches if norm(m) == pref]
+                                if len(pref_hit) == 1:
+                                    matches = pref_hit
+                                    break
+                    if not matches and is_auto_template and norm(field) not in {'subjects', 'subject', 'enrolled subjects', 'subject list', 'courses', 'modules'}:
+                        ftoks = set(re.findall(r'[a-z0-9]+', norm(field))) - {'the', 'and', 'for', 'of', 'in', 'to', 'name', 'first', 'last'}
                         if ftoks:
-                            matches = [h for h in hs if h not in field_map.values() and compatible_type(exp_t, col_types.get(h, 'any')) and bool(ftoks & set(re.findall(r'[a-z0-9]+', norm(h))))]
+                            matches = [
+                                h for h in hs
+                                if h not in field_map.values()
+                                and compatible_type(exp_t, col_types.get(h, 'any'))
+                                and bool(ftoks & set(re.findall(r'[a-z0-9]+', norm(h))))
+                                and not ('parent' in norm(field) and not re.search(r'\b(parent|guardian|mother|father|nok|payer)\b', h, re.I))
+                                and not re.search(r'\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)', h, re.I)
+                            ]
                     match_counts[field] = len(matches)
                     if len(matches) == 1:
                         field_map[field] = matches[0]
-                # Detect SA-SAMS / horizontal Subject-Percentage matrix columns for a list target field (e.g. 'Subjects')
+                # Detect SA-SAMS / GDE horizontal Subject-Percentage matrix columns for a list target field (e.g. 'Subjects')
                 list_field, list_cols = '', []
                 list_targets = [f for f in headers if norm(f) in {'subjects', 'subject', 'enrolled subjects', 'subject list', 'courses', 'modules'} and f not in field_map]
                 if list_targets:
                     non_list_aliases = {a for f in headers if f not in list_targets for a in aliases_for(template, f)}
-                    skip_meta = {'total', 'subtotal', 'grand total', 'average', 'grade average', 'class', 'gender', 'term', 'age', 'rank', 'pass', 'fail', 'result', 'comments', 'notes'}
-                    cand_subj = [h for h in hs if h not in field_map.values() and norm(h) not in non_list_aliases and norm(h) not in skip_meta]
+                    skip_meta = {'total', 'subtotal', 'grand total', 'average', 'grade average', 'learner average obtained', 'learner average (all subjects)', 'learner rank', 'learner total', 'code', 'report general comment', 'deviation comment', 'class', 'gender', 'term', 'age', 'rank', 'pass', 'fail', 'result', 'comments', 'notes'}
+                    non_subj_re = re.compile(r'\b(average|rank|total|subtotal|code|codes|comment|deviation|obtained|number|accession|gender|learner\s*name|student\s*name|first\s*name|last\s*name|surname|parent|guardian|mother|father|phone|cell|email|dob|birth|class)\b', re.I)
+                    cand_subj = [h for h in hs if h not in field_map.values() and norm(h) not in non_list_aliases and norm(h) not in skip_meta and not non_subj_re.search(h)]
                     if len(cand_subj) >= 2:
                         list_field = list_targets[0]
                         list_cols = cand_subj
@@ -296,15 +315,17 @@ def infer_plan(job):
     if mode == 'direct' and direct_candidates:
         multi_join = len(direct_candidates) > 1
         all_covered = {f for dc in direct_candidates for f in (list(dc['field_map'].keys()) + ([dc['list_field']] if dc['list_field'] else []))}
+        optional_school_fields = {'subjects', 'subject', 'date of birth', 'dob', 'parent first name', 'parent last name', 'parent email', 'parent phone', 'email', 'notes', 'comments'}
+        is_school_tpl = is_auto_template and len(all_covered) >= 4 and {'first name', 'last name'} <= {norm(h) for h in headers}
         if not multi_join:
             dc = direct_candidates[0]
             for field in headers:
-                if field not in all_covered:
+                if field not in all_covered and not (is_school_tpl and norm(field) in optional_school_fields):
                     problems.append(question(dc['prefix'] + ':' + field, f'Which source column maps to {field}? Found {dc["match_counts"].get(field, 0)} matching headings.', dc['profile_name']))
             used_cols = set(dc['field_map'].values()) | set(dc['list_cols'])
             unused = [h for h in dc['hs'] if h not in used_cols]
             ignored_cols = {}
-            if is_auto_template and len(all_covered) == len(headers) and unused:
+            if is_auto_template and (len(all_covered) == len(headers) or is_school_tpl) and unused:
                 ignored_cols = {u: 'Auto-excluded extra column not in destination template' for u in unused}
                 unused = []
             sources.append(SourcePlan(source_id=dc['profile_id'], sheet=dc['sheet_name'], header_row=dc['header_row'], layout='direct', key=key, period=dc['list_field'], columns=dc['list_cols'], field_map=dc['field_map'], ignored_columns=ignored_cols))
@@ -312,7 +333,7 @@ def infer_plan(job):
                 problems.append(question(dc['prefix'] + ':unused', 'What should happen to unmapped columns: ' + ', '.join(unused) + '? An explicit exclusion reason or mapping is required.', dc['profile_name']))
         else:
             for field in headers:
-                if field not in all_covered:
+                if field not in all_covered and not (is_school_tpl and norm(field) in optional_school_fields):
                     problems.append(question('multi:' + field, f'Which source column maps to {field}? Found 0 matching headings across uploaded sheets.', template['name']))
             for dc in direct_candidates:
                 used_cols = set(dc['field_map'].values()) | set(dc['list_cols'])
@@ -397,13 +418,18 @@ def format_field_value(target_field: str, value, numeric_fields: set[str], confi
     if value is None or (isinstance(value, str) and not value.strip()):
         return None
     nf = norm(target_field)
+    if nf in {'first name', 'firstname', 'last name', 'lastname', 'surname', 'parent first name', 'parent last name', 'guardian first name', 'guardian surname'}:
+        s = str(value).strip()
+        if s.isupper() or s.islower():
+            return ' '.join(w[:1].upper() + w[1:].lower() for w in s.split() if w)
+        return s
     if nf in {'grade', 'gr', 'class grade', 'student grade', 'learner grade', 'year level'}:
         if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
             d = Decimal(str(value))
             s = str(int(d)) if d == d.to_integral_value() else str(value).strip()
         else:
             s = str(value).strip()
-        m = re.fullmatch(r'(?:grade|gr\.?|g)?\s*(\d{1,2}[a-zA-Z]?)', s, re.I)
+        m = re.fullmatch(r'(?:grade|gr\.?|g)?\s*0*(\d{1,2}[a-zA-Z]?)', s, re.I)
         if m:
             return f'Grade {m.group(1)}'
         return s
@@ -417,6 +443,9 @@ def format_field_value(target_field: str, value, numeric_fields: set[str], confi
         m2 = re.match(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', s)
         if m2:
             return f'{int(m2[3]):04d}-{int(m2[2]):02d}-{int(m2[1]):02d}'
+        sa = validate_and_repair_sa_id(s)
+        if sa.get('dob'):
+            return sa['dob']
         return s
     if any(w in nf for w in ('phone', 'cell', 'mobile', 'telephone', 'contact number')):
         if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
@@ -424,6 +453,8 @@ def format_field_value(target_field: str, value, numeric_fields: set[str], confi
             s = str(int(d)) if d == d.to_integral_value() else str(value).strip()
         else:
             s = str(value).strip()
+        if re.fullmatch(r'0+', s):
+            return None
         if s.startswith('+27'):
             digits = '0' + re.sub(r'\D', '', s[3:])
         else:
@@ -432,7 +463,7 @@ def format_field_value(target_field: str, value, numeric_fields: set[str], confi
             return '0' + digits
         return digits
     if nf in {'subjects', 'subject', 'enrolled subjects', 'subject list', 'courses', 'modules'} and isinstance(value, str):
-        parts = [p.strip() for p in re.split(r'[;,|]+', value) if p.strip()]
+        parts = [re.sub(r'\s*\(\s*(?:gr(?:ade)?\.?\s*\d{1,2}[a-z]?|%|mark|marks|percent|percentage)\s*\)\s*$', '', p.strip(), flags=re.I).strip() for p in re.split(r'[;,|]+', value) if p.strip()]
         return '; '.join(parts)
     if any(w in nf for w in ('sa id', 'id number', 'identity number', 'id no')):
         if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
@@ -665,10 +696,15 @@ def normalize_sources(job, plan):
                         for col in source.columns:
                             val, cell = get(col)
                             if is_present_subject_mark(val):
-                                clean_subj = re.sub(r'\s*(?:\(%?\)|%|mark|percent|percentage)\s*$', '', col, flags=re.I).strip() or col.strip()
+                                clean_subj = re.sub(r'\s*\(\s*(?:gr(?:ade)?\.?\s*\d{1,2}[a-z]?|%|mark|marks|percent|percentage)\s*\)\s*$', '', col, flags=re.I)
+                                clean_subj = re.sub(r'\s*(?:%|mark|percent|percentage)\s*$', '', clean_subj, flags=re.I).strip() or col.strip()
                                 taken.append(clean_subj)
                                 refs.append({'source_id': source.source_id, 'sheet': source.sheet, 'cell': cell, 'target_field': source.period})
                         data[source.period] = '; '.join(taken)
+                    if not data.get('Date of Birth') and data.get(plan.destination.key):
+                        sa = validate_and_repair_sa_id(data.get(plan.destination.key))
+                        if sa.get('dob'):
+                            data['Date of Birth'] = sa['dob']
                     records.append({'id': f'{source.source_id}:{source.sheet}:{number}', 'data': data, 'refs': refs, 'operation': 'horizontal subject-percentage matrix + column mapping' if source.period else 'column mapping'})
                 elif source.layout == 'long':
                     expected += 1
@@ -715,23 +751,57 @@ def build_rows(records, destination, rules):
     if destination.mode == 'direct':
         source_regions = {r['id'].rsplit(':', 1)[0] for r in records}
         if len(source_regions) > 1:
-            by_key = {}
-            by_name = {}
-            for record in records:
+            # Sort records so Bio/Parent-Info sheets (without horizontal subject matrix) run FIRST and Mark Schedule sheets run SECOND
+            ordered_records = sorted(records, key=lambda rec: 1 if 'horizontal subject-percentage matrix' in rec.get('operation', '') else 0)
+            by_real_key: dict[str, tuple[int, str]] = {}
+            by_exact_name: dict[tuple[str, str], list[tuple[int, str]]] = {}
+            by_short_name: dict[tuple[str, str], list[tuple[int, str]]] = {}
+
+            def _is_real_key(kv: str) -> bool:
+                return bool(kv and (len(kv) >= 6 or not kv.isdigit()))
+
+            def _pick_candidate(cands: list[tuple[int, str]], reg: str, rec_data: dict) -> int | None:
+                valid = [(idx, r_reg) for idx, r_reg in cands if r_reg != reg]
+                if not valid:
+                    return None
+                if len(valid) == 1:
+                    return valid[0][0]
+                rec_gr = norm(rec_data.get('Grade') or rec_data.get('grade'))
+                if rec_gr:
+                    for idx, _ in valid:
+                        if norm(rows[idx].get('Grade') or rows[idx].get('grade')) == rec_gr:
+                            return idx
+                return valid[0][0]
+
+            for record in ordered_records:
                 data = record['data']
                 k_val = norm(data.get(destination.key)) if destination.key else ''
-                fn_ln = (norm(data.get('First Name') or data.get('first_name')), norm(data.get('Last Name') or data.get('last_name') or data.get('Surname')))
+                is_real_k = _is_real_key(k_val)
+                fn = norm(data.get('First Name') or data.get('first_name'))
+                ln = norm(data.get('Last Name') or data.get('last_name') or data.get('Surname'))
+                exact_nm = (ln, fn) if (fn and ln) else None
+                short_nm = (ln, fn.split()[0]) if (fn and ln) else None
                 reg = record['id'].rsplit(':', 1)[0]
                 target_idx = None
-                if k_val and k_val in by_key and by_key[k_val][1] != reg:
-                    target_idx = by_key[k_val][0]
-                elif fn_ln[0] and fn_ln[1] and fn_ln in by_name and by_name[fn_ln][1] != reg:
-                    target_idx = by_name[fn_ln][0]
+                if is_real_k and k_val in by_real_key and by_real_key[k_val][1] != reg:
+                    target_idx = by_real_key[k_val][0]
+                elif exact_nm and exact_nm in by_exact_name:
+                    target_idx = _pick_candidate(by_exact_name[exact_nm], reg, data)
+                if target_idx is None and short_nm and short_nm in by_short_name:
+                    target_idx = _pick_candidate(by_short_name[short_nm], reg, data)
                 if target_idx is not None:
                     merged_row = rows[target_idx]
                     for f, v in data.items():
-                        if merged_row.get(f) in (None, '') and v not in (None, ''):
+                        if v in (None, ''):
+                            continue
+                        cur_v = merged_row.get(f)
+                        # Upgrade a row-counter Student ID (e.g. '5') to a real 13-digit Accession Number ('0905245292081') when matched!
+                        if f == destination.key and is_real_k and cur_v is not None and str(cur_v).strip().isdigit() and len(str(cur_v).strip()) <= 5:
                             merged_row[f] = v
+                        elif cur_v in (None, ''):
+                            merged_row[f] = v
+                    if is_real_k:
+                        by_real_key[k_val] = (target_idx, reg)
                     provenance.append({'record_id': record['id'], 'target_row': destination.header_row + target_idx + 1, 'target_fields': list(data), 'sources': record['refs'], 'operation': 'multi-sheet relational join + ' + record.get('operation', 'column mapping')})
                 else:
                     if len(rows) >= max_rows:
@@ -740,10 +810,12 @@ def build_rows(records, destination, rules):
                     new_idx = len(rows)
                     row_copy = dict(data)
                     rows.append(row_copy)
-                    if k_val:
-                        by_key[k_val] = (new_idx, reg)
-                    if fn_ln[0] and fn_ln[1]:
-                        by_name[fn_ln] = (new_idx, reg)
+                    if is_real_k:
+                        by_real_key[k_val] = (new_idx, reg)
+                    if exact_nm:
+                        by_exact_name.setdefault(exact_nm, []).append((new_idx, reg))
+                    if short_nm:
+                        by_short_name.setdefault(short_nm, []).append((new_idx, reg))
                     provenance.append({'record_id': record['id'], 'target_row': destination.header_row + new_idx + 1, 'target_fields': list(data), 'sources': record['refs'], 'operation': record.get('operation', 'column mapping')})
             return rows, provenance, questions
         for index, record in enumerate(records):
