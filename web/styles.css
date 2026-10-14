@@ -1290,3 +1290,18 @@ body.compact td, body.compact th { padding: 8px 12px; }
   .shell.menu-open:has(.simple-studio) #mobile-menu { grid-row: 1; }
   .shell.menu-open:has(.simple-studio) .nav { grid-row: 2; }
 }
+
+/* Phone Helper: sign-out moves into the menu; the page stays still so the chat box gets the touch scroll */
+@media (max-width: 1024px) {
+  .shell:has(.simple-studio) #logout,
+  .shell:has(.simple-studio) #mobile-logout { display: none; }
+  .shell.menu-open:has(.simple-studio) #mobile-logout {
+    display: inline-flex; grid-column: 1 / -1; grid-row: auto; justify-content: center;
+    width: 100%; min-height: 48px; gap: 8px; border-radius: 11px; font-size: 16px;
+  }
+  .shell.menu-open:has(.simple-studio) #mobile-logout::after { content: "Sign out"; font-weight: 600; }
+  html:has(.simple-studio), body:has(.simple-studio) { overflow: hidden; height: 100%; overscroll-behavior: none; }
+  .shell:has(.simple-studio) { height: 100dvh; overflow: hidden; }
+  .shell:has(.simple-studio) main { overflow: hidden; }
+  .simple-studio .chat-card .messages { overscroll-behavior: auto; }
+}
