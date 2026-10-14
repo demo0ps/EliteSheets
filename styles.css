@@ -1255,8 +1255,8 @@ body.compact td, body.compact th { padding: 8px 12px; }
   .simple-studio .chat-card {
     min-height: 420px;
     max-height: none;
-    height: calc(100dvh - 152px);
-    height: calc(100vh - 152px);
+    height: calc(100dvh - 212px);
+    height: calc(100vh - 212px);
     margin: 8px 8px 0;
   }
   .simple-studio .chat-card .messages { flex: 1 1 auto; }
