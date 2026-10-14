@@ -3,7 +3,7 @@ from pydantic import Field, field_validator
 from .models import StrictModel, SettingsUpdate, MappingPlan
 
 
-VerticalType = Literal['education', 'sme_pa', 'finance_hr', 'supply_chain']
+VerticalType = Literal['general', 'education', 'sme_pa', 'finance_hr', 'supply_chain']
 
 
 class Login(StrictModel):
@@ -16,7 +16,7 @@ class Signup(StrictModel):
     display_name: str = Field(min_length=2, max_length=100)
     email: str = Field(min_length=5, max_length=180)
     password: str = Field(min_length=8, max_length=256)
-    vertical: VerticalType = 'education'
+    vertical: VerticalType = 'general'
 
 
 class DemoLogin(StrictModel):
@@ -29,7 +29,7 @@ class Preferences(StrictModel):
     density: Literal['comfortable', 'compact'] = 'comfortable'
     explanations: Literal['concise', 'detailed'] = 'detailed'
     auto_checks: bool = True
-    vertical: VerticalType = 'education'
+    vertical: VerticalType = 'general'
 
 
 class PlatformSettings(SettingsUpdate):
@@ -51,7 +51,7 @@ class CustomerCreate(StrictModel):
     email: str = Field(min_length=5, max_length=180)
     display_name: str = Field(min_length=2, max_length=100)
     password: str = Field(min_length=12, max_length=256)
-    vertical: VerticalType = 'education'
+    vertical: VerticalType = 'general'
 
 
 class ChatInput(StrictModel):
