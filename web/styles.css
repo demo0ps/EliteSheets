@@ -1216,3 +1216,30 @@ body.compact td, body.compact th { padding: 8px 12px; }
 .share-days label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
 .share-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px; }
 .share-row input { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line-strong); border-radius: 8px; padding: 9px 10px; font: inherit; font-size: 14px; background: var(--panel); color: var(--ink); min-height: 44px; }
+
+/* Helper on phones and tablets: the message list scrolls inside the card, not the page */
+@media (max-width: 1024px) {
+  .simple-studio .chat-card {
+    min-height: 360px;
+    max-height: calc(100vh - 330px);
+    max-height: calc(100dvh - 330px);
+  }
+  .simple-studio .chat-card .messages {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Helper on phones: more room for messages, typing bar always reachable */
+@media (max-width: 1024px) {
+  .simple-studio .chat-card .chat-top small { display: none; }
+  .simple-studio .chat-card .chat-top { padding: 10px 14px; }
+  #tour-open-btn > span > span { display: none; }
+  .simple-studio .chat-card .quick-chips { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .simple-studio .chat-card .quick-chips .chip { flex: 0 0 auto; min-height: 44px; }
+  .simple-studio .chat-card .chat-compose { padding: 10px 12px; }
+  .simple-studio .chat-card .chat-compose textarea { font-size: 16px; min-height: 44px; }
+  .simple-studio .chat-card .messages { padding: 14px; }
+}

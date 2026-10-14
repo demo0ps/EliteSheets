@@ -27204,6 +27204,57 @@
       toast(e instanceof Error ? e.message : String(e), true);
     }
   }
+  function chatPlaceholder(hasJob) {
+    const phone2 = window.matchMedia("(max-width: 1024px)").matches;
+    if (phone2) return hasJob ? "Type a question or change\u2026" : "Type the columns you want\u2026";
+    return hasJob ? "Tell me what to change (e.g. 'swap Jan and Feb', '18', 'yes')\u2026" : "Tell me what columns to create (e.g. 'Columns: Name, Phone, Amount')\u2026";
+  }
+  var localChatNotes = [];
+  function localNotesHtml() {
+    return localChatNotes.filter((n) => n.jobId === (job?.id || "")).map((n) => n.role === "user" ? `<article class="msg user"><span class="msg-sender">You</span><div class="bubble">${n.html}</div></article>` : `<article class="msg"><span class="msg-sender">Helper</span><div class="bubble">${n.html}</div></article>`).join("");
+  }
+  function addHelperNote(question, answerHtml) {
+    const id = job?.id || "";
+    if (question) localChatNotes.push({ jobId: id, role: "user", html: escapeHTML(question) });
+    localChatNotes.push({ jobId: id, role: "qms", html: answerHtml });
+    studio();
+    const ms = document.querySelector(".messages");
+    if (ms) ms.scrollTop = ms.scrollHeight;
+  }
+  function sheetMissingSummary() {
+    const rep = job?.report;
+    if (!job) return "Open a file or click <b>Fill My Sheet</b> first, then I can check what is missing.";
+    if (!rep?.rows) return "The sheet is not filled yet. Click <b>Fill My Sheet</b> and I will tell you what is still missing.";
+    const headers = rep.headers || [];
+    const rows = rep.rows;
+    const emptyByCol = {};
+    let formulaCount = 0;
+    rows.forEach((row, ri) => headers.forEach((h) => {
+      const v = row[h];
+      if (xlIsEmpty(v)) (emptyByCol[h] = emptyByCol[h] || []).push(ri + 2);
+      else if (xlIsFormula(v)) formulaCount++;
+    }));
+    const cols = Object.entries(emptyByCol);
+    const questions = (rep.questions || []).map((q) => String(q.text || "")).filter(Boolean);
+    const failing = (rep.checks || []).filter((c) => c && c.passed === false);
+    const released = rep.status === "RELEASED";
+    const status = released ? "Ready to download" : "Not ready to download yet";
+    if (!cols.length && !questions.length && !failing.length && !formulaCount) {
+      return `Nothing is missing on this sheet. <b>${status}.</b>`;
+    }
+    const listRows = (arr) => arr.length > 6 ? `rows ${arr.slice(0, 6).join(", ")} and ${arr.length - 6} more` : `row${arr.length === 1 ? "" : "s"} ${arr.join(", ")}`;
+    const items = [];
+    if (cols.length) {
+      const total = cols.reduce((n, [, a]) => n + a.length, 0);
+      items.push(`<li><b>${total} empty cell${total === 1 ? "" : "s"}</b> in ${cols.length} column${cols.length === 1 ? "" : "s"}:</li>`);
+      cols.forEach(([h, arr]) => items.push(`<li>${escapeHTML(h)}: ${listRows(arr)}</li>`));
+    }
+    if (formulaCount) items.push(`<li>${formulaCount} cell${formulaCount === 1 ? " contains a formula" : "s contain formulas"}. Formulas do not calculate here, so type the value instead.</li>`);
+    questions.forEach((q) => items.push(`<li>Open question: ${escapeHTML(q)} (answer it in the box below)</li>`));
+    failing.forEach((c) => items.push(`<li>Check not passed: ${escapeHTML(c.name || c.id || "QMS check")}${c.detail ? ` (${escapeHTML(c.detail)})` : ""}</li>`));
+    const verdict = !released ? "<b>Not ready to download yet.</b> Fill the gaps above and it will be ready." : cols.length || formulaCount ? "<b>Ready to download,</b> but the empty cells above will stay empty in the file." : "<b>Ready to download.</b>";
+    return `<div>Here is what is still missing on this sheet:</div><ul class="helper-missing">${items.join("")}</ul><div>${verdict}</div>`;
+  }
   function studio() {
     const r = job?.report;
     const release = r?.status === "RELEASED";
@@ -27306,13 +27357,13 @@
       </div>
 
       <div class="messages" id="messages" tabindex="0" aria-label="Helper conversation" aria-live="polite">
-        ${job ? job.chat.map((m) => `<article class="msg ${m.role === "user" ? "user" : ""}"><span class="msg-sender">${m.role === "user" ? "You" : "Helper"}</span><div class="bubble">${escapeHTML(friendlyText(m.text))}</div></article>`).join("") : `<article class="msg"><span class="msg-sender">Helper</span><div class="bubble">Hi! Click <b>Open / Upload File</b> above to load a spreadsheet, or type what columns you want me to build right below.<div style="margin-top:10px"><button id="start-guide-inline" class="btn small cyan">${icon("info")}Show Me Where to Click (Interactive Guide)</button></div></div></article>`}
+        ${job ? job.chat.map((m) => `<article class="msg ${m.role === "user" ? "user" : ""}"><span class="msg-sender">${m.role === "user" ? "You" : "Helper"}</span><div class="bubble">${escapeHTML(friendlyText(m.text))}</div></article>`).join("") + localNotesHtml() : `<article class="msg"><span class="msg-sender">Helper</span><div class="bubble">Hi! Click <b>Open / Upload File</b> above to load a spreadsheet, or type what columns you want me to build right below.<div style="margin-top:10px"><button id="start-guide-inline" class="btn small cyan">${icon("info")}Show Me Where to Click (Interactive Guide)</button></div></div></article>`}
       </div>
 
-      ${job ? `<div class="quick-action-bar">${job.proposal ? `<button id="confirm-correction" class="btn primary">${icon("check")}Yes, apply: ${escapeHTML(job.proposal.description)}</button>` : ""}${!r || !release ? `<button id="run-job" class="btn ${r ? "" : "primary"}">${icon("check")}${r ? "Update Sheet" : "Fill My Sheet"}</button>` : ""}<div class="quick-chips">${hasMissingNorthFeb && !job.proposal ? `<button class="chip" data-chat="18">Reply: 18</button><button class="chip" data-chat="North Feb is 18">North Feb is 18</button>` : ""}${customMissing && !hasMissingNorthFeb && !job.proposal ? `<button class="chip" data-chat="${escapeHTML(customMissing.entity)} ${escapeHTML(customMissing.category)} is 18">Set ${escapeHTML(customMissing.entity)} / ${escapeHTML(customMissing.category)} = 18</button>` : ""}${hasUnmappedQty && !customUnmapped?.length && !job.proposal ? `<button class="chip" data-chat="yes">Yes, put Boxes in Qty</button>` : ""}${customUnmapped?.length && customUnused?.length && !job.proposal ? customUnused.slice(0, 2).map((sc) => `<button class="chip" data-chat="put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}">Put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}</button>`).join("") : ""}${r && !release ? `<button class="chip" data-chat="What is blocking this output?">What is missing?</button>` : ""}${release && headers.includes("Jan") && headers.includes("Feb") ? `<button class="chip" data-chat="swap Jan and Feb">Swap Jan & Feb</button><button class="chip" data-chat="replace the first row with row 2">Swap row 1 & row 2</button>` : ""}</div></div>` : `<div class="quick-action-bar"><div class="quick-chips"><button class="chip" data-chat="${escapeHTML(vMeta.builderPresetCmd)}">\u2728 Build ${escapeHTML(vMeta.builderPresetLabel)}</button><button class="chip" data-chat="Create a SA-SAMS student & tuition sheet">\u{1F393} Student & Tuition Sheet</button></div></div>`}
+      ${job ? `<div class="quick-action-bar">${job.proposal ? `<button id="confirm-correction" class="btn primary">${icon("check")}Yes, apply: ${escapeHTML(job.proposal.description)}</button>` : ""}${!r || !release ? `<button id="run-job" class="btn ${r ? "" : "primary"}">${icon("check")}${r ? "Update Sheet" : "Fill My Sheet"}</button>` : ""}<div class="quick-chips"><button class="chip" id="ask-missing" type="button">\u{1F50D} What's missing?</button>${hasMissingNorthFeb && !job.proposal ? `<button class="chip" data-chat="18">Reply: 18</button><button class="chip" data-chat="North Feb is 18">North Feb is 18</button>` : ""}${customMissing && !hasMissingNorthFeb && !job.proposal ? `<button class="chip" data-chat="${escapeHTML(customMissing.entity)} ${escapeHTML(customMissing.category)} is 18">Set ${escapeHTML(customMissing.entity)} / ${escapeHTML(customMissing.category)} = 18</button>` : ""}${hasUnmappedQty && !customUnmapped?.length && !job.proposal ? `<button class="chip" data-chat="yes">Yes, put Boxes in Qty</button>` : ""}${customUnmapped?.length && customUnused?.length && !job.proposal ? customUnused.slice(0, 2).map((sc) => `<button class="chip" data-chat="put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}">Put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}</button>`).join("") : ""}${r && !release ? `<button class="chip" data-chat="What is blocking this output?">What is missing?</button>` : ""}${release && headers.includes("Jan") && headers.includes("Feb") ? `<button class="chip" data-chat="swap Jan and Feb">Swap Jan & Feb</button><button class="chip" data-chat="replace the first row with row 2">Swap row 1 & row 2</button>` : ""}</div></div>` : `<div class="quick-action-bar"><div class="quick-chips"><button class="chip" data-chat="${escapeHTML(vMeta.builderPresetCmd)}">\u2728 Build ${escapeHTML(vMeta.builderPresetLabel)}</button><button class="chip" data-chat="Create a SA-SAMS student & tuition sheet">\u{1F393} Student & Tuition Sheet</button></div></div>`}
 
       <form id="chat-form" class="chat-compose">
-        <textarea id="chat-text" rows="1" aria-label="Message the Sheet Helper" placeholder="${job ? "Tell me what to change (e.g. 'swap Jan and Feb', '18', 'yes')\u2026" : "Tell me what columns to create (e.g. 'Columns: Name, Phone, Amount')\u2026"}"></textarea>
+        <textarea id="chat-text" rows="1" aria-label="Message the Sheet Helper" placeholder="${chatPlaceholder(!!job)}"></textarea>
         <button id="send-chat" class="btn primary small" type="submit" aria-label="Send message">${icon("send")}</button>
       </form>
     </section>
@@ -28639,6 +28690,11 @@
   async function sendChat() {
     const text = $2("chat-text").value.trim();
     if (!text) return;
+    if (job && /\b(missing|incomplete|blank|empty|what('s| is)? (still )?(left|wrong|not done))\b/i.test(text)) {
+      $2("chat-text").value = "";
+      addHelperNote(text, sheetMissingSummary());
+      return;
+    }
     await busy($2("send-chat"), async () => {
       if (!job) {
         handleBuilderChatCommand(text);
@@ -29245,6 +29301,8 @@
       } else if (t.closest?.("#xl-discard")) {
         xlClearPending();
         xlNetBanner(null);
+      } else if (t.closest?.("#ask-missing")) {
+        addHelperNote("What's missing?", sheetMissingSummary());
       }
     });
     window.addEventListener("online", () => {
