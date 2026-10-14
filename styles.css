@@ -1243,3 +1243,21 @@ body.compact td, body.compact th { padding: 8px 12px; }
   .simple-studio .chat-card .chat-compose textarea { font-size: 16px; min-height: 44px; }
   .simple-studio .chat-card .messages { padding: 14px; }
 }
+
+/* Helper on phones: full-height card between a slim top bar and the bottom tab bar */
+@media (max-width: 1024px) {
+  .shell:has(.simple-studio) .topbar { padding: 8px 12px; gap: 8px; }
+  .shell:has(.simple-studio) .topbar-left .nav,
+  .shell:has(.simple-studio) #vertical-picker,
+  .shell:has(.simple-studio) #help,
+  .shell:has(.simple-studio) .app-footer { display: none; }
+  .shell:has(.simple-studio) .page { padding-bottom: 0; }
+  .simple-studio .chat-card {
+    min-height: 420px;
+    max-height: none;
+    height: calc(100dvh - 152px);
+    height: calc(100vh - 152px);
+    margin: 8px 8px 0;
+  }
+  .simple-studio .chat-card .messages { flex: 1 1 auto; }
+}
