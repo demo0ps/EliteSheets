@@ -62,25 +62,26 @@ const VERTICAL_META:Record<string,VerticalConfig>={
   general:{
     label:'✨ Everyday / Regular User',
     shortName:'Everyday',
-    badge:'Simple · Clean · Everyday Spreadsheets',
-    desc:'Upload any Excel or CSV files to clean, match columns, fix IDs/phones, or create a fresh spreadsheet in plain words.',
+    badge:'Simple · Clean · 1-Screen Workspace',
+    desc:'Everything in one place: upload messy files, merge a whole folder, or type what columns you want in plain words.',
     defaultSample:'pivot',
     tabs:[
-      {page:'workspace',label:'Clean & Combine Sheets',iconName:'chat'},
-      {page:'builder',label:'Create New Sheet',iconName:'plus'},
+      {page:'workspace',label:'My Spreadsheet',iconName:'grid'},
+      {page:'quotes',label:'Quotes & Invoices',iconName:'dollar'},
       {page:'templates',label:'Templates',iconName:'layers'},
       {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
     ],
     cards:[
-      {title:'📂 Upload & Clean My Spreadsheet',desc:'Upload your own Excel or CSV files (or a folder) to clean and combine them automatically.',action:'upload:open'},
-      {title:'✏️ Create a New Sheet from Scratch',desc:'Start with a blank spreadsheet or type the columns you want in everyday words.',action:'page:builder'},
-      {title:'📊 Try a Quick Everyday Example',desc:'See how messy sheets get matched, cleaned, and totaled in one click.',action:'sample:pivot'}
+      {title:'🎓 1-Click Demo: School SA-SAMS (2 Files → 1)',desc:'Watch it join Learner Bio + Subject Marks into 1 clean import sheet.',action:'sample:sasams_students'},
+      {title:'📂 1-Click Demo: Merge a Whole Folder',desc:'Watch it combine 3 files into 1 Master Sheet, fix SA IDs & flag duplicates.',action:'sample:district_batch'},
+      {title:'📊 1-Click Demo: Monthly Branch Totals',desc:'Watch it combine regional monthly sheets and calculate Totals automatically.',action:'sample:pivot'}
     ],
     samples:[
       {val:'pivot',label:'Combine Monthly Sheets → Summary Table'},
+      {val:'sasams_students',label:'School SA-SAMS (2 Files → 1 Import Sheet)'},
+      {val:'district_batch',label:'Merge a Whole Folder of Files into 1 Sheet'},
       {val:'direct',label:'Contact & Order List → Clean Excel Sheet'},
-      {val:'chat_map',label:'Match Different Column Names in 1 Click'},
-      {val:'district_batch',label:'Merge a Whole Folder of Files into 1 Sheet'}
+      {val:'chat_map',label:'Match Different Column Names in 1 Click'}
     ],
     builderPresetCmd:'Columns: Name, Email, Phone, Date, Category, Amount, Notes',
     builderPresetLabel:'Everyday Tracker Sheet',
@@ -93,15 +94,14 @@ const VERTICAL_META:Record<string,VerticalConfig>={
     desc:'Combine SA-SAMS student & subject mark sheets, fix 13-digit SA IDs (including missing 0s for 2000–2009), calculate Pass Levels (1–7), and merge school folders.',
     defaultSample:'sasams_students',
     tabs:[
-      {page:'workspace',label:'Student & Mark Sheets',iconName:'chat'},
-      {page:'builder',label:'Create Class Sheet',iconName:'plus'},
+      {page:'workspace',label:'My School Spreadsheet',iconName:'grid'},
       {page:'templates',label:'School Templates',iconName:'layers'},
       {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
     ],
     cards:[
-      {title:'📋 Combine Student & Subject Sheets',desc:'Join SA-SAMS Learner/Parent Bio + Subject Marks into 1 ready-to-import sheet.',action:'sample:sasams_students'},
-      {title:'📂 Merge Folder of School Sheets',desc:'Combine multiple classes or schools into 1 Master Sheet & check duplicate learners.',action:'sample:district_batch'},
-      {title:'✏️ Start a Class or Fee Register',desc:'Build a new class list or tuition sheet from scratch with automatic Balance calculation.',action:'builder:student'}
+      {title:'📋 1-Click Demo: SA-SAMS Student & Marks',desc:'Join SA-SAMS Learner/Parent Bio + Subject Marks into 1 ready-to-import sheet.',action:'sample:sasams_students'},
+      {title:'📂 1-Click Demo: Merge Folder of Schools',desc:'Combine multiple classes or schools into 1 Master Sheet & check duplicate learners.',action:'sample:district_batch'},
+      {title:'✏️ 1-Click Demo: Class & Fee Register',desc:'Generate a class list & tuition sheet with automatic Balance calculation.',action:'builder:student'}
     ],
     samples:[
       {val:'sasams_students',label:'SA-SAMS 2-File Student & Subject Marks'},
@@ -118,15 +118,15 @@ const VERTICAL_META:Record<string,VerticalConfig>={
     desc:'Create branded Quotes & Tax Invoices in plain words, paste WhatsApp or Email client lists into Excel, and clean customer names, phones, and IDs.',
     defaultSample:'direct',
     tabs:[
+      {page:'workspace',label:'My Business Spreadsheet',iconName:'grid'},
       {page:'quotes',label:'Quotes & Invoices',iconName:'dollar'},
-      {page:'workspace',label:'Clean Client Sheet',iconName:'chat'},
-      {page:'builder',label:'Create New Sheet',iconName:'plus'},
+      {page:'templates',label:'Business Templates',iconName:'layers'},
       {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
     ],
     cards:[
-      {title:'🧾 Create a Quote or Tax Invoice',desc:'Type what you are charging in plain words and download a clean PDF or Excel invoice.',action:'page:quotes'},
-      {title:'📋 Paste WhatsApp / Email into Excel',desc:'Turn messy client lines from WhatsApp or Email into a neat spreadsheet table.',action:'builder:paste'},
-      {title:'✨ Clean Client Contacts & IDs',desc:'Load a client or order sheet to fix names, +27 phone numbers, emails & ID numbers.',action:'sample:direct'}
+      {title:'🧾 1-Click Demo: Create Quote / Tax Invoice',desc:'Type what you are charging in plain words and download a clean PDF or Excel invoice.',action:'page:quotes'},
+      {title:'✨ 1-Click Demo: Clean Client & Order List',desc:'Load a client or order sheet to fix names, +27 phone numbers, emails & ID numbers.',action:'sample:direct'},
+      {title:'📋 1-Click Demo: Booking Form to Table',desc:'Turn customer booking forms into a clean, structured Excel table.',action:'sample:form'}
     ],
     samples:[
       {val:'direct',label:'Client & Order List → Clean Excel Sheet'},
@@ -143,15 +143,14 @@ const VERTICAL_META:Record<string,VerticalConfig>={
     desc:'Combine monthly or branch figures with automatic Totals, spot missing numbers before export, check staff payroll SA IDs, and compare two sheets.',
     defaultSample:'pivot',
     tabs:[
-      {page:'workspace',label:'Combine Monthly Sheets',iconName:'chat'},
-      {page:'builder',label:'Build & Reconcile',iconName:'plus'},
+      {page:'workspace',label:'My Finance Spreadsheet',iconName:'grid'},
       {page:'templates',label:'Finance Templates',iconName:'layers'},
       {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
     ],
     cards:[
-      {title:'📊 Combine Branch / Monthly Figures',desc:'Merge regional or monthly sheets into one summary table with automatic Totals.',action:'sample:pivot'},
-      {title:'🔍 Spot & Fill Missing Figures',desc:'Catch blank monthly figures automatically and fill them in chat before downloading.',action:'sample:hold'},
-      {title:'👥 Build Payroll or Expense Sheet',desc:'Create a staff payroll or budget sheet with automatic VAT/Net Pay formulas.',action:'builder:expense'}
+      {title:'📊 1-Click Demo: Combine Monthly Figures',desc:'Merge regional or monthly sheets into one summary table with automatic Totals.',action:'sample:pivot'},
+      {title:'🔍 1-Click Demo: Spot Missing Figures',desc:'Catch blank monthly figures automatically and fill them in chat before downloading.',action:'sample:hold'},
+      {title:'👥 1-Click Demo: Expense & VAT Sheet',desc:'Create a monthly expense or payroll sheet with automatic VAT & Total columns.',action:'builder:expense'}
     ],
     samples:[
       {val:'pivot',label:'Combine Branch Sheets → Monthly Summary Table'},
@@ -168,15 +167,14 @@ const VERTICAL_META:Record<string,VerticalConfig>={
     desc:'Match supplier price lists and CSVs to your stock sheet in 1 click, merge warehouse folders into 1 Master Stock file, and calculate stock values.',
     defaultSample:'chat_map',
     tabs:[
-      {page:'workspace',label:'Match Supplier Sheets',iconName:'chat'},
-      {page:'builder',label:'Build Stock Sheet',iconName:'plus'},
+      {page:'workspace',label:'My Stock Spreadsheet',iconName:'grid'},
       {page:'templates',label:'Stock Templates',iconName:'layers'},
       {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
     ],
     cards:[
-      {title:'📦 Match Supplier Columns to Stock List',desc:'Match different supplier column names (like "Boxes" → "Qty") in 1 click.',action:'sample:chat_map'},
-      {title:'📂 Merge Warehouse Folder into Master Stock',desc:'Upload a folder of depot or supplier sheets and combine them into 1 Master file.',action:'folder:open'},
-      {title:'🧮 Build Stock Count & Value Sheet',desc:'Start an inventory count sheet with automatic Total Value = Qty × Unit Price.',action:'builder:inventory'}
+      {title:'📦 1-Click Demo: Match Supplier Columns',desc:'Match different supplier column names (like "Boxes" → "Qty") in 1 click.',action:'sample:chat_map'},
+      {title:'📂 1-Click Demo: Merge Warehouse Folder',desc:'Upload or demo a folder of depot sheets combined into 1 Master file.',action:'sample:district_batch'},
+      {title:'🧮 1-Click Demo: Stock Count & Value Sheet',desc:'Start an inventory count sheet with automatic Total Value = Qty × Unit Price.',action:'builder:inventory'}
     ],
     samples:[
       {val:'chat_map',label:'Match Supplier "Boxes" Column → Stock "Qty"'},
@@ -260,7 +258,7 @@ function loginPage(){
 }
 
 async function demoLogin(role:string,vertical?:string){const r=await api('/api/auth/demo',vertical?{role,vertical}:{role});await signedIn(r)}
-async function signedIn(r:any){user=r.user;csrf=r.csrf;demoToken=r.demo_token||'';workspaceID=user!.role==='admin'&&boot.demo_mode?'demo-a':user!.tenant_id;await refresh();const vert=activeVertical();currentPage=user!.role==='admin'?'admin':(vert==='sme_pa'?'quotes':'workspace');job=null;shell();await showPage(currentPage)}
+async function signedIn(r:any){user=r.user;csrf=r.csrf;demoToken=r.demo_token||'';workspaceID=user!.role==='admin'&&boot.demo_mode?'demo-a':user!.tenant_id;await refresh();currentPage=user!.role==='admin'?'admin':'workspace';job=null;shell();await showPage(currentPage)}
 async function refresh(){if(!user)return;if(user.role==='admin'){customers=(await api('/api/admin/customers')).items;if(!workspaceID||workspaceID==='platform')workspaceID=customers[0]?.id||''}if(workspaceID&&workspaceID!=='platform')overview=await api('/api/overview');else overview={workspace:{name:'Platform administration'},jobs:[],stats:{jobs:0,released:0,held:0,knowledge:0},ai:{enabled:false},preferences:{theme:'light',density:'comfortable',vertical:'general'}};applyPreferences()}
 function applyPreferences(){document.body.className=((overview.preferences?.theme==='dark'?'dark':'light')+(overview.preferences?.density==='compact'?' compact':'')).trim()}
 
@@ -373,10 +371,15 @@ function studio(){
   }
 
   $('page').innerHTML=`
-  <section class="vertical-welcome" aria-label="Quick start actions">
+  <section class="vertical-welcome" aria-label="How It Works and Quick Start Demos">
+    <div class="steps-strip" aria-label="How it works in 3 easy steps">
+      <div class="step-pill"><span class="step-num">1</span><div><strong>STEP 1: Load or Create</strong><small>Click a 1-Click Demo below, upload files/folder, or type columns in chat.</small></div></div>
+      <div class="step-pill"><span class="step-num">2</span><div><strong>STEP 2: Tell the AI Helper</strong><small>Ask for any change in plain words on the left (or click a 1-click fix).</small></div></div>
+      <div class="step-pill"><span class="step-num">3</span><div><strong>STEP 3: Download Excel (.XLSX)</strong><small>Review your finished table on the right & download in 1 click.</small></div></div>
+    </div>
     <div class="vertical-welcome-head">
       <div>
-        <h2>What would you like to do today?</h2>
+        <h2>Try a 1-Click Live Demo — or Upload / Type Below</h2>
         <small style="color:var(--muted)">${escapeHTML(vMeta.desc)}</small>
       </div>
       <span class="badge purple">${escapeHTML(vMeta.label)}</span>
@@ -386,7 +389,9 @@ function studio(){
     </div>
   </section>
 
-  <div class="simple-studio"><section class="chat-card" aria-label="Sheet Helper"><div class="chat-top"><div class="chat-top-title"><span class="bot-avatar">${icon('spark')}</span><div><h1>Sheet Helper</h1><small>${job?escapeHTML(job.title):'Ask me anything in plain words'}</small></div></div>${job?`<button id="new-job" class="btn small">${icon('plus')}Start Over</button>`:''}</div><div class="picker-bar">${boot.demo_mode?`<div class="picker-row"><select id="sample-case" aria-label="Try an example">${vMeta.samples.map((s,idx)=>`<option value="${s.val}">Example ${idx+1}: ${escapeHTML(s.label)}</option>`).join('')}</select><button id="load-example" class="btn primary small">Try Example</button></div>`:''}<details class="upload-drawer" id="upload-drawer-box" ${!boot.demo_mode&&!job?'open':''}><summary>+ Upload your own Excel / CSV files (or a whole folder)</summary><div class="upload-grid" style="grid-template-columns:1fr 1fr 1fr"><label class="upload-box" for="source-files">${icon('upload')}<strong>Your Sheet(s)</strong><small>Excel or CSV</small><input id="source-files" type="file" multiple accept=".xlsx,.csv" aria-label="Upload source spreadsheets"></label><label class="upload-box" for="folder-files">${icon('folder')}<strong>Entire Folder</strong><small>Merge all files</small><input id="folder-files" type="file" webkitdirectory directory multiple aria-label="Upload entire folder of spreadsheets"></label><label class="upload-box" for="target-file">${icon('grid')}<strong>Template</strong><small>Optional</small><input id="target-file" type="file" accept=".xlsx,.csv" aria-label="Upload destination template"></label></div><div id="file-list" class="file-list"></div><button id="inspect-files" class="btn primary small" style="width:100%;margin-top:8px" disabled>Open Uploaded Files</button></details></div><div class="messages" id="messages" tabindex="0" aria-label="Helper conversation" aria-live="polite">${job?job.chat.map(m=>`<article class="msg ${m.role==='user'?'user':''}"><span class="msg-sender">${m.role==='user'?'You':'Helper'}</span><div class="bubble">${escapeHTML(friendlyText(m.text))}</div></article>`).join(''):`<article class="msg"><span class="msg-sender">Helper</span><div class="bubble">Welcome! Pick one of the <b>3 cards at the top</b>, click <b>Try Example</b> above, or upload your own Excel/CSV file. Once your sheet is open, you can ask me to change anything in plain words!</div></article>`}</div>${job?`<div class="quick-action-bar">${job.proposal?`<button id="confirm-correction" class="btn primary">${icon('check')}Yes, apply: ${escapeHTML(job.proposal.description)}</button>`:''}${!r||!release?`<button id="run-job" class="btn ${r?'':'primary'}">${icon('check')}${r?'Update Sheet':'Fill My Sheet'}</button>`:''}<div class="quick-chips">${hasMissingNorthFeb&&!job.proposal?`<button class="chip" data-chat="18">Reply: 18</button><button class="chip" data-chat="North Feb is 18">North Feb is 18</button>`:''}${customMissing&&!hasMissingNorthFeb&&!job.proposal?`<button class="chip" data-chat="${escapeHTML(customMissing.entity)} ${escapeHTML(customMissing.category)} is 18">Set ${escapeHTML(customMissing.entity)} / ${escapeHTML(customMissing.category)} = 18</button>`:''}${hasUnmappedQty&&!customUnmapped?.length&&!job.proposal?`<button class="chip" data-chat="yes">Yes, put Boxes in Qty</button>`:''}${customUnmapped?.length&&customUnused?.length&&!job.proposal?customUnused.slice(0,2).map(sc=>`<button class="chip" data-chat="put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}">Put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}</button>`).join(''):''}${r&&!release?`<button class="chip" data-chat="What is blocking this output?">What is missing?</button>`:''}${release&&headers.includes('Jan')&&headers.includes('Feb')?`<button class="chip" data-chat="swap Jan and Feb">Swap Jan & Feb</button><button class="chip" data-chat="replace the first row with row 2">Swap row 1 & row 2</button>`:''}${job?`<button class="chip" data-chat="How did you match my columns?">Show column matches</button>`:''}</div></div>`:''}<form id="chat-form" class="chat-compose"><textarea id="chat-text" rows="1" ${job?'':'disabled'} aria-label="Message the Sheet Helper" placeholder="${job?"Type what you want to change (e.g. 'swap Jan and Feb', '18', 'yes')…":"Open a file above to start chatting…"}"></textarea><button id="send-chat" class="btn primary small" type="submit" aria-label="Send message" ${job?'':'disabled'}>${icon('send')}</button></form></section><section class="result-card" aria-label="Your Spreadsheet"><div class="result-head"><div><h2>Your Spreadsheet</h2><small>${release?'Everything looks good — ready to download.':r?'Answer the quick question on the left (or pick a column below) to finish.':job?'Click Fill My Sheet on the left to populate your table.':'Your clean spreadsheet will appear here.'}</small></div><div class="result-actions"><span id="output-state" class="badge ${release?'good':r?'warn':''}">${release?'✓ Ready to Download':r?'Needs 1 Quick Answer':'Ready to Preview'}</span><button class="btn small ${release?'primary':''}" id="download-output" ${release?'':'disabled'}>${icon(release?'download':'lock')}Download Excel (.XLSX)</button></div></div>${r?.rows.length?`<div class="clean-toolbar"><span>Quick Tools:</span>${toolbarButtonsHtml}</div>`:''}<div class="table-scroll" tabindex="0" aria-label="Output preview"><table><thead><tr>${headers.map((h:string)=>canMapCols?`<th><div class="th-col-wrap"><span>${escapeHTML(h)}</span><select class="col-map-select ${activeFieldMap[h]?'':'unmapped'}" data-map-target="${escapeHTML(h)}" aria-label="Source column for ${escapeHTML(h)}"><option value="">${activeFieldMap[h]?'— Unmap —':'Choose column…'}</option>${srcColHeaders.map((sh:string)=>`<option value="${escapeHTML(sh)}" ${activeFieldMap[h]===sh?'selected':''}>← ${escapeHTML(sh)}</option>`).join('')}</select></div></th>`:`<th>${escapeHTML(h)}</th>`).join('')}</tr></thead><tbody>${r?.rows.length?r.rows.map(row=>`<tr>${headers.map((h:string)=>`<td>${row[h]===null||row[h]===undefined?'<span class="missing">Ask in chat</span>':escapeHTML(row[h])}</td>`).join('')}</tr>`).join(''):`<tr><td class="table-empty" colspan="${headers.length}">${job?'Click <b>Fill My Sheet</b> on the left to fill your spreadsheet.':'Click one of the 3 cards at the top or <b>Try Example</b> on the left to preview your spreadsheet here.'}</td></tr>`}</tbody></table></div></section></div>`;
+  <div class="simple-studio"><section class="chat-card" aria-label="Sheet Helper"><div class="chat-top"><div class="chat-top-title"><span class="bot-avatar">${icon('spark')}</span><div><h1>STEP 1 & 2 · AI Sheet Helper</h1><small>${job?escapeHTML(job.title):'Upload files OR tell me what spreadsheet to build'}</small></div></div>${job?`<button id="new-job" class="btn small">${icon('plus')}Start Over</button>`:`<button id="open-advanced-builder" class="btn small">${icon('edit')}Multi-Tab Editor</button>`}</div><div class="picker-bar">${boot.demo_mode?`<div class="picker-row"><select id="sample-case" aria-label="Try an example">${vMeta.samples.map((s,idx)=>`<option value="${s.val}">Demo ${idx+1}: ${escapeHTML(s.label)}</option>`).join('')}</select><button id="load-example" class="btn primary small">Load Demo</button></div>`:''}<details class="upload-drawer" id="upload-drawer-box" open><summary>📤 Upload Your Own Excel / CSV Files (or an Entire Folder)</summary><div class="upload-grid" style="grid-template-columns:1fr 1fr 1fr"><label class="upload-box" for="source-files">${icon('upload')}<strong>Your Sheet(s)</strong><small>Excel or CSV</small><input id="source-files" type="file" multiple accept=".xlsx,.csv" aria-label="Upload source spreadsheets"></label><label class="upload-box" for="folder-files">${icon('folder')}<strong>Entire Folder</strong><small>Merge all files</small><input id="folder-files" type="file" webkitdirectory directory multiple aria-label="Upload entire folder of spreadsheets"></label><label class="upload-box" for="target-file">${icon('grid')}<strong>Template</strong><small>Optional</small><input id="target-file" type="file" accept=".xlsx,.csv" aria-label="Upload destination template"></label></div><div id="file-list" class="file-list"></div><button id="inspect-files" class="btn primary small" style="width:100%;margin-top:8px" disabled>Open Uploaded Files</button></details></div><div class="messages" id="messages" tabindex="0" aria-label="Helper conversation" aria-live="polite">${job?job.chat.map(m=>`<article class="msg ${m.role==='user'?'user':''}"><span class="msg-sender">${m.role==='user'?'You':'Helper'}</span><div class="bubble">${escapeHTML(friendlyText(m.text))}</div></article>`).join(''):`<article class="msg"><span class="msg-sender">Helper</span><div class="bubble"><b>Hi! Everything happens right here on this one screen:</b>\n1️⃣ Click a <b>1-Click Demo</b> card at the top, or <b>Upload</b> your Excel/CSV files above.\n2️⃣ Or just <b>type below</b> what spreadsheet you want me to create from scratch (e.g. <i>"Columns: Name, Phone, Amount, Paid"</i>)!</div></article>`}</div>${job?`<div class="quick-action-bar">${job.proposal?`<button id="confirm-correction" class="btn primary">${icon('check')}Yes, apply: ${escapeHTML(job.proposal.description)}</button>`:''}${!r||!release?`<button id="run-job" class="btn ${r?'':'primary'}">${icon('check')}${r?'Update Sheet':'Fill My Sheet'}</button>`:''}<div class="quick-chips">${hasMissingNorthFeb&&!job.proposal?`<button class="chip" data-chat="18">Reply: 18</button><button class="chip" data-chat="North Feb is 18">North Feb is 18</button>`:''}${customMissing&&!hasMissingNorthFeb&&!job.proposal?`<button class="chip" data-chat="${escapeHTML(customMissing.entity)} ${escapeHTML(customMissing.category)} is 18">Set ${escapeHTML(customMissing.entity)} / ${escapeHTML(customMissing.category)} = 18</button>`:''}${hasUnmappedQty&&!customUnmapped?.length&&!job.proposal?`<button class="chip" data-chat="yes">Yes, put Boxes in Qty</button>`:''}${customUnmapped?.length&&customUnused?.length&&!job.proposal?customUnused.slice(0,2).map(sc=>`<button class="chip" data-chat="put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}">Put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}</button>`).join(''):''}${r&&!release?`<button class="chip" data-chat="What is blocking this output?">What is missing?</button>`:''}${release&&headers.includes('Jan')&&headers.includes('Feb')?`<button class="chip" data-chat="swap Jan and Feb">Swap Jan & Feb</button><button class="chip" data-chat="replace the first row with row 2">Swap row 1 & row 2</button>`:''}${job?`<button class="chip" data-chat="How did you match my columns?">Show column matches</button>`:''}</div></div>`:`<div class="quick-action-bar"><div class="quick-chips"><button class="chip" data-chat="${escapeHTML(vMeta.builderPresetCmd)}">✨ Build ${escapeHTML(vMeta.builderPresetLabel)}</button><button class="chip" data-chat="Create a SA-SAMS student & tuition sheet">🎓 Build Student & Tuition Sheet</button><button class="chip" data-chat="Create a monthly expense tracker">📊 Build Expense & VAT Sheet</button></div></div>`}<form id="chat-form" class="chat-compose"><textarea id="chat-text" rows="1" aria-label="Message the Sheet Helper" placeholder="${job?"Type what you want to change (e.g. 'swap Jan and Feb', '18', 'yes')…":"Tell me what spreadsheet to create (e.g. 'Columns: Name, Phone, Fee, Paid')…"}"></textarea><button id="send-chat" class="btn primary small" type="submit" aria-label="Send message">${icon('send')}</button></form></section><section class="result-card" aria-label="Your Spreadsheet"><div class="result-head"><div><h2>STEP 3 · Your Live Spreadsheet</h2><small>${release?'Everything looks good — click Download Excel (.XLSX) on the right.':r?'Answer the quick question on the left (or pick a column below) to finish.':job?'Click Fill My Sheet on the left to populate your table.':'Click a 1-Click Demo at the top, upload a file, or type in the chat on the left.'}</small></div><div class="result-actions"><span id="output-state" class="badge ${release?'good':r?'warn':''}">${release?'✓ Ready to Download':r?'Needs 1 Quick Answer':'Waiting for Sheet'}</span><button class="btn small ${release?'primary':''}" id="download-output" ${release?'':'disabled'}>${icon(release?'download':'lock')}Download Excel (.XLSX)</button></div></div>${r?.rows.length?`<div class="clean-toolbar"><span>1-Click Fixes:</span>${toolbarButtonsHtml}</div>`:''}<div class="table-scroll" tabindex="0" aria-label="Output preview"><table><thead><tr>${headers.map((h:string)=>canMapCols?`<th><div class="th-col-wrap"><span>${escapeHTML(h)}</span><select class="col-map-select ${activeFieldMap[h]?'':'unmapped'}" data-map-target="${escapeHTML(h)}" aria-label="Source column for ${escapeHTML(h)}"><option value="">${activeFieldMap[h]?'— Unmap —':'Choose column…'}</option>${srcColHeaders.map((sh:string)=>`<option value="${escapeHTML(sh)}" ${activeFieldMap[h]===sh?'selected':''}>← ${escapeHTML(sh)}</option>`).join('')}</select></div></th>`:`<th>${escapeHTML(h)}</th>`).join('')}</tr></thead><tbody>${r?.rows.length?r.rows.map(row=>`<tr>${headers.map((h:string)=>`<td>${row[h]===null||row[h]===undefined?'<span class="missing">Ask in chat</span>':escapeHTML(row[h])}</td>`).join('')}</tr>`).join(''):`<tr><td class="table-empty" colspan="${headers.length}">${job?'Click <b>Fill My Sheet</b> on the left to fill your spreadsheet.':'👆 Click any <b>1-Click Demo</b> card at the top, upload your files on the left, or type what columns you want in the chat box!'}</td></tr>`}</tbody></table></div></section></div>`;
+
+  if($('open-advanced-builder'))$('open-advanced-builder').addEventListener('click',()=>void showPage('builder'));
 
   document.querySelectorAll<HTMLButtonElement>('[data-vcard]').forEach(card=>card.addEventListener('click',()=>void busy(card,async()=>{
     const act=card.dataset.vcard!;
@@ -416,7 +421,9 @@ function studio(){
         await showPage('builder');
       }else{
         handleBuilderChatCommand(vMeta.builderPresetCmd);
-        await showPage('builder');
+        const tab=currentBuilderTab();
+        job=await api<Job>('/api/jobs/from-builder',{title:builderState.title||'Created-Sheet.xlsx',sheet:tab.name||'Sheet1',headers:tab.headers,rows:tab.rows,request_id:uid()});
+        await refresh();shell();await showPage('workspace');
       }
     }
   })));
@@ -1621,10 +1628,16 @@ function wireChat(){
 }
 
 async function sendChat(){
-  if(!job)return;
   const text=$<HTMLTextAreaElement>('chat-text').value.trim();
   if(!text)return;
   await busy($('send-chat'),async()=>{
+    if(!job){
+      handleBuilderChatCommand(text);
+      const tab=currentBuilderTab();
+      job=await api<Job>('/api/jobs/from-builder',{title:builderState.title||'Created-Sheet.xlsx',sheet:tab.name||'Sheet1',headers:tab.headers,rows:tab.rows,request_id:uid()});
+      await refresh();shell();await showPage('workspace');
+      return;
+    }
     job=await api<Job>(`/api/jobs/${job!.id}/chat`,{text,request_id:uid()});
     await refresh();shell();await showPage('workspace');
   });
