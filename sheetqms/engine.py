@@ -723,22 +723,26 @@ def normalize_sources(job, plan):
                     rec_hl, rec_fal = '', ''
                     for hl_col in ('Home Language', 'home language', 'HL'):
                         if hl_col in index and index[hl_col] < len(row) and row[index[hl_col]] is not None and str(row[index[hl_col]]).strip():
-                            s_hl = str(row[index[hl_col]]).strip().title()
-                            rec_hl = s_hl if 'home language' in s_hl.lower() else f'{s_hl} Home Language'
-                            break
+                            s_hl_raw = str(row[index[hl_col]]).strip()
+                            if re.search(r'[A-Za-z]{3}', s_hl_raw) and not re.match(r'^\d', s_hl_raw):
+                                s_hl = s_hl_raw.title()
+                                rec_hl = s_hl if 'home language' in s_hl.lower() else f'{s_hl} Home Language'
+                                break
                     if not rec_hl and source.columns:
                         for c in source.columns:
-                            if 'home language' in c.lower():
+                            if 'home language' in c.lower() and norm(c) != 'home language':
                                 rec_hl = re.sub(r'\s*\(\s*(?:gr(?:ade)?\.?\s*\d{1,2}[a-z]?|%|mark|marks|percent|percentage)\s*\)\s*$', '', c, flags=re.I).strip()
                                 break
                     for fal_col in ('First Additional Language', 'first additional language', 'FAL'):
                         if fal_col in index and index[fal_col] < len(row) and row[index[fal_col]] is not None and str(row[index[fal_col]]).strip():
-                            s_fal = str(row[index[fal_col]]).strip().title()
-                            rec_fal = s_fal if 'first additional language' in s_fal.lower() else f'{s_fal} First Additional Language'
-                            break
+                            s_fal_raw = str(row[index[fal_col]]).strip()
+                            if re.search(r'[A-Za-z]{3}', s_fal_raw) and not re.match(r'^\d', s_fal_raw):
+                                s_fal = s_fal_raw.title()
+                                rec_fal = s_fal if 'first additional language' in s_fal.lower() else f'{s_fal} First Additional Language'
+                                break
                     if not rec_fal and source.columns:
                         for c in source.columns:
-                            if 'first additional language' in c.lower():
+                            if 'first additional language' in c.lower() and norm(c) != 'first additional language':
                                 rec_fal = re.sub(r'\s*\(\s*(?:gr(?:ade)?\.?\s*\d{1,2}[a-z]?|%|mark|marks|percent|percentage)\s*\)\s*$', '', c, flags=re.I).strip()
                                 break
                     records.append({'id': f'{source.source_id}:{source.sheet}:{number}', 'data': data, 'refs': refs, '_gender': rec_gender, '_grade': rec_grade, '_hl': rec_hl, '_fal': rec_fal, 'operation': 'horizontal subject-percentage matrix + column mapping' if source.period else 'column mapping'})
@@ -801,7 +805,8 @@ def build_rows(records, destination, rules):
                     gr_val = norm(r_dict.get('Grade') or r_dict.get('grade') or '')
                     if re.match(r'^(?:grade\s*0?[89]|gr\.?\s*0?[89]|0?[89])(?:[a-z])?$', gr_val):
                         for subj_key in subj_fields:
-                            if not (r_dict.get(subj_key) and str(r_dict.get(subj_key)).strip()):
+                            cur_s = str(r_dict.get(subj_key) or '').strip()
+                            if not cur_s or ('creative arts' in cur_s.lower() and 'home language' not in cur_s.lower()):
                                 hl = row_hl_map.get(idx) or default_hl
                                 fal = row_fal_map.get(idx) or default_fal
                                 r_dict[subj_key] = f'{hl}; {fal}; Mathematics; Natural Sciences; Social Sciences; Technology; Economic and Management Sciences (EMS); Life Orientation; Creative Arts'

@@ -921,6 +921,65 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     assert gr89_rows[2]['Date of Birth'] == '2011-11-03'
     assert gr89_rows[2]['Parent First Name'] == 'Samuel'
 
+    # 8. Exact GDE Senior Phase Mark Schedule (Grade 08 & 09) layout from image-1.png:
+    # Header: Number | Admission\nNumber | Learners in alphabetical order per class\nSurname and first names | Male/Female | Date of Birth | Number of Years in Phase | Number of Years in Grade | Number of days absent in Quarter | <blank> | Home Language | First Additional Language | Creative Arts (Gr 08) | Economic Management | Life Orientation (Gr 08) | Mathematics (Gr 08) | Natural Sciences (Gr 08) | Social Sciences (Gr 08) | Technology (Gr 08) | Code | Codes: P (Achieved)... Deviation Comment
+    # Values: space-separated "APHIRI OMPHEMETSE", "ASSEGAAI TSHEGOFATSO CHARMAINE", "BABEDI THABISO JUNIOR" (NO commas!) + 6-digit YYMMDD (121007, 120218, 111103)
+    sp_bio_wb = Workbook()
+    sp_bio_ws = sp_bio_wb.active
+    sp_bio_ws.title = 'Bio_Senior_Phase'
+    sp_bio_ws.append(['Number', 'Surname', 'First Name', 'Gender', 'Grade', 'Name', 'Surname', 'Cell#', 'Name', 'Surname', 'Cell#'])
+    sp_bio_ws.append([1, 'APHIRI', 'Omphemetse', 'M', 'Grade 08', 'Lucas', 'APHIRI', '0825551111', '', '', ''])
+    sp_bio_ws.append([2, 'ASSEGAAI', 'Tshegofatso Charmaine', 'F', 'Grade 08', '', '', '', 'Maria', 'ASSEGAAI', '0736662222'])
+    sp_bio_ws.append([3, 'BABEDI', 'Thabiso Junior', 'M', 'Grade 09', 'Peter', 'BABEDI', '0717773333', '', '', ''])
+    sp_bio_bytes = BytesIO()
+    sp_bio_wb.save(sp_bio_bytes)
+
+    sp_ms_wb = Workbook()
+    sp_ms_ws = sp_ms_wb.active
+    sp_ms_ws.title = 'Senior_Phase_Marks'
+    sp_ms_ws.append(['GAUTENG DEPARTMENT OF EDUCATION', None, 'School:', 'STANZA BOPAPE SECONDARY SCHOOL', None, 'Patch Version: 26.0.1'])
+    sp_ms_ws.append(['Internal Mark Schedule: Senior Phase', None, 'Grade:', 'Grade 08'])
+    sp_ms_ws.append(['a = Absent  n = Non complete', None, 'Class:', 'All'])
+    sp_ms_ws.append([None, None, None, None, None, 'Number of Years in Phase', 'Number of Years in Grade', 'Number of days absent in Quarter', None, "Learner's Progress", None, None, None, None, None, None, None, None, 'Code', 'Codes:\n P (Achieved)\n NP (Not Achieved)\nDeviation Comment'])
+    sp_ms_ws.append(['Number', 'Admission\nNumber', 'Learners in alphabetical order per class\nSurname and first names', 'Male/Female', 'Date of Birth', None, None, None, None, 'Home Language', 'First Additional Language', 'Creative Arts (Gr 08)', 'Economic Management', 'Life Orientation (Gr 08)', 'Mathematics (Gr 08)', 'Natural Sciences (Gr 08)', 'Social Sciences (Gr 08)', 'Technology (Gr 08)', None, None])
+    sp_ms_ws.append([1, '1210075634087\n1210075634087', 'APHIRI OMPHEMETSE', 'M', 121007, 2, 1, 1, 'PM', 33, 46, 66, 34, 46, 34, 50, 27, 69, 'NP', None])
+    sp_ms_ws.append([2, '1202180480080\n1202180480080', 'ASSEGAAI TSHEGOFATSO CHARMAINE', 'F', 120218, 2, 1, 4, 'PM', 60, 49, 66, 39, 45, 57, 45, 20, 64, 'P', None])
+    sp_ms_ws.append([3, '1111036271082\n1111036271082', 'BABEDI THABISO JUNIOR', 'M', 111103, 2, 1, 4, 'PM', 30, 47, 44, 46, 50, 36, 33, 29, 47, 'NP', None])
+    sp_ms_bytes = BytesIO()
+    sp_ms_wb.save(sp_ms_bytes)
+
+    sp_res = c.post('/api/jobs', data={'request_id': 'sp-image1-layout-001', 'title': 'Senior-Phase-Import.xlsx'}, files=[
+        ('target', ('student-import-template.xlsx', tpl_bio.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+        ('sources', ('bio-sp.xlsx', sp_bio_bytes.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+        ('sources', ('marks-sp.xlsx', sp_ms_bytes.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+    ])
+    assert sp_res.status_code == 200, sp_res.text
+    sp_job = sp_res.json()
+    if not sp_job.get('report'):
+        sp_job = c.post(f'/api/jobs/{sp_job["id"]}/run', json={}).json()
+    sp_rows = sp_job['report']['rows']
+    assert len(sp_rows) == 3
+    assert sp_rows[0]['Student ID'] == 'STU0001'
+    assert sp_rows[0]['First Name'] == 'Omphemetse'
+    assert sp_rows[0]['Last Name'] == 'Aphiri'
+    assert sp_rows[0]['Date of Birth'] == '2012-10-07'
+    assert sp_rows[0]['Grade'] == 'Grade 8'
+    assert sp_rows[0]['Parent First Name'] == 'Lucas'
+    assert 'Economic and Management Sciences (EMS)' in sp_rows[0]['Subjects']
+    assert sp_rows[1]['Student ID'] == 'STU0002'
+    assert sp_rows[1]['First Name'] == 'Tshegofatso Charmaine'
+    assert sp_rows[1]['Last Name'] == 'Assegaai'
+    assert sp_rows[1]['Date of Birth'] == '2012-02-18'
+    assert sp_rows[1]['Grade'] == 'Grade 8'
+    assert sp_rows[1]['Parent First Name'] == 'Maria'
+    assert sp_rows[2]['Student ID'] == 'STU0003'
+    assert sp_rows[2]['First Name'] == 'Thabiso Junior'
+    assert sp_rows[2]['Last Name'] == 'Babedi'
+    assert sp_rows[2]['Date of Birth'] == '2011-11-03'
+    assert sp_rows[2]['Grade'] == 'Grade 9'
+    assert sp_rows[2]['Parent First Name'] == 'Peter'
+
+
 
 
 

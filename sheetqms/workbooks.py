@@ -284,12 +284,19 @@ def _extract_dob_from_sa_id_str(raw_val) -> tuple[str | None, str | None]:
     if raw_val is None or isinstance(raw_val, bool):
         return None, None
     s = re.sub(r'\.0+$', '', str(raw_val).strip())
+    if re.search(r'[\r\n]', s):
+        first_line = next((ln.strip() for ln in re.split(r'[\r\n]+', s) if re.search(r'\d{5,13}', ln)), None)
+        if first_line:
+            s = first_line
     if re.fullmatch(r'\d+(?:\.\d+)?[eE]\+\d+', s):
         try:
             s = str(int(round(float(s))))
         except Exception:
             pass
     s_clean = re.sub(r'[\s-]', '', s)
+    if len(s_clean) >= 20 and s_clean.isdigit():
+        m13 = re.search(r'\b(\d{13})\b', s)
+        s_clean = m13.group(1) if m13 else s_clean[:13]
     if not s_clean or not re.fullmatch(r'\d+', s_clean):
         return None, None
     digits = s_clean
@@ -415,21 +422,43 @@ def _title_case_person(val) -> str | None:
     return s
 
 
+def _split_surname_and_first_names(raw_val) -> tuple[str | None, str | None]:
+    if raw_val is None:
+        return None, None
+    s = re.sub(r'\s+', ' ', str(raw_val).replace('\r', ' ').replace('\n', ' ')).strip()
+    if not s or len(s) < 3 or re.search(r'\d', s):
+        return None, None
+    if ',' in s:
+        parts = [p.strip() for p in s.split(',') if p.strip()]
+        if len(parts) >= 2:
+            return _title_case_person(parts[0]), _title_case_person(' '.join(parts[1:]))
+    parts = [p for p in s.split(' ') if p]
+    if len(parts) >= 2:
+        if len(parts) >= 4 and parts[0].lower() in {'van', 'de'} and parts[1].lower() in {'der', 'den', 'la'}:
+            return _title_case_person(' '.join(parts[:3])), _title_case_person(' '.join(parts[3:]))
+        if len(parts) >= 3 and parts[0].lower() in {'van', 'de', 'du', 'le', 'la', 'mc', 'mac', 'st'}:
+            return _title_case_person(' '.join(parts[:2])), _title_case_person(' '.join(parts[2:]))
+        return _title_case_person(parts[0]), _title_case_person(' '.join(parts[1:]))
+    return None, None
+
+
 _SECTION_HEADER_CELL_RE = re.compile(
     r'^((?:learner\s*|student\s*|parent\s*|guardian\s*|father\s*|mother\s*)?'
     r'(?:number|no\.?|#|id|student\s*id|learner\s*id|accession(?:\s*number|\s*no\.?)?|'
     r'admission(?:\s*number|\s*no\.?)?|sa\s*id(?:\s*number)?|id\s*number|identity\s*number|'
     r'lurits(?:\s*no\.?)?|cemis(?:\s*no\.?)?|surname|last\s*name|lastname|first\s*name|firstname|'
-    r'name|names|given\s*name|forename|full\s*name|gender|sex|grade|gr\.?|class|birth\s*date|'
-    r'date\s*of\s*birth|dob|d\.o\.b\.?|birthdate|age|cell\s*#?|cell\s*no\.?|cellphone|'
+    r'name|names|given\s*name|forename|full\s*name|learners?\s+in\s+alphabetical\s+order.*|'
+    r'.*surname\s+(?:and|&)\s+first\s*names?.*|gender|sex|male\s*\/\s*female|grade|gr\.?|class|birth\s*date|'
+    r'date\s*of\s*birth|dob|d\.o\.b\.?|birthdate|age|number\s+of\s+years.*|number\s+of\s+days.*|'
+    r'cell\s*#?|cell\s*no\.?|cellphone|'
     r'phone(?:\s*number)?|tel(?:ephone)?|mobile|contact(?:\s*number)?|email|e-mail|email\s*address|'
     r'home\s*language|first\s*additional\s*language|second\s*additional\s*language|subjects?|'
-    r'subject\s*list|enrolled\s*subjects|learner\s*average.*|learner\s*rank|learner\s*total|code|'
+    r'subject\s*list|enrolled\s*subjects|learner\s*average.*|learner\s*rank|learner\s*total|code|codes\s*:.*|'
     r'deviation\s*comment|.*report\s*general\s*comment.*|.*\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)|'
     r'accounting|business\s*studies|economics|mathematics|mathematical\s*literacy|physical\s*sciences|'
     r'life\s*sciences|life\s*orientation|geography|history|tourism|consumer\s*studies|'
     r'computer\s*applications\s*technology|natural\s*sciences|social\s*sciences|technology|'
-    r'creative\s*arts|economic\s*and\s*management\s*sciences.*|ems))$',
+    r'creative\s*arts|economic\s*(?:and\s*)?management.*|ems))$',
     re.I,
 )
 
@@ -577,13 +606,11 @@ def _normalize_school_sheet_rows(
     for r in rows[:20]:
         if banner_grade:
             break
-        for cell in (r or []):
-            if not isinstance(cell, str):
-                continue
-            m = re.search(r'(?:for\s*:\s*grade\s*|grade\s*:\s*|\(\s*gr(?:ade)?\.?\s*)0*(\d{1,2})\b', cell, re.I)
-            if m:
-                banner_grade = f'Grade {int(m.group(1))}'
-                break
+        row_joined = ' '.join(str(cell).strip() for cell in (r or []) if cell is not None and str(cell).strip())
+        m = re.search(r'(?:for\s*:\s*|grade\s*:\s*)?(?:grade|gr\.?)\s*0*(\d{1,2})\b', row_joined, re.I) or re.search(r'\(\s*gr(?:ade)?\.?\s*0*(\d{1,2})\s*\)', row_joined, re.I)
+        if m:
+            banner_grade = f'Grade {int(m.group(1))}'
+            break
 
     header_idx: int | None = None
     mode: str | None = None
@@ -600,8 +627,15 @@ def _normalize_school_sheet_rows(
         norms = [norm(v) for v in (r or []) if v is not None and str(v).strip()]
         if not norms:
             continue
-        if any('learner name' in n or 'student name' in n for n in comp_norms) and (
-            any('accession' in n or n in {'date of birth', 'dob', 'birth date', 'birthdate', 'no', 'no.', 'number', 'gender'} for n in comp_norms)
+        has_learner_name_col = any(
+            'learner name' in n
+            or 'student name' in n
+            or 'learners in alphabetical order' in n
+            or 'surname and first name' in n
+            for n in comp_norms
+        )
+        if has_learner_name_col and (
+            any('accession' in n or 'admission' in n or n in {'date of birth', 'dob', 'birth date', 'birthdate', 'no', 'no.', 'number', 'gender', 'male female'} for n in comp_norms)
         ):
             header_idx = idx
             mode = 'gde_marks'
@@ -617,6 +651,14 @@ def _normalize_school_sheet_rows(
         return rows
 
     out_rows = [list(r) for r in rows]
+    # Check if header_idx + 1 is a sub-header row (e.g. when header_idx has Number/Admission Number/Learner's Progress and header_idx + 1 has the 9 subjects)
+    if mode == 'gde_marks' and header_idx + 1 < len(out_rows):
+        nxt_r = out_rows[header_idx + 1] or []
+        nxt_first = nxt_r[0] if nxt_r else None
+        if not isinstance(nxt_first, (int, float)) and not (nxt_first is not None and re.fullmatch(r'\d+', str(nxt_first).strip())):
+            nxt_hits = sum(1 for v in nxt_r if v is not None and str(v).strip() and _SECTION_HEADER_CELL_RE.match(re.sub(r'\s+', ' ', str(v).strip())))
+            if nxt_hits >= 3:
+                header_idx = header_idx + 1
     h_row = list(out_rows[header_idx])
     while h_row and (h_row[-1] is None or str(h_row[-1]).strip() == ''):
         h_row.pop()
@@ -624,17 +666,33 @@ def _normalize_school_sheet_rows(
     if mode == 'gde_marks':
         # Clean long comment header and composite any blank header cells from up to 5 rows above header_idx
         clean_h: list[str] = []
+        max_h_cols = max([len(out_rows[k] or []) for k in range(max(0, header_idx - 3), min(len(out_rows), header_idx + 5))] or [len(h_row)])
+        while len(h_row) < max_h_cols:
+            h_row.append(None)
+        while h_row and all(
+            (k >= len(out_rows) or len(out_rows[k]) < len(h_row) or out_rows[k][len(h_row) - 1] is None or str(out_rows[k][len(h_row) - 1]).strip() == '')
+            for k in range(max(0, header_idx - 2), min(len(out_rows), header_idx + 8))
+        ):
+            h_row.pop()
         for c_i, cell in enumerate(h_row):
-            hs = str(cell or '').strip()
-            if not hs:
+            hs = re.sub(r'\s+', ' ', str(cell or '').strip())
+            if not hs or re.match(r'^learner\'?s\s+progress$', hs, re.I):
                 for k in range(header_idx - 1, max(-1, header_idx - 6), -1):
                     if c_i < len(out_rows[k]):
-                        pk = str(out_rows[k][c_i] or '').strip()
-                        if pk and len(pk) < 65 and not re.search(r'\b(department\s+of\s+education|mark\s+schedule|school\s*:|district\s*:|for\s*:\s*grade)\b', pk, re.I):
+                        pk = re.sub(r'\s+', ' ', str(out_rows[k][c_i] or '').strip())
+                        if pk and len(pk) <= 140 and not re.match(r'^learner\'?s\s+progress$', pk, re.I) and not re.search(r'\b(department\s+of\s+education|mark\s+schedule|school\s*:|district\s*:|for\s*:\s*grade|grade\s*:\s*grade)\b', pk, re.I):
                             hs = pk
                             break
             if re.search(r'report\s+general\s+comment', hs, re.I):
                 hs = 'Report General Comment'
+            elif re.search(r'codes\s*:.*deviation\s+comment', hs, re.I):
+                hs = 'Deviation Comment'
+            elif re.search(r'learners?\s+in\s+alphabetical\s+order|surname\s+(?:and|&)\s+first\s*names?', hs, re.I):
+                hs = 'Learner Name'
+            elif re.match(r'^(male\s*\/\s*female|m\s*\/\s*f)$', hs, re.I):
+                hs = 'Gender'
+            elif re.match(r'^economic\s+management$', hs, re.I):
+                hs = 'Economic and Management Sciences (EMS)'
             if not hs:
                 hs = f'Col{c_i + 1}'
             if not banner_grade:
@@ -642,7 +700,7 @@ def _normalize_school_sheet_rows(
                 if gm:
                     banner_grade = f'Grade {int(gm.group(1))}'
             clean_h.append(hs)
-        acc_idx = next((i for i, h in enumerate(clean_h) if 'accession' in norm(h)), None)
+        acc_idx = next((i for i, h in enumerate(clean_h) if 'accession' in norm(h) or 'admission' in norm(h)), None)
         dob_col_idx = next((i for i, h in enumerate(clean_h) if norm(h) in {'date of birth', 'dob', 'birth date', 'birthdate'}), None)
         lname_idx = next((i for i, h in enumerate(clean_h) if norm(h) in {'learner name', 'student name', 'full name'}), None)
         has_grade = any(norm(h) == 'grade' for h in clean_h)
@@ -659,25 +717,16 @@ def _normalize_school_sheet_rows(
                 continue
             for cell_v in r[:6]:
                 if isinstance(cell_v, str):
-                    gm_row = re.search(r'(?:for\s*:\s*grade\s*|grade\s*:\s*|\(\s*gr(?:ade)?\.?\s*)0*(8|9|10|11|12)\b', cell_v, re.I)
+                    gm_row = re.search(r'(?:for\s*:\s*grade\s*|grade\s*:\s*(?:grade\s*)?|\(\s*gr(?:ade)?\.?\s*)0*(8|9|10|11|12)\b', cell_v, re.I)
                     if gm_row:
                         current_grade = f'Grade {int(gm_row.group(1))}'
             while len(r) < len(h_row):
                 r.append(None)
             r = r[:len(h_row)]
-            # Split "SURNAME, FirstName, MiddleName"
+            # Split "SURNAME, FirstName, MiddleName" OR space-separated "SURNAME FIRSTNAMES"
             ln_val, fn_val = None, None
             if lname_idx is not None and lname_idx < len(r) and r[lname_idx] is not None:
-                raw_nm = str(r[lname_idx]).strip()
-                if ',' in raw_nm:
-                    parts = [p.strip() for p in raw_nm.split(',') if p.strip()]
-                    if len(parts) >= 2:
-                        ln_val = _title_case_person(parts[0])
-                        fn_val = _title_case_person(' '.join(parts[1:]))
-                elif ' ' in raw_nm:
-                    parts = raw_nm.split()
-                    ln_val = _title_case_person(parts[0])
-                    fn_val = _title_case_person(' '.join(parts[1:]))
+                ln_val, fn_val = _split_surname_and_first_names(r[lname_idx])
             dob_val = None
             if dob_col_idx is not None and dob_col_idx < len(r) and r[dob_col_idx] is not None:
                 norm_d = _normalize_date_str(r[dob_col_idx])
