@@ -30575,6 +30575,13 @@
               }
               return "";
             };
+            const normLangLabel = (val, suffix) => {
+              if (val === null || val === void 0) return "";
+              const s2 = String(val).trim();
+              if (!s2) return "";
+              const tc = toTitleCaseName(s2);
+              return new RegExp(suffix, "i").test(tc) ? tc : `${tc} ${suffix}`;
+            };
             const indexRec = (rec) => {
               const kv = String(rec[keyCol] || "").trim().toLowerCase();
               if (kv && (kv.length >= 6 || !/^\d+$/.test(kv))) byRealId[kv] = rec;
@@ -30619,6 +30626,8 @@
                 }
                 const objGr = String(obj["Grade"] || (r["Grade"] ? fmtField("Grade", r["Grade"]) : "") || "").trim().toLowerCase();
                 const objGen = normGender(r);
+                const rowHL = normLangLabel(r["Home Language"] ?? r["home language"] ?? r["HL"], "Home Language");
+                const rowFAL = normLangLabel(r["First Additional Language"] ?? r["first additional language"] ?? r["FAL"], "First Additional Language");
                 const kVal = String(obj[keyCol] || "").trim().toLowerCase();
                 const isRealId = Boolean(kVal && (kVal.length >= 6 || !/^\d+$/.test(kVal)));
                 const fn = String(obj["First Name"] || "").trim().toLowerCase();
@@ -30637,13 +30646,15 @@
                   Object.entries(obj).forEach(([k, v]) => {
                     if (v !== null && v !== void 0 && v !== "") targetRec[k] = v;
                   });
-                  rowMeta.set(targetRec, { grade: objGr, gender: objGen, matchedMarks: isMarksSheet });
+                  rowMeta.set(targetRec, { grade: objGr, gender: objGen, matchedMarks: isMarksSheet, hl: rowHL || void 0, fal: rowFAL || void 0 });
                   indexRec(targetRec);
                 } else {
                   const prevMeta = rowMeta.get(targetRec) || { grade: objGr, gender: objGen, matchedMarks: false };
                   if (isMarksSheet) prevMeta.matchedMarks = true;
                   if (!prevMeta.grade && objGr) prevMeta.grade = objGr;
                   if (!prevMeta.gender && objGen) prevMeta.gender = objGen;
+                  if (!prevMeta.hl && rowHL) prevMeta.hl = rowHL;
+                  if (!prevMeta.fal && rowFAL) prevMeta.fal = rowFAL;
                   rowMeta.set(targetRec, prevMeta);
                   Object.entries(obj).forEach(([k, v]) => {
                     if (v === null || v === void 0 || v === "") return;
@@ -30657,6 +30668,29 @@
                   if (isRealId) byRealId[kVal] = targetRec;
                 }
               }
+            }
+            if (listTargets.length) {
+              const allSubjCols = sourcePlans.flatMap((sp) => sp.columns);
+              const detectedHLCol = allSubjCols.find((c) => /\bhome\s+language\b/i.test(c));
+              const detectedFALCol = allSubjCols.find((c) => /\bfirst\s+additional\s+language\b/i.test(c));
+              const defaultHL = detectedHLCol ? cleanSubjectName(detectedHLCol) : "Sepedi Home Language";
+              const defaultFAL = detectedFALCol ? cleanSubjectName(detectedFALCol) : "English First Additional Language";
+              for (const rec of rows) {
+                const meta = rowMeta.get(rec);
+                const gr = String(rec["Grade"] || meta?.grade || "").trim().toLowerCase();
+                if (/^(?:grade\s*0?[89]|gr\.?\s*0?[89]|0?[89])(?:[a-z])?$/i.test(gr)) {
+                  const hl = meta?.hl || defaultHL;
+                  const fal = meta?.fal || defaultFAL;
+                  const capsSeniorPhase = `${hl}; ${fal}; Mathematics; Natural Sciences; Social Sciences; Technology; Economic and Management Sciences (EMS); Life Orientation; Creative Arts`;
+                  for (const lt of listTargets) {
+                    if (!rec[lt] || String(rec[lt]).trim() === "") {
+                      rec[lt] = capsSeniorPhase;
+                      allCovered.add(lt);
+                    }
+                  }
+                }
+              }
+              unmappedTargets = headers.filter((th) => th !== "Total" && !allCovered.has(th));
             }
           } else {
             const sp = sourcePlans[0];
@@ -30688,8 +30722,25 @@
               if (headers.includes("Student ID") && (obj["Student ID"] === null || obj["Student ID"] === "")) {
                 obj["Student ID"] = `STU${String(rIdx + 1).padStart(4, "0")}`;
               }
+              if (listTargets.length) {
+                const gr = String(obj["Grade"] || r["Grade"] || "").trim().toLowerCase();
+                if (/^(?:grade\s*0?[89]|gr\.?\s*0?[89]|0?[89])(?:[a-z])?$/i.test(gr)) {
+                  const rawHL = r["Home Language"] ?? r["home language"] ?? r["HL"];
+                  const rawFAL = r["First Additional Language"] ?? r["first additional language"] ?? r["FAL"];
+                  const hl = rawHL ? /home\s+language/i.test(String(rawHL)) ? toTitleCaseName(String(rawHL).trim()) : `${toTitleCaseName(String(rawHL).trim())} Home Language` : "Sepedi Home Language";
+                  const fal = rawFAL ? /first\s+additional\s+language/i.test(String(rawFAL)) ? toTitleCaseName(String(rawFAL).trim()) : `${toTitleCaseName(String(rawFAL).trim())} First Additional Language` : "English First Additional Language";
+                  const capsSeniorPhase = `${hl}; ${fal}; Mathematics; Natural Sciences; Social Sciences; Technology; Economic and Management Sciences (EMS); Life Orientation; Creative Arts`;
+                  for (const lt of listTargets) {
+                    if (!obj[lt] || String(obj[lt]).trim() === "") {
+                      obj[lt] = capsSeniorPhase;
+                      allCovered.add(lt);
+                    }
+                  }
+                }
+              }
               return obj;
             });
+            unmappedTargets = headers.filter((th) => th !== "Total" && !allCovered.has(th));
           }
           finalSources = sourcePlans.map(({ ps: _, ...rest }) => rest);
         }

@@ -718,7 +718,28 @@ def normalize_sources(job, plan):
                     rec_grade = norm(data.get('Grade') or data.get('grade'))
                     if not rec_grade and 'Grade' in index and index['Grade'] < len(row) and row[index['Grade']] is not None:
                         rec_grade = norm(format_field_value('Grade', row[index['Grade']], set()))
-                    records.append({'id': f'{source.source_id}:{source.sheet}:{number}', 'data': data, 'refs': refs, '_gender': rec_gender, '_grade': rec_grade, 'operation': 'horizontal subject-percentage matrix + column mapping' if source.period else 'column mapping'})
+                    rec_hl, rec_fal = '', ''
+                    for hl_col in ('Home Language', 'home language', 'HL'):
+                        if hl_col in index and index[hl_col] < len(row) and row[index[hl_col]] is not None and str(row[index[hl_col]]).strip():
+                            s_hl = str(row[index[hl_col]]).strip().title()
+                            rec_hl = s_hl if 'home language' in s_hl.lower() else f'{s_hl} Home Language'
+                            break
+                    if not rec_hl and source.columns:
+                        for c in source.columns:
+                            if 'home language' in c.lower():
+                                rec_hl = re.sub(r'\s*\(\s*(?:gr(?:ade)?\.?\s*\d{1,2}[a-z]?|%|mark|marks|percent|percentage)\s*\)\s*$', '', c, flags=re.I).strip()
+                                break
+                    for fal_col in ('First Additional Language', 'first additional language', 'FAL'):
+                        if fal_col in index and index[fal_col] < len(row) and row[index[fal_col]] is not None and str(row[index[fal_col]]).strip():
+                            s_fal = str(row[index[fal_col]]).strip().title()
+                            rec_fal = s_fal if 'first additional language' in s_fal.lower() else f'{s_fal} First Additional Language'
+                            break
+                    if not rec_fal and source.columns:
+                        for c in source.columns:
+                            if 'first additional language' in c.lower():
+                                rec_fal = re.sub(r'\s*\(\s*(?:gr(?:ade)?\.?\s*\d{1,2}[a-z]?|%|mark|marks|percent|percentage)\s*\)\s*$', '', c, flags=re.I).strip()
+                                break
+                    records.append({'id': f'{source.source_id}:{source.sheet}:{number}', 'data': data, 'refs': refs, '_gender': rec_gender, '_grade': rec_grade, '_hl': rec_hl, '_fal': rec_fal, 'operation': 'horizontal subject-percentage matrix + column mapping' if source.period else 'column mapping'})
                 elif source.layout == 'long':
                     expected += 1
                     entity, key_cell = get(source.key)
@@ -762,6 +783,24 @@ def build_rows(records, destination, rules):
     fields_count = len(destination.categories) + 1 + bool(destination.total) if destination.mode == 'pivot' else (3 if destination.mode == 'long' else max((len(r.get('data', {})) for r in records), default=1))
     max_rows = min(MAX_OUTPUT_ROWS, MAX_OUTPUT_CELLS // max(1, fields_count))
     if destination.mode == 'direct':
+        default_hl = next((r.get('_hl') for r in records if r.get('_hl')), '') or 'Sepedi Home Language'
+        default_fal = next((r.get('_fal') for r in records if r.get('_fal')), '') or 'English First Additional Language'
+        subj_fields = [k for k in ('Subjects', 'Subject', 'Enrolled Subjects', 'Subject List') if any(k in r.get('data', {}) for r in records)]
+        if not subj_fields and any('Grade' in r.get('data', {}) for r in records) and any(r.get('_hl') or r.get('_fal') for r in records):
+            subj_fields = ['Subjects']
+
+        def _fill_caps_senior_phase(target_rows: list[dict], row_hl_map: dict[int, str], row_fal_map: dict[int, str]):
+            if not subj_fields:
+                return
+            for idx, r_dict in enumerate(target_rows):
+                gr_val = norm(r_dict.get('Grade') or r_dict.get('grade') or '')
+                if re.match(r'^(?:grade\s*0?[89]|gr\.?\s*0?[89]|0?[89])(?:[a-z])?$', gr_val):
+                    for subj_key in subj_fields:
+                        if not (r_dict.get(subj_key) and str(r_dict.get(subj_key)).strip()):
+                            hl = row_hl_map.get(idx) or default_hl
+                            fal = row_fal_map.get(idx) or default_fal
+                            r_dict[subj_key] = f'{hl}; {fal}; Mathematics; Natural Sciences; Social Sciences; Technology; Economic and Management Sciences (EMS); Life Orientation; Creative Arts'
+
         source_regions = {r['id'].rsplit(':', 1)[0] for r in records}
         if len(source_regions) > 1:
             # Sort records so Bio/Parent-Info sheets (without horizontal subject matrix) run FIRST and Mark Schedule sheets run SECOND
@@ -771,6 +810,8 @@ def build_rows(records, destination, rules):
             by_short_name: dict[tuple[str, str], list[tuple[int, str]]] = {}
             row_grades: dict[int, str] = {}
             row_genders: dict[int, str] = {}
+            row_hls: dict[int, str] = {}
+            row_fals: dict[int, str] = {}
             matched_marks_idxs: set[int] = set()
 
             def _is_real_key(kv: str) -> bool:
@@ -798,6 +839,8 @@ def build_rows(records, destination, rules):
                 is_marks = 'horizontal subject-percentage matrix' in record.get('operation', '')
                 rec_gr = record.get('_grade') or norm(data.get('Grade') or data.get('grade'))
                 rec_gen = record.get('_gender', '')
+                rec_hl = record.get('_hl', '')
+                rec_fal = record.get('_fal', '')
                 k_val = norm(data.get(destination.key)) if destination.key else ''
                 is_real_k = _is_real_key(k_val)
                 fn = norm(data.get('First Name') or data.get('first_name'))
@@ -820,6 +863,10 @@ def build_rows(records, destination, rules):
                         row_grades[target_idx] = rec_gr
                     if rec_gen and not row_genders.get(target_idx):
                         row_genders[target_idx] = rec_gen
+                    if rec_hl and not row_hls.get(target_idx):
+                        row_hls[target_idx] = rec_hl
+                    if rec_fal and not row_fals.get(target_idx):
+                        row_fals[target_idx] = rec_fal
                     for f, v in data.items():
                         if v in (None, ''):
                             continue
@@ -843,6 +890,10 @@ def build_rows(records, destination, rules):
                         row_grades[new_idx] = rec_gr
                     if rec_gen:
                         row_genders[new_idx] = rec_gen
+                    if rec_hl:
+                        row_hls[new_idx] = rec_hl
+                    if rec_fal:
+                        row_fals[new_idx] = rec_fal
                     if is_marks:
                         matched_marks_idxs.add(new_idx)
                     if is_real_k:
@@ -852,13 +903,21 @@ def build_rows(records, destination, rules):
                     if short_nm:
                         by_short_name.setdefault(short_nm, []).append((new_idx, reg))
                     provenance.append({'record_id': record['id'], 'target_row': destination.header_row + new_idx + 1, 'target_fields': list(data), 'sources': record['refs'], 'operation': record.get('operation', 'column mapping')})
+            _fill_caps_senior_phase(rows, row_hls, row_fals)
             return rows, provenance, questions
+        single_hls: dict[int, str] = {}
+        single_fals: dict[int, str] = {}
         for index, record in enumerate(records):
             if index >= max_rows:
                 questions.append(question('output-limit', f'Output exceeds the {max_rows:,}-row capacity for this template. No truncated workbook will be released.', kind='unsupported'))
                 break
-            rows.append(record['data'])
+            rows.append(dict(record['data']))
+            if record.get('_hl'):
+                single_hls[index] = record['_hl']
+            if record.get('_fal'):
+                single_fals[index] = record['_fal']
             provenance.append({'record_id': record['id'], 'target_row': destination.header_row + index + 1, 'target_fields': list(record['data']), 'sources': record['refs'], 'operation': record.get('operation', 'column mapping')})
+        _fill_caps_senior_phase(rows, single_hls, single_fals)
         return rows, provenance, questions
     if destination.mode == 'long':
         for index, record in enumerate(records):

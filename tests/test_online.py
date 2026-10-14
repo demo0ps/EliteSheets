@@ -753,11 +753,12 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     gde_rows = gde_job['report']['rows']
     # All 4 Bio learners are kept PLUS the 1 unmatched Grade 10 Mark Schedule learner appended at bottom = 5 rows
     assert len(gde_rows) == 5
-    # Row 0: Amogelang Aphane (Grade 9 on Bio -> MUST NOT receive Grade 10 Business Studies or 2010-07-08 DOB!)
+    # Row 0: Amogelang Aphane (Grade 9 on Bio -> MUST NOT receive Grade 10 Business Studies or 2010-07-08 DOB; receives standard 9 CAPS Senior Phase subjects!)
     assert gde_rows[0]['First Name'] == 'Amogelang'
     assert gde_rows[0]['Last Name'] == 'Aphane'
     assert gde_rows[0]['Grade'] == 'Grade 9'
-    assert gde_rows[0].get('Subjects') in (None, '')
+    assert gde_rows[0]['Subjects'] == 'Sepedi Home Language; English First Additional Language; Mathematics; Natural Sciences; Social Sciences; Technology; Economic and Management Sciences (EMS); Life Orientation; Creative Arts'
+    assert 'Business Studies' not in gde_rows[0]['Subjects']
     assert gde_rows[0].get('Date of Birth') in (None, '')
     assert gde_rows[0]['Parent First Name'] == 'Dikeledi'
     assert gde_rows[0]['Parent Last Name'] == 'Aphane'
