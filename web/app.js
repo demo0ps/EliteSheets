@@ -371,6 +371,7 @@
     })());
   }
   async function showPage(page) {
+    stopInteractiveGuide();
     currentPage = page;
     document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
     try {
@@ -453,28 +454,77 @@
     `;
     }
     $("page").innerHTML = `
-  <section class="vertical-welcome" aria-label="How It Works and Quick Start Demos">
-    <div class="steps-strip" aria-label="How it works in 3 easy steps">
-      <div class="step-pill"><span class="step-num">1</span><div><strong>STEP 1: Load or Create</strong><small>Click a 1-Click Demo below, upload files/folder, or type columns in chat.</small></div></div>
-      <div class="step-pill"><span class="step-num">2</span><div><strong>STEP 2: Tell the AI Helper</strong><small>Ask for any change in plain words on the left (or click a 1-click fix).</small></div></div>
-      <div class="step-pill"><span class="step-num">3</span><div><strong>STEP 3: Download Excel (.XLSX)</strong><small>Review your finished table on the right & download in 1 click.</small></div></div>
-    </div>
-    <div class="vertical-welcome-head">
-      <div>
-        <h2>Try a 1-Click Live Demo \u2014 or Upload / Type Below</h2>
-        <small style="color:var(--muted)">${escapeHTML(vMeta.desc)}</small>
+  <div class="simple-studio">
+    <section class="chat-card" aria-label="Sheet Helper">
+      <div class="chat-top">
+        <div class="chat-top-title">
+          <span class="bot-avatar">${icon("spark")}</span>
+          <div>
+            <h1>Sheet Helper</h1>
+            <small>${job ? escapeHTML(job.title) : "Ask me anything in plain words"}</small>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${job ? `<button id="new-job" class="btn small">${icon("plus")}New Sheet</button>` : ""}
+        </div>
       </div>
-      <span class="badge purple">${escapeHTML(vMeta.label)}</span>
-    </div>
-    <div class="vertical-cards-grid">
-      ${vMeta.cards.map((c) => `<button class="v-action-card" data-vcard="${escapeHTML(c.action)}"><strong>${escapeHTML(c.title)}</strong><small>${escapeHTML(c.desc)}</small></button>`).join("")}
-    </div>
-  </section>
 
-  <div class="simple-studio"><section class="chat-card" aria-label="Sheet Helper"><div class="chat-top"><div class="chat-top-title"><span class="bot-avatar">${icon("spark")}</span><div><h1>STEP 1 & 2 \xB7 AI Sheet Helper</h1><small>${job ? escapeHTML(job.title) : "Upload files OR tell me what spreadsheet to build"}</small></div></div>${job ? `<button id="new-job" class="btn small">${icon("plus")}Start Over</button>` : `<button id="open-advanced-builder" class="btn small">${icon("edit")}Multi-Tab Editor</button>`}</div><div class="picker-bar">${boot.demo_mode ? `<div class="picker-row"><select id="sample-case" aria-label="Try an example">${vMeta.samples.map((s, idx) => `<option value="${s.val}">Demo ${idx + 1}: ${escapeHTML(s.label)}</option>`).join("")}</select><button id="load-example" class="btn primary small">Load Demo</button></div>` : ""}<details class="upload-drawer" id="upload-drawer-box" open><summary>\u{1F4E4} Upload Your Own Excel / CSV Files (or an Entire Folder)</summary><div class="upload-grid" style="grid-template-columns:1fr 1fr 1fr"><label class="upload-box" for="source-files">${icon("upload")}<strong>Your Sheet(s)</strong><small>Excel or CSV</small><input id="source-files" type="file" multiple accept=".xlsx,.csv" aria-label="Upload source spreadsheets"></label><label class="upload-box" for="folder-files">${icon("folder")}<strong>Entire Folder</strong><small>Merge all files</small><input id="folder-files" type="file" webkitdirectory directory multiple aria-label="Upload entire folder of spreadsheets"></label><label class="upload-box" for="target-file">${icon("grid")}<strong>Template</strong><small>Optional</small><input id="target-file" type="file" accept=".xlsx,.csv" aria-label="Upload destination template"></label></div><div id="file-list" class="file-list"></div><button id="inspect-files" class="btn primary small" style="width:100%;margin-top:8px" disabled>Open Uploaded Files</button></details></div><div class="messages" id="messages" tabindex="0" aria-label="Helper conversation" aria-live="polite">${job ? job.chat.map((m) => `<article class="msg ${m.role === "user" ? "user" : ""}"><span class="msg-sender">${m.role === "user" ? "You" : "Helper"}</span><div class="bubble">${escapeHTML(friendlyText(m.text))}</div></article>`).join("") : `<article class="msg"><span class="msg-sender">Helper</span><div class="bubble"><b>Hi! Everything happens right here on this one screen:</b>
-1\uFE0F\u20E3 Click a <b>1-Click Demo</b> card at the top, or <b>Upload</b> your Excel/CSV files above.
-2\uFE0F\u20E3 Or just <b>type below</b> what spreadsheet you want me to create from scratch (e.g. <i>"Columns: Name, Phone, Amount, Paid"</i>)!</div></article>`}</div>${job ? `<div class="quick-action-bar">${job.proposal ? `<button id="confirm-correction" class="btn primary">${icon("check")}Yes, apply: ${escapeHTML(job.proposal.description)}</button>` : ""}${!r || !release ? `<button id="run-job" class="btn ${r ? "" : "primary"}">${icon("check")}${r ? "Update Sheet" : "Fill My Sheet"}</button>` : ""}<div class="quick-chips">${hasMissingNorthFeb && !job.proposal ? `<button class="chip" data-chat="18">Reply: 18</button><button class="chip" data-chat="North Feb is 18">North Feb is 18</button>` : ""}${customMissing && !hasMissingNorthFeb && !job.proposal ? `<button class="chip" data-chat="${escapeHTML(customMissing.entity)} ${escapeHTML(customMissing.category)} is 18">Set ${escapeHTML(customMissing.entity)} / ${escapeHTML(customMissing.category)} = 18</button>` : ""}${hasUnmappedQty && !customUnmapped?.length && !job.proposal ? `<button class="chip" data-chat="yes">Yes, put Boxes in Qty</button>` : ""}${customUnmapped?.length && customUnused?.length && !job.proposal ? customUnused.slice(0, 2).map((sc) => `<button class="chip" data-chat="put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}">Put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}</button>`).join("") : ""}${r && !release ? `<button class="chip" data-chat="What is blocking this output?">What is missing?</button>` : ""}${release && headers.includes("Jan") && headers.includes("Feb") ? `<button class="chip" data-chat="swap Jan and Feb">Swap Jan & Feb</button><button class="chip" data-chat="replace the first row with row 2">Swap row 1 & row 2</button>` : ""}${job ? `<button class="chip" data-chat="How did you match my columns?">Show column matches</button>` : ""}</div></div>` : `<div class="quick-action-bar"><div class="quick-chips"><button class="chip" data-chat="${escapeHTML(vMeta.builderPresetCmd)}">\u2728 Build ${escapeHTML(vMeta.builderPresetLabel)}</button><button class="chip" data-chat="Create a SA-SAMS student & tuition sheet">\u{1F393} Build Student & Tuition Sheet</button><button class="chip" data-chat="Create a monthly expense tracker">\u{1F4CA} Build Expense & VAT Sheet</button></div></div>`}<form id="chat-form" class="chat-compose"><textarea id="chat-text" rows="1" aria-label="Message the Sheet Helper" placeholder="${job ? "Type what you want to change (e.g. 'swap Jan and Feb', '18', 'yes')\u2026" : "Tell me what spreadsheet to create (e.g. 'Columns: Name, Phone, Fee, Paid')\u2026"}"></textarea><button id="send-chat" class="btn primary small" type="submit" aria-label="Send message">${icon("send")}</button></form></section><section class="result-card" aria-label="Your Spreadsheet"><div class="result-head"><div><h2>STEP 3 \xB7 Your Live Spreadsheet</h2><small>${release ? "Everything looks good \u2014 click Download Excel (.XLSX) on the right." : r ? "Answer the quick question on the left (or pick a column below) to finish." : job ? "Click Fill My Sheet on the left to populate your table." : "Click a 1-Click Demo at the top, upload a file, or type in the chat on the left."}</small></div><div class="result-actions"><span id="output-state" class="badge ${release ? "good" : r ? "warn" : ""}">${release ? "\u2713 Ready to Download" : r ? "Needs 1 Quick Answer" : "Waiting for Sheet"}</span><button class="btn small ${release ? "primary" : ""}" id="download-output" ${release ? "" : "disabled"}>${icon(release ? "download" : "lock")}Download Excel (.XLSX)</button></div></div>${r?.rows.length ? `<div class="clean-toolbar"><span>1-Click Fixes:</span>${toolbarButtonsHtml}</div>` : ""}<div class="table-scroll" tabindex="0" aria-label="Output preview"><table><thead><tr>${headers.map((h) => canMapCols ? `<th><div class="th-col-wrap"><span>${escapeHTML(h)}</span><select class="col-map-select ${activeFieldMap[h] ? "" : "unmapped"}" data-map-target="${escapeHTML(h)}" aria-label="Source column for ${escapeHTML(h)}"><option value="">${activeFieldMap[h] ? "\u2014 Unmap \u2014" : "Choose column\u2026"}</option>${srcColHeaders.map((sh) => `<option value="${escapeHTML(sh)}" ${activeFieldMap[h] === sh ? "selected" : ""}>\u2190 ${escapeHTML(sh)}</option>`).join("")}</select></div></th>` : `<th>${escapeHTML(h)}</th>`).join("")}</tr></thead><tbody>${r?.rows.length ? r.rows.map((row) => `<tr>${headers.map((h) => `<td>${row[h] === null || row[h] === void 0 ? '<span class="missing">Ask in chat</span>' : escapeHTML(row[h])}</td>`).join("")}</tr>`).join("") : `<tr><td class="table-empty" colspan="${headers.length}">${job ? "Click <b>Fill My Sheet</b> on the left to fill your spreadsheet." : "\u{1F446} Click any <b>1-Click Demo</b> card at the top, upload your files on the left, or type what columns you want in the chat box!"}</td></tr>`}</tbody></table></div></section></div>`;
-    if ($("open-advanced-builder")) $("open-advanced-builder").addEventListener("click", () => void showPage("builder"));
+      <div class="picker-bar">
+        <details class="upload-drawer" id="upload-drawer-box">
+          <summary id="tour-open-btn" class="btn small" style="width:100%;justify-content:space-between;background:var(--panel);color:var(--ink)">
+            <span style="display:inline-flex;align-items:center;gap:8px">${icon("upload")}<b>Open / Upload File</b> <span style="font-weight:400;color:var(--muted)">(or try a demo)</span></span>
+            <span style="font-size:12px;color:var(--accent)">\u25BC</span>
+          </summary>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+            ${boot.demo_mode ? `<div class="picker-row"><select id="sample-case" aria-label="Try an example">${vMeta.samples.map((s, idx) => `<option value="${s.val}">Demo ${idx + 1}: ${escapeHTML(s.label)}</option>`).join("")}</select><button id="load-example" class="btn primary small">Load Demo</button></div>` : ""}
+            <div class="upload-grid" style="grid-template-columns:1fr 1fr 1fr">
+              <label class="upload-box" for="source-files">${icon("upload")}<strong>Your Sheet(s)</strong><small>Excel or CSV</small><input id="source-files" type="file" multiple accept=".xlsx,.csv" aria-label="Upload source spreadsheets"></label>
+              <label class="upload-box" for="folder-files">${icon("folder")}<strong>Entire Folder</strong><small>Merge all files</small><input id="folder-files" type="file" webkitdirectory directory multiple aria-label="Upload entire folder of spreadsheets"></label>
+              <label class="upload-box" for="target-file">${icon("grid")}<strong>Template</strong><small>Optional</small><input id="target-file" type="file" accept=".xlsx,.csv" aria-label="Upload destination template"></label>
+            </div>
+            <div id="file-list" class="file-list"></div>
+            <button id="inspect-files" class="btn primary small" style="width:100%" disabled>Open Uploaded Files</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="messages" id="messages" tabindex="0" aria-label="Helper conversation" aria-live="polite">
+        ${job ? job.chat.map((m) => `<article class="msg ${m.role === "user" ? "user" : ""}"><span class="msg-sender">${m.role === "user" ? "You" : "Helper"}</span><div class="bubble">${escapeHTML(friendlyText(m.text))}</div></article>`).join("") : `<article class="msg"><span class="msg-sender">Helper</span><div class="bubble">Hi! Click <b>Open / Upload File</b> above to load a spreadsheet, or type what columns you want me to build right below.<div style="margin-top:10px"><button id="start-guide-inline" class="btn small cyan">${icon("info")}Show Me Where to Click (Interactive Guide)</button></div></div></article>`}
+      </div>
+
+      ${job ? `<div class="quick-action-bar">${job.proposal ? `<button id="confirm-correction" class="btn primary">${icon("check")}Yes, apply: ${escapeHTML(job.proposal.description)}</button>` : ""}${!r || !release ? `<button id="run-job" class="btn ${r ? "" : "primary"}">${icon("check")}${r ? "Update Sheet" : "Fill My Sheet"}</button>` : ""}<div class="quick-chips">${hasMissingNorthFeb && !job.proposal ? `<button class="chip" data-chat="18">Reply: 18</button><button class="chip" data-chat="North Feb is 18">North Feb is 18</button>` : ""}${customMissing && !hasMissingNorthFeb && !job.proposal ? `<button class="chip" data-chat="${escapeHTML(customMissing.entity)} ${escapeHTML(customMissing.category)} is 18">Set ${escapeHTML(customMissing.entity)} / ${escapeHTML(customMissing.category)} = 18</button>` : ""}${hasUnmappedQty && !customUnmapped?.length && !job.proposal ? `<button class="chip" data-chat="yes">Yes, put Boxes in Qty</button>` : ""}${customUnmapped?.length && customUnused?.length && !job.proposal ? customUnused.slice(0, 2).map((sc) => `<button class="chip" data-chat="put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}">Put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}</button>`).join("") : ""}${r && !release ? `<button class="chip" data-chat="What is blocking this output?">What is missing?</button>` : ""}${release && headers.includes("Jan") && headers.includes("Feb") ? `<button class="chip" data-chat="swap Jan and Feb">Swap Jan & Feb</button><button class="chip" data-chat="replace the first row with row 2">Swap row 1 & row 2</button>` : ""}</div></div>` : `<div class="quick-action-bar"><div class="quick-chips"><button class="chip" data-chat="${escapeHTML(vMeta.builderPresetCmd)}">\u2728 Build ${escapeHTML(vMeta.builderPresetLabel)}</button><button class="chip" data-chat="Create a SA-SAMS student & tuition sheet">\u{1F393} Student & Tuition Sheet</button></div></div>`}
+
+      <form id="chat-form" class="chat-compose">
+        <textarea id="chat-text" rows="1" aria-label="Message the Sheet Helper" placeholder="${job ? "Tell me what to change (e.g. 'swap Jan and Feb', '18', 'yes')\u2026" : "Tell me what columns to create (e.g. 'Columns: Name, Phone, Amount')\u2026"}"></textarea>
+        <button id="send-chat" class="btn primary small" type="submit" aria-label="Send message">${icon("send")}</button>
+      </form>
+    </section>
+
+    <section class="result-card" id="output-table-area" aria-label="Your Spreadsheet">
+      <div class="result-head">
+        <div>
+          <h2>Your Spreadsheet</h2>
+          <small>${release ? "Ready \u2014 click Download Excel (.XLSX) on the right." : r ? "Answer the quick question on the left (or pick a column below) to finish." : job ? "Click Fill My Sheet on the left to populate your table." : "Open a file or type in the chat on the left to see your spreadsheet here."}</small>
+        </div>
+        <div class="result-actions">
+          <span id="output-state" class="badge ${release ? "good" : r ? "warn" : ""}">${release ? "\u2713 Ready to Download" : r ? "Needs 1 Quick Answer" : "Ready"}</span>
+          <button class="btn small ${release ? "primary" : ""}" id="download-output" ${release ? "" : "disabled"}>${icon(release ? "download" : "lock")}Download Excel (.XLSX)</button>
+        </div>
+      </div>
+      ${r?.rows.length ? `<div class="clean-toolbar"><span>Quick Tools:</span>${toolbarButtonsHtml}</div>` : ""}
+      <div class="table-scroll" tabindex="0" aria-label="Output preview">
+        <table>
+          <thead>
+            <tr>${headers.map((h) => canMapCols ? `<th><div class="th-col-wrap"><span>${escapeHTML(h)}</span><select class="col-map-select ${activeFieldMap[h] ? "" : "unmapped"}" data-map-target="${escapeHTML(h)}" aria-label="Source column for ${escapeHTML(h)}"><option value="">${activeFieldMap[h] ? "\u2014 Unmap \u2014" : "Choose column\u2026"}</option>${srcColHeaders.map((sh) => `<option value="${escapeHTML(sh)}" ${activeFieldMap[h] === sh ? "selected" : ""}>\u2190 ${escapeHTML(sh)}</option>`).join("")}</select></div></th>` : `<th>${escapeHTML(h)}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${r?.rows.length ? r.rows.map((row) => `<tr>${headers.map((h) => `<td>${row[h] === null || row[h] === void 0 ? '<span class="missing">Ask in chat</span>' : escapeHTML(row[h])}</td>`).join("")}</tr>`).join("") : `<tr><td class="table-empty" colspan="${headers.length}">${job ? "Click <b>Fill My Sheet</b> on the left to fill your spreadsheet." : "Click <b>Open / Upload File</b> on the left (or type what columns you want in the chat box) to start your spreadsheet."}</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>`;
+    if ($("start-guide-inline")) $("start-guide-inline").addEventListener("click", () => void startInteractiveGuide(0));
     document.querySelectorAll("[data-vcard]").forEach((card) => card.addEventListener("click", () => void busy(card, async () => {
       const act = card.dataset.vcard;
       if (act.startsWith("sample:")) {
@@ -3537,14 +3587,86 @@
     }
     return {};
   }
+  function stopInteractiveGuide() {
+    document.querySelectorAll(".tour-active-target").forEach((el) => el.classList.remove("tour-active-target"));
+    const old = document.getElementById("tour-popover-el");
+    if (old) old.remove();
+  }
+  async function startInteractiveGuide(stepIdx = 0) {
+    stopInteractiveGuide();
+    if (currentPage !== "workspace") {
+      await showPage("workspace");
+    }
+    const steps = [
+      {
+        id: "tour-open-btn",
+        badge: "Step 1 of 4",
+        title: "\u{1F446} 1. Click This First: Open or Upload",
+        body: "Click this button to upload your Excel/CSV files, merge a whole folder, or load a ready-made demo spreadsheet."
+      },
+      {
+        id: "chat-form",
+        badge: "Step 2 of 4",
+        title: "\u{1F446} 2. Then Click Here: Ask in Plain Words",
+        body: 'Type what you want right here \u2014 like "Columns: Name, Phone, Amount" to create a new sheet, or "swap Jan and Feb" to edit your sheet.'
+      },
+      {
+        id: "output-table-area",
+        badge: "Step 3 of 4",
+        title: "\u{1F446} 3. Then Check Your Spreadsheet Here",
+        body: "Your clean spreadsheet appears right here on the right. Once loaded, you can also click the Quick Tools above the table to fix SA IDs, phones, or add Totals."
+      },
+      {
+        id: "download-output",
+        badge: "Step 4 of 4",
+        title: "\u{1F446} 4. Finally, Click That: Download Excel",
+        body: "When your spreadsheet is ready, click this button to download your finished Excel (.XLSX) file!"
+      }
+    ];
+    const step = steps[stepIdx];
+    if (!step) return;
+    const target = document.getElementById(step.id);
+    if (!target) return;
+    target.classList.add("tour-active-target");
+    target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const pop = document.createElement("div");
+    pop.id = "tour-popover-el";
+    pop.className = "tour-popover";
+    pop.setAttribute("role", "dialog");
+    pop.setAttribute("aria-label", step.title);
+    pop.innerHTML = `
+    <div class="tour-popover-head">
+      <span class="tour-step-badge">${escapeHTML(step.badge)}</span>
+      <button id="tour-close-btn" class="icon-button" style="width:28px;height:28px" aria-label="Close guide">\xD7</button>
+    </div>
+    <h3>${escapeHTML(step.title)}</h3>
+    <p>${escapeHTML(step.body)}</p>
+    <div class="tour-popover-actions">
+      <div>${stepIdx > 0 ? `<button id="tour-prev-btn" class="btn small">\u2190 Back</button>` : `<button id="tour-skip-btn" class="btn small">Close</button>`}</div>
+      <div>${stepIdx < steps.length - 1 ? `<button id="tour-next-btn" class="btn primary small">Next \u2192</button>` : `<button id="tour-done-btn" class="btn primary small">Got It \u2713</button>`}</div>
+    </div>
+  `;
+    document.body.appendChild(pop);
+    const rect = target.getBoundingClientRect();
+    const popRect = pop.getBoundingClientRect();
+    let top = rect.bottom + 14;
+    let left = rect.left;
+    if (top + popRect.height > window.innerHeight - 16) {
+      top = Math.max(16, rect.top - popRect.height - 14);
+    }
+    if (left + popRect.width > window.innerWidth - 16) {
+      left = Math.max(16, window.innerWidth - popRect.width - 16);
+    }
+    pop.style.top = `${Math.max(14, top)}px`;
+    pop.style.left = `${Math.max(14, left)}px`;
+    document.getElementById("tour-close-btn")?.addEventListener("click", stopInteractiveGuide);
+    document.getElementById("tour-skip-btn")?.addEventListener("click", stopInteractiveGuide);
+    document.getElementById("tour-prev-btn")?.addEventListener("click", () => void startInteractiveGuide(stepIdx - 1));
+    document.getElementById("tour-next-btn")?.addEventListener("click", () => void startInteractiveGuide(stepIdx + 1));
+    document.getElementById("tour-done-btn")?.addEventListener("click", stopInteractiveGuide);
+  }
   function showHelp() {
-    const vMeta = VERTICAL_META[activeVertical()] || VERTICAL_META.general;
-    openModal(`Quick Guide \u2014 ${vMeta.label}`, `
-    <p><b>1. Click any Big Action Card:</b> On your home screen, click one of the 3 big cards under <b>"What would you like to do today?"</b> to get started right away.</p>
-    <p style="margin-top:8px"><b>2. Upload Your Own Files or Folder:</b> Click <b>Upload & Clean My Spreadsheet</b> (or open the upload box on the left) to clean, combine, and fill your spreadsheet automatically.</p>
-    <p style="margin-top:8px"><b>3. Ask the Sheet Helper in Plain Words:</b> Type anything in the chat box on the left \u2014 like <i>"swap column 1 and 2"</i>, <i>"set North Feb to 18"</i>, or <i>"sort by name"</i>.</p>
-    <p style="margin-top:8px"><b>4. Regular Mode vs. Optional Industry Packs:</b> By default, you are in <b>\u2728 Everyday / Regular User</b> mode. If you ever want specialized tools for <b>Schools (SA-SAMS)</b>, <b>Small Business Quotes</b>, <b>Finance</b>, or <b>Stock</b>, you can switch anytime using the dropdown at the top right!</p>
-  `);
+    void startInteractiveGuide(0);
   }
   $("close-modal").addEventListener("click", closeModal);
   $("modal").addEventListener("click", (e) => {
