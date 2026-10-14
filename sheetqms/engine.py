@@ -267,11 +267,12 @@ def infer_plan(job):
                 # Detect SA-SAMS / GDE horizontal Subject-Percentage matrix columns for a list target field (e.g. 'Subjects')
                 list_field, list_cols = '', []
                 list_targets = [f for f in headers if norm(f) in {'subjects', 'subject', 'enrolled subjects', 'subject list', 'courses', 'modules'} and f not in field_map]
-                if list_targets:
+                is_bio_parent_sheet = any(h.startswith(('Parent 1 ', 'Parent 2 ')) for h in hs) and not any(re.search(r'\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)', h, re.I) for h in hs)
+                if list_targets and not is_bio_parent_sheet:
                     non_list_aliases = {a for f in headers if f not in list_targets for a in aliases_for(template, f)}
-                    skip_meta = {'total', 'subtotal', 'grand total', 'average', 'grade average', 'learner average obtained', 'learner average (all subjects)', 'learner rank', 'learner total', 'code', 'report general comment', 'deviation comment', 'class', 'gender', 'term', 'age', 'rank', 'pass', 'fail', 'result', 'comments', 'notes'}
-                    non_subj_re = re.compile(r'\b(average|rank|total|subtotal|code|codes|comment|deviation|obtained|number|accession|gender|learner\s*name|student\s*name|first\s*name|last\s*name|surname|parent|guardian|mother|father|phone|cell|email|dob|birth|class)\b', re.I)
-                    cand_subj = [h for h in hs if h not in field_map.values() and norm(h) not in non_list_aliases and norm(h) not in skip_meta and not non_subj_re.search(h)]
+                    skip_meta = {'total', 'subtotal', 'grand total', 'average', 'grade average', 'learner average obtained', 'learner average (all subjects)', 'learner rank', 'learner total', 'code', 'report general comment', 'deviation comment', 'class', 'gender', 'term', 'age', 'rank', 'pass', 'fail', 'result', 'comments', 'notes', 'home language', 'first additional language', 'second additional language', 'preferred language', 'lolt'}
+                    non_subj_re = re.compile(r'\b(average|rank|total|subtotal|code|codes|comment|deviation|obtained|number|accession|gender|learner\s*name|student\s*name|first\s*name|last\s*name|surname|parent|guardian|mother|father|phone|cell|email|dob|birth|class)\b|^(home\s+language|first\s+additional\s+language|second\s+additional\s+language|language\s+of\s+learning.*|lolts?)$', re.I)
+                    cand_subj = [h for h in hs if h not in field_map.values() and norm(h) not in non_list_aliases and norm(h) not in skip_meta and not non_subj_re.search(h.strip())]
                     if len(cand_subj) >= 2:
                         list_field = list_targets[0]
                         list_cols = cand_subj
@@ -705,7 +706,19 @@ def normalize_sources(job, plan):
                         sa = validate_and_repair_sa_id(data.get(plan.destination.key))
                         if sa.get('dob'):
                             data['Date of Birth'] = sa['dob']
-                    records.append({'id': f'{source.source_id}:{source.sheet}:{number}', 'data': data, 'refs': refs, 'operation': 'horizontal subject-percentage matrix + column mapping' if source.period else 'column mapping'})
+                    rec_gender = ''
+                    for g_col in ('Gender', 'gender', 'Sex', 'sex'):
+                        if g_col in index and index[g_col] < len(row) and row[index[g_col]] is not None:
+                            gs = norm(row[index[g_col]])
+                            if gs in {'m', 'male', 'boy'}:
+                                rec_gender = 'm'
+                            elif gs in {'f', 'female', 'girl'}:
+                                rec_gender = 'f'
+                            break
+                    rec_grade = norm(data.get('Grade') or data.get('grade'))
+                    if not rec_grade and 'Grade' in index and index['Grade'] < len(row) and row[index['Grade']] is not None:
+                        rec_grade = norm(format_field_value('Grade', row[index['Grade']], set()))
+                    records.append({'id': f'{source.source_id}:{source.sheet}:{number}', 'data': data, 'refs': refs, '_gender': rec_gender, '_grade': rec_grade, 'operation': 'horizontal subject-percentage matrix + column mapping' if source.period else 'column mapping'})
                 elif source.layout == 'long':
                     expected += 1
                     entity, key_cell = get(source.key)
@@ -756,25 +769,35 @@ def build_rows(records, destination, rules):
             by_real_key: dict[str, tuple[int, str]] = {}
             by_exact_name: dict[tuple[str, str], list[tuple[int, str]]] = {}
             by_short_name: dict[tuple[str, str], list[tuple[int, str]]] = {}
+            row_grades: dict[int, str] = {}
+            row_genders: dict[int, str] = {}
+            matched_marks_idxs: set[int] = set()
 
             def _is_real_key(kv: str) -> bool:
                 return bool(kv and (len(kv) >= 6 or not kv.isdigit()))
 
-            def _pick_candidate(cands: list[tuple[int, str]], reg: str, rec_data: dict) -> int | None:
-                valid = [(idx, r_reg) for idx, r_reg in cands if r_reg != reg]
-                if not valid:
-                    return None
-                if len(valid) == 1:
-                    return valid[0][0]
-                rec_gr = norm(rec_data.get('Grade') or rec_data.get('grade'))
-                if rec_gr:
-                    for idx, _ in valid:
-                        if norm(rows[idx].get('Grade') or rows[idx].get('grade')) == rec_gr:
-                            return idx
-                return valid[0][0]
+            def _pick_candidate(cands: list[tuple[int, str]], reg: str, rec_gr: str, rec_gen: str, is_marks: bool) -> int | None:
+                for idx, r_reg in cands:
+                    if r_reg == reg:
+                        continue
+                    if is_marks and idx in matched_marks_idxs:
+                        continue
+                    c_gr = row_grades.get(idx) or norm(rows[idx].get('Grade') or rows[idx].get('grade'))
+                    # STRICT GRADE LOCK: Never match a Grade 10 Mark Schedule row to a Grade 8, 9, 11, or 12 Bio learner!
+                    if rec_gr and c_gr and c_gr != rec_gr:
+                        continue
+                    c_gen = row_genders.get(idx, '')
+                    # STRICT GENDER LOCK: If both sheets provide Gender (M/F), require Gender to match!
+                    if rec_gen and c_gen and c_gen != rec_gen:
+                        continue
+                    return idx
+                return None
 
             for record in ordered_records:
                 data = record['data']
+                is_marks = 'horizontal subject-percentage matrix' in record.get('operation', '')
+                rec_gr = record.get('_grade') or norm(data.get('Grade') or data.get('grade'))
+                rec_gen = record.get('_gender', '')
                 k_val = norm(data.get(destination.key)) if destination.key else ''
                 is_real_k = _is_real_key(k_val)
                 fn = norm(data.get('First Name') or data.get('first_name'))
@@ -786,11 +809,17 @@ def build_rows(records, destination, rules):
                 if is_real_k and k_val in by_real_key and by_real_key[k_val][1] != reg:
                     target_idx = by_real_key[k_val][0]
                 elif exact_nm and exact_nm in by_exact_name:
-                    target_idx = _pick_candidate(by_exact_name[exact_nm], reg, data)
+                    target_idx = _pick_candidate(by_exact_name[exact_nm], reg, rec_gr, rec_gen, is_marks)
                 if target_idx is None and short_nm and short_nm in by_short_name:
-                    target_idx = _pick_candidate(by_short_name[short_nm], reg, data)
+                    target_idx = _pick_candidate(by_short_name[short_nm], reg, rec_gr, rec_gen, is_marks)
                 if target_idx is not None:
                     merged_row = rows[target_idx]
+                    if is_marks:
+                        matched_marks_idxs.add(target_idx)
+                    if rec_gr and not row_grades.get(target_idx):
+                        row_grades[target_idx] = rec_gr
+                    if rec_gen and not row_genders.get(target_idx):
+                        row_genders[target_idx] = rec_gen
                     for f, v in data.items():
                         if v in (None, ''):
                             continue
@@ -810,6 +839,12 @@ def build_rows(records, destination, rules):
                     new_idx = len(rows)
                     row_copy = dict(data)
                     rows.append(row_copy)
+                    if rec_gr:
+                        row_grades[new_idx] = rec_gr
+                    if rec_gen:
+                        row_genders[new_idx] = rec_gen
+                    if is_marks:
+                        matched_marks_idxs.add(new_idx)
                     if is_real_k:
                         by_real_key[k_val] = (new_idx, reg)
                     if exact_nm:

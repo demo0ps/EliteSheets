@@ -687,15 +687,15 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     tpl_bio = BytesIO()
     tpl_wb.save(tpl_bio)
 
-    # Sheet 1: Learner & Parent Info Sheet (duplicate Name | Surname | Cell# for Father and Mother)
+    # Sheet 1: Learner & Parent Info Sheet (duplicate Name | Surname | Cell# for Father and Mother + Home/First/Second Additional Language columns)
     bio_wb = Workbook()
     bio_ws = bio_wb.active
     bio_ws.title = 'Learner_Parent_Info'
-    bio_ws.append(['Number', 'Surname', 'First Name', 'Gender', 'Grade', 'Class', 'Cell#', 'Name', 'Surname', 'Cell#', 'Name', 'Surname', 'Cell#'])
-    bio_ws.append([1, 'APHANE', 'Amogelang', 'F', 'Grade 09', '9E', '', '', '', '', 'Dikeledi', 'APHANE', '0713163980'])
-    bio_ws.append([5, 'APHANE', 'Thato', 'F', 'Grade 10', '10B', '0768507537', 'Matsobane', 'APHANE', '0609003212', 'Dipuo', 'APHANE', '0827077099'])
-    bio_ws.append([6, 'ASSEGAAI', 'Onalenna', 'F', 'Grade 10', '10F', '', '', '', '', 'Johannah', 'APHANE', '0714364266'])
-    bio_ws.append([17, 'BALOYI', 'Phendile', 'F', 'Grade 10', '10A', '', 'Justice', 'BALOYI', '0783496897', 'Thandi', 'SKHOSANA', '0724344056'])
+    bio_ws.append(['Number', 'Surname', 'First Name', 'Gender', 'Grade', 'Class', 'Cell#', 'Name', 'Surname', 'Cell#', 'Name', 'Surname', 'Cell#', 'Home Language', 'First Additional Language', 'Second Additional Language'])
+    bio_ws.append([1, 'APHANE', 'Amogelang', 'F', 'Grade 09', '9E', '', '', '', '', 'Dikeledi', 'APHANE', '0713163980', 'Sepedi', 'English', None])
+    bio_ws.append([5, 'APHANE', 'Thato', 'F', 'Grade 10', '10B', '0768507537', 'Matsobane', 'APHANE', '0609003212', 'Dipuo', 'APHANE', '0827077099', 'Sepedi', 'English', None])
+    bio_ws.append([6, 'ASSEGAAI', 'Onalenna', 'F', 'Grade 10', '10F', '', '', '', '', 'Johannah', 'APHANE', '0714364266', 'Sepedi', 'English', None])
+    bio_ws.append([17, 'BALOYI', 'Phendile', 'F', 'Grade 10', '10A', '', 'Justice', 'BALOYI', '0783496897', 'Thandi', 'SKHOSANA', '0724344056', 'Sepedi', 'English', None])
     bio_bytes = BytesIO()
     bio_wb.save(bio_bytes)
 
@@ -731,6 +731,13 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
         '26,00', '41,00', None, None, '50,00', '48,00', '49,00', None, None, '19,00', None, '58,00',
         291, 'NP', None, None
     ])
+    # A Grade 10 learner on the Mark Schedule who shares the name 'APHANE, Amogelang' with the Grade 9 learner on Row 0 of Bio:
+    # Must NOT attach Grade 10 Business Studies / DOB onto the Grade 9 learner; must be appended at the bottom as Grade 10!
+    marks_ws.append([
+        15, '1007085869083', 'APHANE, Amogelang', 'M', '33,29', '33,29', 416,
+        None, '19,00', None, None, '14,00', '45,00', '32,00', None, '23,00', None, None, '42,00',
+        233, 'NP', None, None
+    ])
     marks_bytes = BytesIO()
     marks_wb.save(marks_bytes)
 
@@ -744,15 +751,22 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     if not gde_job.get('report'):
         gde_job = c.post(f'/api/jobs/{gde_job["id"]}/run', json={}).json()
     gde_rows = gde_job['report']['rows']
-    # All 4 Bio learners are kept (keep_all_bio_learners)
-    assert len(gde_rows) == 4
-    # Row 0: Amogelang Aphane (Grade 9, not in Grade 10 Mark Schedule -> kept with Mother Dikeledi Aphane)
+    # All 4 Bio learners are kept PLUS the 1 unmatched Grade 10 Mark Schedule learner appended at bottom = 5 rows
+    assert len(gde_rows) == 5
+    # Row 0: Amogelang Aphane (Grade 9 on Bio -> MUST NOT receive Grade 10 Business Studies or 2010-07-08 DOB!)
     assert gde_rows[0]['First Name'] == 'Amogelang'
     assert gde_rows[0]['Last Name'] == 'Aphane'
     assert gde_rows[0]['Grade'] == 'Grade 9'
+    assert gde_rows[0].get('Subjects') in (None, '')
+    assert gde_rows[0].get('Date of Birth') in (None, '')
     assert gde_rows[0]['Parent First Name'] == 'Dikeledi'
     assert gde_rows[0]['Parent Last Name'] == 'Aphane'
     assert gde_rows[0]['Parent Phone'] == '0713163980'
+    # Row 4 (appended at bottom): Grade 10 Amogelang Aphane from Mark Schedule
+    assert gde_rows[4]['Student ID'] == '1007085869083'
+    assert gde_rows[4]['Grade'] == 'Grade 10'
+    assert gde_rows[4]['Date of Birth'] == '2010-07-08'
+    assert 'Business Studies' in gde_rows[4]['Subjects']
     # Row 1: Thato Aphane (matched to 'APHANE, Thato, Bonolo' on Mark Schedule -> DOB 2009-05-24, Father Matsobane Aphane, (Gr 10) stripped from Subjects)
     assert gde_rows[1]['Student ID'] == '0905245292081'
     assert gde_rows[1]['First Name'] == 'Thato'

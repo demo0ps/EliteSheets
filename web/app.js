@@ -30350,7 +30350,7 @@
             ["parent phone", "parent cell", "guardian phone", "guardian cell", "mother cell", "mother phone", "father cell", "father phone", "parent 1 phone", "parent 1 cell", "parent 2 phone", "parent 2 cell", "parent contact", "guardian contact", "cellphone", "cell number", "cell", "cell#", "cell #", "cell no", "phone", "phone number", "mobile", "telephone", "tel", "contact number", "learner phone"]
           ];
           const ACADEMIC_SUBJECT_RE = /\b(math|mathematics|mathematical|literacy|english|afrikaans|isizulu|zulu|isixhosa|xhosa|sesotho|sotho|sepedi|pedi|setswana|tswana|tshivenda|venda|xitsonga|tsonga|siswati|swati|isindebele|ndebele|science|sciences|physical|physics|chemistry|life|biology|natural|social|accounting|business|economics|geography|history|technology|tech|cat|computer|applications|it|information|arts|creative|dramatic|drama|music|visual|ems|orientation|tourism|hospitality|consumer|agricultural|agriculture|engineering|egd|religion|language|additional|home\s+language|hl|fal|sal)\b|\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)/i;
-          const NON_SUBJECT_HEADER_RE = /\b(average|rank|total|subtotal|code|codes|comment|deviation|obtained|number|accession|gender|learner\s*name|student\s*name|first\s*name|last\s*name|surname|parent|guardian|mother|father|phone|cell|email|dob|birth|class)\b/i;
+          const NON_SUBJECT_HEADER_RE = /\b(average|rank|total|subtotal|code|codes|comment|deviation|obtained|number|accession|gender|learner\s*name|student\s*name|first\s*name|last\s*name|surname|parent|guardian|mother|father|phone|cell|email|dob|birth|class)\b|^(home\s+language|first\s+additional\s+language|second\s+additional\s+language|language\s+of\s+learning.*|lolts?|preferred\s+language)$/i;
           const cleanSubjectName = (c) => {
             return c.replace(/\s*\(\s*(?:gr(?:ade)?\.?\s*\d{1,2}[a-z]?|%|mark|marks|percent|percentage)\s*\)\s*$/i, "").replace(/\s*(?:%|mark|percent|percentage)\s*$/i, "").trim() || c.trim();
           };
@@ -30539,8 +30539,9 @@
               }
             }
             let sPeriod = "", sCols = [];
-            if (listTargets.length && !sFieldMap[listTargets[0]]) {
-              const candSubj = ps.headers.filter((sh) => !usedSrc.has(sh) && !nonListAliases.has(sh.toLowerCase().replace(/_/g, " ").trim()) && !skipMeta.has(sh.toLowerCase().trim()) && !NON_SUBJECT_HEADER_RE.test(sh) && ACADEMIC_SUBJECT_RE.test(sh));
+            const isBioParentSheet = ps.headers.some((sh) => sh.startsWith("Parent 1 ") || sh.startsWith("Parent 2 ")) && !ps.headers.some((sh) => /\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)/i.test(sh));
+            if (listTargets.length && !sFieldMap[listTargets[0]] && !isBioParentSheet) {
+              const candSubj = ps.headers.filter((sh) => !usedSrc.has(sh) && !nonListAliases.has(sh.toLowerCase().replace(/_/g, " ").trim()) && !skipMeta.has(sh.toLowerCase().trim()) && !NON_SUBJECT_HEADER_RE.test(sh.trim()) && ACADEMIC_SUBJECT_RE.test(sh));
               if (candSubj.length >= 1) {
                 sPeriod = listTargets[0];
                 sCols = candSubj;
@@ -30564,6 +30565,16 @@
             const byRealId = {};
             const byExactName = {};
             const byShortName = {};
+            const rowMeta = /* @__PURE__ */ new WeakMap();
+            const normGender = (r) => {
+              const gv = r["Gender"] ?? r["gender"] ?? r["Sex"] ?? r["sex"];
+              if (gv !== void 0 && gv !== null) {
+                const s2 = String(gv).trim().toLowerCase();
+                if (s2 === "m" || s2 === "male" || s2 === "boy") return "m";
+                if (s2 === "f" || s2 === "female" || s2 === "girl") return "f";
+              }
+              return "";
+            };
             const indexRec = (rec) => {
               const kv = String(rec[keyCol] || "").trim().toLowerCase();
               if (kv && (kv.length >= 6 || !/^\d+$/.test(kv))) byRealId[kv] = rec;
@@ -30577,18 +30588,22 @@
                 (byShortName[shortKey] = byShortName[shortKey] || []).push(rec);
               }
             };
-            const findBestNameMatch = (cands, obj) => {
+            const findBestNameMatch = (cands, objGr, objGen, isMarksSheet) => {
               if (!cands || !cands.length) return void 0;
-              if (cands.length === 1) return cands[0];
-              const objGr = String(obj["Grade"] || "").trim().toLowerCase();
-              if (objGr) {
-                const grHit = cands.find((c) => String(c["Grade"] || "").trim().toLowerCase() === objGr);
-                if (grHit) return grHit;
-              }
-              return cands[0];
+              const filtered = cands.filter((c) => {
+                const meta = rowMeta.get(c);
+                if (isMarksSheet && meta?.matchedMarks) return false;
+                const cGr = String(c["Grade"] || meta?.grade || "").trim().toLowerCase();
+                if (objGr && cGr && cGr !== objGr) return false;
+                const cGen = meta?.gender || "";
+                if (objGen && cGen && cGen !== objGen) return false;
+                return true;
+              });
+              return filtered[0];
             };
             for (let pIdx = 0; pIdx < orderedPlans.length; pIdx++) {
               const sp = orderedPlans[pIdx];
+              const isMarksSheet = sp.columns.length > 0;
               for (const r of sp.ps.rows) {
                 const obj = {};
                 Object.entries(sp.field_map).forEach(([th, sh]) => {
@@ -30602,6 +30617,8 @@
                   const { dob } = extractDobFromSaId(obj[keyCol]);
                   if (dob) obj["Date of Birth"] = dob;
                 }
+                const objGr = String(obj["Grade"] || (r["Grade"] ? fmtField("Grade", r["Grade"]) : "") || "").trim().toLowerCase();
+                const objGen = normGender(r);
                 const kVal = String(obj[keyCol] || "").trim().toLowerCase();
                 const isRealId = Boolean(kVal && (kVal.length >= 6 || !/^\d+$/.test(kVal)));
                 const fn = String(obj["First Name"] || "").trim().toLowerCase();
@@ -30609,8 +30626,8 @@
                 const exactKey = fn && ln ? `${ln}|${fn}` : "";
                 const shortKey = fn && ln ? `${ln}|${fn.split(/\s+/)[0]}` : "";
                 let targetRec = isRealId ? byRealId[kVal] : void 0;
-                if (!targetRec && exactKey) targetRec = findBestNameMatch(byExactName[exactKey], obj);
-                if (!targetRec && shortKey) targetRec = findBestNameMatch(byShortName[shortKey], obj);
+                if (!targetRec && exactKey) targetRec = findBestNameMatch(byExactName[exactKey], objGr, objGen, isMarksSheet);
+                if (!targetRec && shortKey) targetRec = findBestNameMatch(byShortName[shortKey], objGr, objGen, isMarksSheet);
                 if (!targetRec) {
                   targetRec = {};
                   headers.forEach((h) => {
@@ -30620,8 +30637,14 @@
                   Object.entries(obj).forEach(([k, v]) => {
                     if (v !== null && v !== void 0 && v !== "") targetRec[k] = v;
                   });
+                  rowMeta.set(targetRec, { grade: objGr, gender: objGen, matchedMarks: isMarksSheet });
                   indexRec(targetRec);
                 } else {
+                  const prevMeta = rowMeta.get(targetRec) || { grade: objGr, gender: objGen, matchedMarks: false };
+                  if (isMarksSheet) prevMeta.matchedMarks = true;
+                  if (!prevMeta.grade && objGr) prevMeta.grade = objGr;
+                  if (!prevMeta.gender && objGen) prevMeta.gender = objGen;
+                  rowMeta.set(targetRec, prevMeta);
                   Object.entries(obj).forEach(([k, v]) => {
                     if (v === null || v === void 0 || v === "") return;
                     const cur = targetRec[k];
