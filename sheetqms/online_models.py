@@ -25,7 +25,7 @@ class DemoLogin(StrictModel):
 
 
 class Preferences(StrictModel):
-    theme: Literal['dark', 'light'] = 'dark'
+    theme: Literal['dark', 'light'] = 'light'
     density: Literal['comfortable', 'compact'] = 'comfortable'
     explanations: Literal['concise', 'detailed'] = 'detailed'
     auto_checks: bool = True

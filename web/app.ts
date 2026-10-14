@@ -36,46 +36,171 @@ function logo(){return `<div class="logo"><span class="logo-box">${icon('grid')}
 function openModal(title:string,body:string){previousFocus=document.activeElement as HTMLElement;$('modal-title').textContent=title;$('modal-content').innerHTML=body;$('modal').hidden=false;$('close-modal').focus()}
 function closeModal(){$('modal').hidden=true;previousFocus?.focus()}
 
-const VERTICAL_META:Record<string,{label:string;badge:string;desc:string;defaultSample:string}>={
-  education:{label:'🎓 Education & SA-SAMS',badge:'SA-SAMS · EMIS · Districts',desc:'SA-SAMS 2-file learner/subject-percentage matrices, 13-digit SA ID Luhn & leading-zero repair, CAPS Levels (1–7), and multi-school district folder merges.',defaultSample:'sasams_students'},
-  sme_pa:{label:'💼 SME Business & PA',badge:'Quotes · Invoices · CRM',desc:'Branded Quotations & Tax Invoices, client contact cleaning, WhatsApp/Email paste-to-sheet, and multi-client folder consolidation.',defaultSample:'direct'},
-  finance_hr:{label:'📊 Finance & Payroll',badge:'Accounting · HR · Reconciliation',desc:'Multi-branch monthly consolidations, staff payroll SA ID Luhn & tax checks, and two-sheet reconciliation.',defaultSample:'pivot'},
-  supply_chain:{label:'📦 Supply Chain & ERP',badge:'Procurement · Inventory · Stock',desc:'Messy ERP & supplier sheet mapping, multi-warehouse folder batch merges, and stock valuation formulas.',defaultSample:'chat_map'}
+interface VerticalActionCard{
+  title:string;
+  desc:string;
+  action:string;
+}
+
+interface VerticalConfig{
+  label:string;
+  shortName:string;
+  badge:string;
+  desc:string;
+  defaultSample:string;
+  tabs:Array<{page:string;label:string;iconName:string}>;
+  cards:VerticalActionCard[];
+  samples:Array<{val:string;label:string}>;
+  builderPresetCmd:string;
+  builderPresetLabel:string;
+  templateCategories:string[];
+}
+
+const VERTICAL_META:Record<string,VerticalConfig>={
+  education:{
+    label:'🎓 School & District Office',
+    shortName:'School',
+    badge:'SA-SAMS · Class Lists · Marks',
+    desc:'Combine SA-SAMS student & subject mark sheets, fix 13-digit SA IDs (including missing 0s for 2000–2009), calculate Pass Levels (1–7), and merge school folders.',
+    defaultSample:'sasams_students',
+    tabs:[
+      {page:'workspace',label:'Student & Mark Sheets',iconName:'chat'},
+      {page:'builder',label:'Create Class Sheet',iconName:'plus'},
+      {page:'templates',label:'School Templates',iconName:'layers'},
+      {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
+    ],
+    cards:[
+      {title:'📋 Combine Student & Subject Sheets',desc:'Join SA-SAMS Learner/Parent Bio + Subject Marks into 1 ready-to-import sheet.',action:'sample:sasams_students'},
+      {title:'📂 Merge Folder of School Sheets',desc:'Combine multiple classes or schools into 1 Master Sheet & check duplicate learners.',action:'sample:district_batch'},
+      {title:'✏️ Start a Class or Fee Register',desc:'Build a new class list or tuition sheet from scratch with automatic Balance calculation.',action:'builder:student'}
+    ],
+    samples:[
+      {val:'sasams_students',label:'SA-SAMS 2-File Student & Subject Marks'},
+      {val:'district_batch',label:'Multi-School Folder Merge (Check SA IDs & Duplicates)'}
+    ],
+    builderPresetCmd:'Create a SA-SAMS student & tuition sheet',
+    builderPresetLabel:'Class & Tuition Register',
+    templateCategories:['Education / SA-SAMS']
+  },
+  sme_pa:{
+    label:'💼 Small Business & PA',
+    shortName:'Business',
+    badge:'Quotes · Invoices · Clients',
+    desc:'Create branded Quotes & Tax Invoices in plain words, paste WhatsApp or Email client lists into Excel, and clean customer names, phones, and IDs.',
+    defaultSample:'direct',
+    tabs:[
+      {page:'quotes',label:'Quotes & Invoices',iconName:'dollar'},
+      {page:'workspace',label:'Clean Client Sheet',iconName:'chat'},
+      {page:'builder',label:'Create New Sheet',iconName:'plus'},
+      {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
+    ],
+    cards:[
+      {title:'🧾 Create a Quote or Tax Invoice',desc:'Type what you are charging in plain words and download a clean PDF or Excel invoice.',action:'page:quotes'},
+      {title:'📋 Paste WhatsApp / Email into Excel',desc:'Turn messy client lines from WhatsApp or Email into a neat spreadsheet table.',action:'builder:paste'},
+      {title:'✨ Clean Client Contacts & IDs',desc:'Load a client or order sheet to fix names, +27 phone numbers, emails & ID numbers.',action:'sample:direct'}
+    ],
+    samples:[
+      {val:'direct',label:'Client & Order List → Clean Excel Sheet'},
+      {val:'form',label:'Customer Booking Form → Clean Table'}
+    ],
+    builderPresetCmd:'Columns: Client ID, Full Name, SA ID Number, Phone, Email, Amount Due, Paid',
+    builderPresetLabel:'Client & Payment List',
+    templateCategories:['Business PA & Billing']
+  },
+  finance_hr:{
+    label:'📊 Finance, Bookkeeping & Payroll',
+    shortName:'Finance',
+    badge:'Monthly Totals · Payroll · Reconcile',
+    desc:'Combine monthly or branch figures with automatic Totals, spot missing numbers before export, check staff payroll SA IDs, and compare two sheets.',
+    defaultSample:'pivot',
+    tabs:[
+      {page:'workspace',label:'Combine Monthly Sheets',iconName:'chat'},
+      {page:'builder',label:'Build & Reconcile',iconName:'plus'},
+      {page:'templates',label:'Finance Templates',iconName:'layers'},
+      {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
+    ],
+    cards:[
+      {title:'📊 Combine Branch / Monthly Figures',desc:'Merge regional or monthly sheets into one summary table with automatic Totals.',action:'sample:pivot'},
+      {title:'🔍 Spot & Fill Missing Figures',desc:'Catch blank monthly figures automatically and fill them in chat before downloading.',action:'sample:hold'},
+      {title:'👥 Build Payroll or Expense Sheet',desc:'Create a staff payroll or budget sheet with automatic VAT/Net Pay formulas.',action:'builder:expense'}
+    ],
+    samples:[
+      {val:'pivot',label:'Combine Branch Sheets → Monthly Summary Table'},
+      {val:'hold',label:'Spot Missing Monthly Figure → Fill in Chat'}
+    ],
+    builderPresetCmd:'Create a monthly expense tracker',
+    builderPresetLabel:'Expense & VAT Sheet',
+    templateCategories:['Finance & Operations','HR & Payroll']
+  },
+  supply_chain:{
+    label:'📦 Stock, Inventory & Suppliers',
+    shortName:'Stock',
+    badge:'Supplier Lists · SKUs · Warehouses',
+    desc:'Match supplier price lists and CSVs to your stock sheet in 1 click, merge warehouse folders into 1 Master Stock file, and calculate stock values.',
+    defaultSample:'chat_map',
+    tabs:[
+      {page:'workspace',label:'Match Supplier Sheets',iconName:'chat'},
+      {page:'builder',label:'Build Stock Sheet',iconName:'plus'},
+      {page:'templates',label:'Stock Templates',iconName:'layers'},
+      {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
+    ],
+    cards:[
+      {title:'📦 Match Supplier Columns to Stock List',desc:'Match different supplier column names (like "Boxes" → "Qty") in 1 click.',action:'sample:chat_map'},
+      {title:'📂 Merge Warehouse Folder into Master Stock',desc:'Upload a folder of depot or supplier sheets and combine them into 1 Master file.',action:'folder:open'},
+      {title:'🧮 Build Stock Count & Value Sheet',desc:'Start an inventory count sheet with automatic Total Value = Qty × Unit Price.',action:'builder:inventory'}
+    ],
+    samples:[
+      {val:'chat_map',label:'Match Supplier "Boxes" Column → Stock "Qty"'},
+      {val:'direct',label:'Supplier CSV → Standard Stock Template'},
+      {val:'unpivot',label:'Wide Warehouse Sheet → Normalized Rows'}
+    ],
+    builderPresetCmd:'Create a warehouse inventory stock sheet',
+    builderPresetLabel:'Warehouse Stock Sheet',
+    templateCategories:['Supply Chain & ERP']
+  }
 };
 
 function activeVertical():string{
   return overview?.preferences?.vertical||'education';
 }
 
+function friendlyText(raw:string):string{
+  return String(raw||'')
+    .replace(/QMS released this workbook \(\d+\/\d+ checks passed,\s*/gi,'Your spreadsheet is ready to download (')
+    .replace(/QMS released ([^()]+?)\s*\(\d+\/\d+ checks passed,\s*/gi,'$1 is ready to download (')
+    .replace(/Output held[.:]\s*/gi,'Almost ready — ')
+    .replace(/\bQMS\b/g,'Helper');
+}
+
 function loginPage(){
-  user=null;job=null;csrf='';demoToken='';workspaceID='';document.body.className='';
-  $('root').innerHTML=`<main class="login-minimal"><section class="sign-card" style="max-width:560px">${logo()}<h1>Choose your workspace vertical.</h1><p>Select your industry vertical below to launch tailored spreadsheet tools, templates, and validation rules — or create your own account.</p>${boot.demo_mode?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px">
-    <button class="btn primary" data-launch-vert="education" style="justify-content:flex-start;text-align:left;padding:12px 14px"><div><strong style="display:block">🎓 Education & SA-SAMS</strong><small style="font-weight:400;opacity:0.85">Schools, Districts & Consultants</small></div></button>
-    <button class="btn primary" data-launch-vert="sme_pa" style="justify-content:flex-start;text-align:left;padding:12px 14px"><div><strong style="display:block">💼 SME Business & PA</strong><small style="font-weight:400;opacity:0.85">Quotes, Invoices & Client Sheets</small></div></button>
-    <button class="btn primary" data-launch-vert="finance_hr" style="justify-content:flex-start;text-align:left;padding:12px 14px"><div><strong style="display:block">📊 Finance & Payroll</strong><small style="font-weight:400;opacity:0.85">Branch Pivots, HR & Reconcile</small></div></button>
-    <button class="btn primary" data-launch-vert="supply_chain" style="justify-content:flex-start;text-align:left;padding:12px 14px"><div><strong style="display:block">📦 Supply Chain & ERP</strong><small style="font-weight:400;opacity:0.85">Inventory, SKUs & Warehouses</small></div></button>
-  </div><div class="demo-actions" style="margin-top:10px"><button id="demo-admin" class="btn small" style="width:100%">${icon('settings')}Platform Admin Settings</button></div>`:''}
-  <details class="divider-details" style="margin-top:14px"><summary>Create new account & choose vertical (Sign Up)</summary>
+  user=null;job=null;csrf='';demoToken='';workspaceID='';document.body.className='light';
+  $('root').innerHTML=`<main class="login-minimal"><section class="sign-card" style="max-width:580px">${logo()}<h1>Your everyday spreadsheet helper.</h1><p>Choose what you use spreadsheets for below — we will set up a simple, clutter-free workspace made just for you.</p>${boot.demo_mode?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px">
+    <button class="btn primary" data-launch-vert="education" style="justify-content:flex-start;text-align:left;padding:14px 16px"><div><strong style="display:block;font-size:15px">🎓 School & District Office</strong><small style="font-weight:400;opacity:0.9">SA-SAMS, Class Lists, IDs & Marks</small></div></button>
+    <button class="btn primary" data-launch-vert="sme_pa" style="justify-content:flex-start;text-align:left;padding:14px 16px"><div><strong style="display:block;font-size:15px">💼 Small Business & PA</strong><small style="font-weight:400;opacity:0.9">Quotes, Invoices & Client Lists</small></div></button>
+    <button class="btn primary" data-launch-vert="finance_hr" style="justify-content:flex-start;text-align:left;padding:14px 16px"><div><strong style="display:block;font-size:15px">📊 Finance & Payroll</strong><small style="font-weight:400;opacity:0.9">Monthly Totals, Payroll & Reconcile</small></div></button>
+    <button class="btn primary" data-launch-vert="supply_chain" style="justify-content:flex-start;text-align:left;padding:14px 16px"><div><strong style="display:block;font-size:15px">📦 Stock & Suppliers</strong><small style="font-weight:400;opacity:0.9">Inventory, SKUs & Warehouse Lists</small></div></button>
+  </div><div class="demo-actions" style="margin-top:10px"><button id="demo-admin" class="btn small" style="width:100%">${icon('settings')}Admin Settings</button></div>`:''}
+  <details class="divider-details" style="margin-top:14px"><summary>Create a new account & choose your workspace (Sign Up)</summary>
     <form id="signup-form">
       <div class="field-row">
-        <div><label for="signup-org">School / Company Name</label><input id="signup-org" required minlength="2" placeholder="e.g. Greenwood High / Apex Ltd"></div>
-        <div><label for="signup-name">Your Display Name</label><input id="signup-name" required minlength="2" placeholder="e.g. Thabo Mokoena"></div>
+        <div><label for="signup-org">School or Business Name</label><input id="signup-org" required minlength="2" placeholder="e.g. Greenwood High / Apex Services"></div>
+        <div><label for="signup-name">Your Name</label><input id="signup-name" required minlength="2" placeholder="e.g. Thabo Mokoena"></div>
       </div>
-      <label for="signup-vertical">Select Your Vertical Tooling</label>
+      <label for="signup-vertical">What will you use this workspace for?</label>
       <select id="signup-vertical">
-        <option value="education">🎓 Education & SA-SAMS (Schools, Districts, Consultants)</option>
-        <option value="sme_pa">💼 SME Business & Invoicing (Business PA, Quotes & CRM)</option>
-        <option value="finance_hr">📊 Finance, Accounting & Payroll (Branch Pivots & HR)</option>
-        <option value="supply_chain">📦 Supply Chain, Inventory & ERP (Procurement & Stock)</option>
+        <option value="education">🎓 School & District Office (SA-SAMS, Student Lists & Marks)</option>
+        <option value="sme_pa">💼 Small Business & PA (Quotes, Tax Invoices & Client Lists)</option>
+        <option value="finance_hr">📊 Finance, Bookkeeping & Payroll (Monthly Summaries & Staff)</option>
+        <option value="supply_chain">📦 Stock, Inventory & Suppliers (Supplier Sheets & Warehouses)</option>
       </select>
       <div class="field-row">
         <div><label for="signup-email">Email</label><input id="signup-email" type="email" required placeholder="you@organization.co.za"></div>
-        <div><label for="signup-password">Password (8+ chars)</label><input id="signup-password" type="password" required minlength="8" placeholder="Password"></div>
+        <div><label for="signup-password">Password (8+ characters)</label><input id="signup-password" type="password" required minlength="8" placeholder="Password"></div>
       </div>
-      <button class="btn primary" style="width:100%;margin-top:14px" id="sign-up-btn">Create Account & Open Vertical${icon('arrow')}</button>
+      <button class="btn primary" style="width:100%;margin-top:14px" id="sign-up-btn">Create Account & Open Workspace${icon('arrow')}</button>
     </form>
   </details>
-  <details class="divider-details" ${boot.demo_mode?'':'open'}><summary>Sign in to existing account</summary><form id="login-form"><label for="login-email">Email</label><input id="login-email" type="email" autocomplete="username" required placeholder="you@company.com"><label for="login-password">Password</label><input id="login-password" type="password" autocomplete="current-password" required placeholder="Password"><button class="btn primary" style="width:100%;margin-top:16px" id="sign-in">Sign in${icon('arrow')}</button></form></details></section></main>`;
+  <details class="divider-details" ${boot.demo_mode?'':'open'}><summary>Sign in to an existing account</summary><form id="login-form"><label for="login-email">Email</label><input id="login-email" type="email" autocomplete="username" required placeholder="you@company.com"><label for="login-password">Password</label><input id="login-password" type="password" autocomplete="current-password" required placeholder="Password"><button class="btn primary" style="width:100%;margin-top:16px" id="sign-in">Sign in${icon('arrow')}</button></form></details></section></main>`;
 
   $('login-form').addEventListener('submit',e=>{e.preventDefault();void busy($('sign-in'),async()=>{const r=await api('/api/auth/login',{email:$<HTMLInputElement>('login-email').value,password:$<HTMLInputElement>('login-password').value});$<HTMLInputElement>('login-password').value='';await signedIn(r)})});
   $('signup-form').addEventListener('submit',e=>{e.preventDefault();void busy($('sign-up-btn'),async()=>{
@@ -89,7 +214,7 @@ function loginPage(){
     });
     $<HTMLInputElement>('signup-password').value='';
     await signedIn(r);
-    toast(`Welcome! Loaded ${VERTICAL_META[vert]?.label||vert} tooling.`);
+    toast(`Welcome! Set up your ${VERTICAL_META[vert]?.label||vert} workspace.`);
   })});
   if(boot.demo_mode){
     document.querySelectorAll<HTMLButtonElement>('[data-launch-vert]').forEach(b=>b.addEventListener('click',()=>void demoLogin('operator',b.dataset.launchVert!)));
@@ -99,23 +224,31 @@ function loginPage(){
 
 async function demoLogin(role:string,vertical?:string){const r=await api('/api/auth/demo',vertical?{role,vertical}:{role});await signedIn(r)}
 async function signedIn(r:any){user=r.user;csrf=r.csrf;demoToken=r.demo_token||'';workspaceID=user!.role==='admin'&&boot.demo_mode?'demo-a':user!.tenant_id;await refresh();const vert=activeVertical();currentPage=user!.role==='admin'?'admin':(vert==='sme_pa'?'quotes':'workspace');job=null;shell();await showPage(currentPage)}
-async function refresh(){if(!user)return;if(user.role==='admin'){customers=(await api('/api/admin/customers')).items;if(!workspaceID||workspaceID==='platform')workspaceID=customers[0]?.id||''}if(workspaceID&&workspaceID!=='platform')overview=await api('/api/overview');else overview={workspace:{name:'Platform administration'},jobs:[],stats:{jobs:0,released:0,held:0,knowledge:0},ai:{enabled:false},preferences:{theme:'dark',density:'comfortable',vertical:'education'}};applyPreferences()}
-function applyPreferences(){document.body.className=((overview.preferences?.theme==='light'?'light':'')+(overview.preferences?.density==='compact'?' compact':'')).trim()}
+async function refresh(){if(!user)return;if(user.role==='admin'){customers=(await api('/api/admin/customers')).items;if(!workspaceID||workspaceID==='platform')workspaceID=customers[0]?.id||''}if(workspaceID&&workspaceID!=='platform')overview=await api('/api/overview');else overview={workspace:{name:'Platform administration'},jobs:[],stats:{jobs:0,released:0,held:0,knowledge:0},ai:{enabled:false},preferences:{theme:'light',density:'comfortable',vertical:'education'}};applyPreferences()}
+function applyPreferences(){document.body.className=((overview.preferences?.theme==='dark'?'':'light')+(overview.preferences?.density==='compact'?' compact':'')).trim()}
 
 function shell(){
   if(!user)return;
   const vert=activeVertical();
-  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation"><button class="nav-btn" data-page="workspace">${icon('chat')}Transform</button><button class="nav-btn" data-page="builder">${icon('plus')}Create Sheet</button><button class="nav-btn" data-page="quotes">${icon('dollar')}Quotes & Invoices</button><button class="nav-btn" data-page="templates">${icon('layers')}Templates</button><button class="nav-btn" data-page="jobs">${icon('folder')}History</button><button class="nav-btn" data-page="knowledge">${icon('book')}Saved Rules</button><button class="nav-btn" data-page="preferences">${icon('settings')}Preferences</button>${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Active vertical tooling" style="width:auto;padding:6px 10px;font-size:12px;font-weight:600">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)}</option>`).join('')}</select>${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}${boot.demo_mode?`<button id="switch-demo-role" class="btn small cyan">${user.role==='admin'?'Workspace View':'Admin Settings'}</button>`:''}<button id="help" class="btn small">${icon('info')}Help</button><button id="logout" class="icon-button" aria-label="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main></div>`;
+  const vMeta=VERTICAL_META[vert]||VERTICAL_META.education;
+  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${vMeta.tabs.map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Switch workspace vertical" style="width:auto;padding:6px 10px;font-size:12.5px;font-weight:600">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)}</option>`).join('')}</select>${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}${boot.demo_mode?`<button id="switch-demo-role" class="btn small cyan">${user.role==='admin'?'User View':'Admin'}</button>`:''}<button id="help" class="btn small">${icon('info')}Help</button><button id="logout" class="icon-button" aria-label="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main></div>`;
   document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach(b=>b.addEventListener('click',()=>void showPage(b.dataset.page!)));
   $('logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
   $('mobile-logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
   $('help').addEventListener('click',showHelp);
   $('vertical-picker').addEventListener('change',()=>void(async()=>{
     const newVert=$<HTMLSelectElement>('vertical-picker').value;
-    const curPrefs=overview.preferences||{theme:'dark',density:'comfortable',explanations:'detailed',auto_checks:true};
+    const curPrefs=overview.preferences||{theme:'light',density:'comfortable',explanations:'detailed',auto_checks:true};
     await api('/api/preferences',{...curPrefs,vertical:newVert},'PUT');
-    await refresh();shell();await showPage(currentPage);
-    toast(`Switched workspace tooling to ${VERTICAL_META[newVert]?.label||newVert}`);
+    job=null;
+    await refresh();
+    const nextTabs=(VERTICAL_META[newVert]||VERTICAL_META.education).tabs;
+    if(!nextTabs.some(t=>t.page===currentPage)&&currentPage!=='admin'){
+      currentPage=newVert==='sme_pa'?'quotes':'workspace';
+    }
+    shell();
+    await showPage(currentPage);
+    toast(`Switched to ${VERTICAL_META[newVert]?.label||newVert}`);
   })());
   if($('switch-demo-role'))$('switch-demo-role').addEventListener('click',()=>void demoLogin(user!.role==='admin'?'operator':'admin'));
   if($('workspace-picker'))$('workspace-picker').addEventListener('change',()=>void(async()=>{workspaceID=$<HTMLSelectElement>('workspace-picker').value;job=null;await refresh();shell();await showPage(currentPage)})());
@@ -131,7 +264,7 @@ async function showPage(page:string){
     else if(page==='templates')await templatesPage();
     else if(page==='jobs')jobHistory();
     else if(page==='knowledge')await knowledgePage();
-    else if(page==='preferences')preferencesPage();
+    else if(page==='preferences')await preferencesPage();
     else if(page==='admin')await adminPage();
   }catch(e){toast(e instanceof Error?e.message:String(e),true)}
 }
@@ -167,20 +300,82 @@ function studio(){
     }
   }
   const srcColHeaders:string[]=Array.from(srcColSet);
-  const allSamples=[
-    {val:'sasams_students',label:'SA-SAMS 2-file student & subject matrix',vert:'education'},
-    {val:'district_batch',label:'Multi-School Folder Batch (SA ID Luhn + Ghost Learner Audit)',vert:'education'},
-    {val:'pivot',label:'Regional branch sheets → monthly finance table',vert:'finance_hr'},
-    {val:'hold',label:'Missing figure → hold & ask in chat',vert:'finance_hr'},
-    {val:'chat_map',label:'Unclear SKU / supplier column → match in chat',vert:'supply_chain'},
-    {val:'direct',label:'Client / SKU CSV → clean Excel template',vert:'sme_pa'},
-    {val:'form',label:'Messy text form → structured table columns',vert:'sme_pa'},
-    {val:'unpivot',label:'Wide branch matrix → normalized long rows',vert:'supply_chain'}
-  ];
-  const orderedSamples=[...allSamples.filter(s=>s.vert===vert),...allSamples.filter(s=>s.vert!==vert)];
   const hasAudit=Boolean((job as any)?.batch_audit||headers.includes('SA ID Status')||headers.includes('Duplicate Status'));
 
-  $('page').innerHTML=`<div class="simple-studio"><section class="chat-card" aria-label="QMS assistant"><div class="chat-top"><div class="chat-top-title"><span class="bot-avatar">${icon('spark')}</span><div><h1>QMS Assistant</h1><small>${job?escapeHTML(job.title):escapeHTML(vMeta.label+' · '+vMeta.badge)}</small></div></div>${job?`<button id="new-job" class="btn small">${icon('plus')}New</button>`:''}</div><div class="picker-bar">${boot.demo_mode?`<div class="picker-row"><select id="sample-case" aria-label="Synthetic example">${orderedSamples.map((s,idx)=>`<option value="${s.val}">Sample ${idx+1}: ${escapeHTML(s.label)}</option>`).join('')}</select><button id="load-example" class="btn primary small">Load sample</button></div>`:''}<details class="upload-drawer" ${!boot.demo_mode&&!job?'open':''}><summary>+ Upload Excel / CSV files or an Entire Folder (Batch Merge)</summary><div class="upload-grid" style="grid-template-columns:1fr 1fr 1fr"><label class="upload-box" for="source-files">${icon('upload')}<strong>Source files</strong><small>1–10 XLSX/CSV</small><input id="source-files" type="file" multiple accept=".xlsx,.csv" aria-label="Upload source spreadsheets"></label><label class="upload-box" for="folder-files">${icon('folder')}<strong>Entire Folder</strong><small>Auto-merge batch</small><input id="folder-files" type="file" webkitdirectory directory multiple aria-label="Upload entire folder of spreadsheets"></label><label class="upload-box" for="target-file">${icon('grid')}<strong>Template</strong><small>Optional XLSX/CSV</small><input id="target-file" type="file" accept=".xlsx,.csv" aria-label="Upload destination template"></label></div><div id="file-list" class="file-list"></div><button id="inspect-files" class="btn primary small" style="width:100%;margin-top:8px" disabled>Load & Merge Uploaded Files</button></details></div><div class="messages" id="messages" tabindex="0" aria-label="QMS conversation messages" aria-live="polite">${job?job.chat.map(m=>`<article class="msg ${m.role==='user'?'user':''}"><span class="msg-sender">${m.role==='user'?'You':'QMS'}</span><div class="bubble">${escapeHTML(m.text)}</div></article>`).join(''):`<article class="msg"><span class="msg-sender">QMS</span><div class="bubble"><b>${escapeHTML(vMeta.label)}</b> active — ${escapeHTML(vMeta.desc)}<br><br>Choose a sample above and click <b>Load sample</b>, or upload individual files or an <b>Entire Folder</b> to merge into one Master File automatically.</div></article>`}</div>${job?`<div class="quick-action-bar">${job.proposal?`<button id="confirm-correction" class="btn primary">${icon('check')}Confirm: ${escapeHTML(job.proposal.description)}</button>`:''}${!r||!release?`<button id="run-job" class="btn ${r?'':'primary'}">${icon('shield')}${r?'Run transformation again':'Run transformation'}</button>`:`<button id="run-job" class="btn small">${icon('shield')}Run transformation again</button>`}<div class="quick-chips">${hasMissingNorthFeb&&!job.proposal?`<button class="chip" data-chat="18">Reply: 18</button><button class="chip" data-chat="North Feb is 18">North Feb is 18</button>`:''}${customMissing&&!hasMissingNorthFeb&&!job.proposal?`<button class="chip" data-chat="${escapeHTML(customMissing.entity)} ${escapeHTML(customMissing.category)} is 18">Set ${escapeHTML(customMissing.entity)} / ${escapeHTML(customMissing.category)} = 18</button>`:''}${hasUnmappedQty&&!customUnmapped?.length&&!job.proposal?`<button class="chip" data-chat="yes">Yes, put Boxes in Qty</button>`:''}${customUnmapped?.length&&customUnused?.length&&!job.proposal?customUnused.slice(0,2).map(sc=>`<button class="chip" data-chat="put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}">Put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}</button>`).join(''):''}${r&&!release?`<button class="chip" data-chat="What is blocking this output?">What is missing?</button>`:''}${release&&headers.includes('Jan')&&headers.includes('Feb')?`<button class="chip" data-chat="swap Jan and Feb">Swap Jan & Feb</button><button class="chip" data-chat="replace the first row with row 2">Swap row 1 & row 2</button>`:''}${job?`<button class="chip" data-chat="How did you match my columns?">Show column matches</button>`:''}${job.knowledge_conflict&&!job.use_workbook_rules?`<button class="chip" data-chat="use current workbook rules">Use workbook rules</button>`:''}</div></div>`:''}<form id="chat-form" class="chat-compose"><textarea id="chat-text" rows="1" ${job?'':'disabled'} aria-label="Message the QMS coordinator" placeholder="${job?"Tell me what to do (e.g. 'swap Jan and Feb', 'replace row 1 with row 2', '18')…":"Load a file above to start chatting…"}"></textarea><button id="send-chat" class="btn primary small" type="submit" aria-label="Send message" ${job?'':'disabled'}>${icon('send')}</button></form></section><section class="result-card" aria-label="Output preview"><div class="result-head"><div><h2>Your Output Spreadsheet</h2><small>${release?'Verified and ready to download.':r?'Answer the question in chat (or pick a column dropdown below) to finish.':job?'Click Run transformation on the left (or pick a column dropdown below).':'Your transformed table will appear here.'}</small></div><div class="result-actions"><span id="output-state" class="badge ${release?'good':r?'warn':''}">${release?'QMS released':r?'Candidate · held':'Awaiting checks'}</span><button class="btn small ${release?'success':''}" id="download-output" ${release?'':'disabled'}>${icon(release?'download':'lock')}${release?'Download XLSX':'Download XLSX'}</button></div></div>${r?.rows.length?`<div class="clean-toolbar"><span>${escapeHTML(vMeta.label.split(' ')[0])} Tools:</span><button class="btn small" data-clean="smart_fix_contacts" title="Validate 13-digit SA IDs (Luhn checksum), restore stripped leading zeros (born 2000–2009), extract DOB/Gender/Citizenship, and normalize +27 phones">SA ID Luhn & Contact Fix</button>${vert==='education'?`<button class="btn small" data-clean="caps_levels" title="Convert subject percentage marks into official SA CAPS Achievement Levels (1–7) and At-Risk flags">CAPS Levels (1–7)</button>`:''}<button class="btn small" data-clean="deduplicate">Deduplicate</button><button class="btn small" data-clean="trim_text">Clean Text</button><button class="btn small" data-clean="add_total_row">+ Total Row</button>${vert!=='education'?`<button class="btn small" data-clean="caps_levels">CAPS Levels (1–7)</button>`:''}<button class="btn small" data-clean="sort_asc">Sort A→Z</button>${hasAudit?`<button class="btn small primary" id="view-batch-audit">${icon('shield')}Audit Certificate</button>`:''}<button class="btn small cyan" id="open-in-studio">Multi-Tab / Split / Summarize →</button></div>`:''}<div class="table-scroll" tabindex="0" aria-label="Output preview"><table><thead><tr>${headers.map((h:string)=>canMapCols?`<th><div class="th-col-wrap"><span>${escapeHTML(h)}</span><select class="col-map-select ${activeFieldMap[h]?'':'unmapped'}" data-map-target="${escapeHTML(h)}" aria-label="Source column for ${escapeHTML(h)}"><option value="">${activeFieldMap[h]?'— Unmap —':'Choose column…'}</option>${srcColHeaders.map((sh:string)=>`<option value="${escapeHTML(sh)}" ${activeFieldMap[h]===sh?'selected':''}>← ${escapeHTML(sh)}</option>`).join('')}</select></div></th>`:`<th>${escapeHTML(h)}</th>`).join('')}</tr></thead><tbody>${r?.rows.length?r.rows.map(row=>`<tr>${headers.map((h:string)=>`<td>${row[h]===null||row[h]===undefined?'<span class="missing">Ask in chat</span>':escapeHTML(row[h])}</td>`).join('')}</tr>`).join(''):`<tr><td class="table-empty" colspan="${headers.length}">${job?'Click <b>Run transformation</b> in the assistant to fill your spreadsheet.':'Load a sample on the left to preview your spreadsheet here.'}</td></tr>`}</tbody></table></div>${job?`<details class="quiet-details"><summary>More options & technical details (${r?`${r.passed_checks}/${r.total_checks} checks`:'mapping & audit'})</summary><div class="quiet-body"><div class="quiet-buttons"><button id="edit-plan" class="btn small">${icon('edit')}Mapping JSON</button><button id="ai-map" class="btn small" ${!overview.ai.enabled||!overview.ai.key_configured?'disabled':''}>${icon('spark')}AI interpret</button><button id="download-evidence" class="btn small" ${r?'':'disabled'}>${icon('download')}Audit JSON</button>${job.profiles.sources.map((p:any)=>`<button class="btn small" data-source="${p.id}">${icon('file')}${escapeHTML(p.name)}</button>`).join('')}</div>${r?`<div class="checks" tabindex="0" aria-label="Quality checks">${[...r.checks].sort((a,b)=>Number(a.passed)-Number(b.passed)).map(c=>`<div class="check ${c.passed?'':'fail'}"><strong>${c.passed?'✓':'!'} ${escapeHTML(c.name)}</strong><small>${escapeHTML(c.detail)}</small></div>`).join('')}</div>`:''}</div></details>`:''}</section></div>`;
+  // Strictly tailored 4-button toolbar for the active vertical
+  let toolbarButtonsHtml='';
+  if(vert==='education'){
+    toolbarButtonsHtml=`
+      <button class="btn small" data-clean="smart_fix_contacts">🪪 Fix SA IDs & Phones</button>
+      <button class="btn small" data-clean="caps_levels">🎓 Pass Levels (1–7)</button>
+      <button class="btn small" data-clean="deduplicate">🧹 Remove Duplicates</button>
+      ${hasAudit?`<button class="btn small primary" id="view-batch-audit">📋 Summary Report</button>`:`<button class="btn small cyan" id="open-in-studio">Split by Grade →</button>`}
+    `;
+  }else if(vert==='sme_pa'){
+    toolbarButtonsHtml=`
+      <button class="btn small" data-clean="smart_fix_contacts">✨ Fix Names, Phones & IDs</button>
+      <button class="btn small" data-clean="deduplicate">🧹 Remove Duplicates</button>
+      <button class="btn small" data-clean="add_total_row">➕ Add Total Row</button>
+      <button class="btn small" data-clean="sort_asc">🔤 Sort A→Z</button>
+    `;
+  }else if(vert==='finance_hr'){
+    toolbarButtonsHtml=`
+      <button class="btn small" data-clean="add_total_row">➕ Add Total Row</button>
+      <button class="btn small" data-clean="smart_fix_contacts">🪪 Check Staff SA IDs</button>
+      <button class="btn small" data-clean="sort_asc">🔤 Sort A→Z</button>
+      <button class="btn small cyan" id="open-in-studio">⚖️ Reconcile / Summarize →</button>
+    `;
+  }else{
+    toolbarButtonsHtml=`
+      <button class="btn small" data-clean="trim_text">🧹 Clean Text & SKUs</button>
+      <button class="btn small" data-clean="deduplicate">✨ Remove Duplicate SKUs</button>
+      <button class="btn small" data-clean="add_total_row">➕ Add Total Row</button>
+      <button class="btn small cyan" id="open-in-studio">📊 Summarize by Warehouse →</button>
+    `;
+  }
+
+  $('page').innerHTML=`
+  <section class="vertical-welcome" aria-label="Quick start actions">
+    <div class="vertical-welcome-head">
+      <div>
+        <h2>${escapeHTML(vMeta.label)} — What would you like to do today?</h2>
+        <small style="color:var(--muted)">${escapeHTML(vMeta.desc)}</small>
+      </div>
+      <span class="badge good">${escapeHTML(vMeta.badge)}</span>
+    </div>
+    <div class="vertical-cards-grid">
+      ${vMeta.cards.map(c=>`<button class="v-action-card" data-vcard="${escapeHTML(c.action)}"><strong>${escapeHTML(c.title)}</strong><small>${escapeHTML(c.desc)}</small></button>`).join('')}
+    </div>
+  </section>
+
+  <div class="simple-studio"><section class="chat-card" aria-label="Sheet Helper"><div class="chat-top"><div class="chat-top-title"><span class="bot-avatar">${icon('spark')}</span><div><h1>Sheet Helper</h1><small>${job?escapeHTML(job.title):'Talk to me in everyday words'}</small></div></div>${job?`<button id="new-job" class="btn small">${icon('plus')}Start Over</button>`:''}</div><div class="picker-bar">${boot.demo_mode?`<div class="picker-row"><select id="sample-case" aria-label="Try an example for your workspace">${vMeta.samples.map((s,idx)=>`<option value="${s.val}">Example ${idx+1}: ${escapeHTML(s.label)}</option>`).join('')}</select><button id="load-example" class="btn primary small">Try Example</button></div>`:''}<details class="upload-drawer" id="upload-drawer-box" ${!boot.demo_mode&&!job?'open':''}><summary>+ Upload your own Excel / CSV files or an Entire Folder</summary><div class="upload-grid" style="grid-template-columns:1fr 1fr 1fr"><label class="upload-box" for="source-files">${icon('upload')}<strong>Your Sheet(s)</strong><small>1–10 Excel/CSV</small><input id="source-files" type="file" multiple accept=".xlsx,.csv" aria-label="Upload source spreadsheets"></label><label class="upload-box" for="folder-files">${icon('folder')}<strong>Entire Folder</strong><small>Merge all files</small><input id="folder-files" type="file" webkitdirectory directory multiple aria-label="Upload entire folder of spreadsheets"></label><label class="upload-box" for="target-file">${icon('grid')}<strong>Template</strong><small>Optional</small><input id="target-file" type="file" accept=".xlsx,.csv" aria-label="Upload destination template"></label></div><div id="file-list" class="file-list"></div><button id="inspect-files" class="btn primary small" style="width:100%;margin-top:8px" disabled>Open Uploaded Files</button></details></div><div class="messages" id="messages" tabindex="0" aria-label="Helper conversation" aria-live="polite">${job?job.chat.map(m=>`<article class="msg ${m.role==='user'?'user':''}"><span class="msg-sender">${m.role==='user'?'You':'Helper'}</span><div class="bubble">${escapeHTML(friendlyText(m.text))}</div></article>`).join(''):`<article class="msg"><span class="msg-sender">Helper</span><div class="bubble">Hi! Click one of the <b>3 quick-start cards</b> at the top, click <b>Try Example</b> above, or upload your own Excel/CSV files (or a whole folder). You can ask me to change anything in plain words!</div></article>`}</div>${job?`<div class="quick-action-bar">${job.proposal?`<button id="confirm-correction" class="btn primary">${icon('check')}Yes, apply: ${escapeHTML(job.proposal.description)}</button>`:''}${!r||!release?`<button id="run-job" class="btn ${r?'':'primary'}">${icon('check')}${r?'Update Sheet':'Fill My Sheet'}</button>`:`<button id="run-job" class="btn small">${icon('check')}Refresh Sheet</button>`}<div class="quick-chips">${hasMissingNorthFeb&&!job.proposal?`<button class="chip" data-chat="18">Reply: 18</button><button class="chip" data-chat="North Feb is 18">North Feb is 18</button>`:''}${customMissing&&!hasMissingNorthFeb&&!job.proposal?`<button class="chip" data-chat="${escapeHTML(customMissing.entity)} ${escapeHTML(customMissing.category)} is 18">Set ${escapeHTML(customMissing.entity)} / ${escapeHTML(customMissing.category)} = 18</button>`:''}${hasUnmappedQty&&!customUnmapped?.length&&!job.proposal?`<button class="chip" data-chat="yes">Yes, put Boxes in Qty</button>`:''}${customUnmapped?.length&&customUnused?.length&&!job.proposal?customUnused.slice(0,2).map(sc=>`<button class="chip" data-chat="put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}">Put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}</button>`).join(''):''}${r&&!release?`<button class="chip" data-chat="What is blocking this output?">What is missing?</button>`:''}${release&&headers.includes('Jan')&&headers.includes('Feb')?`<button class="chip" data-chat="swap Jan and Feb">Swap Jan & Feb</button><button class="chip" data-chat="replace the first row with row 2">Swap row 1 & row 2</button>`:''}${job?`<button class="chip" data-chat="How did you match my columns?">Show column matches</button>`:''}</div></div>`:''}<form id="chat-form" class="chat-compose"><textarea id="chat-text" rows="1" ${job?'':'disabled'} aria-label="Message the Sheet Helper" placeholder="${job?"Type what you want to change (e.g. 'swap Jan and Feb', '18', 'yes')…":"Open a file above to start chatting…"}"></textarea><button id="send-chat" class="btn primary small" type="submit" aria-label="Send message" ${job?'':'disabled'}>${icon('send')}</button></form></section><section class="result-card" aria-label="Your Spreadsheet"><div class="result-head"><div><h2>Your Finished Spreadsheet</h2><small>${release?'Everything is filled in and ready to download.':r?'Answer the quick question on the left (or pick a column below) to finish.':job?'Click Fill My Sheet on the left to populate your table.':'Your clean spreadsheet will appear here.'}</small></div><div class="result-actions"><span id="output-state" class="badge ${release?'good':r?'warn':''}">${release?'✓ Ready to Download':r?'Needs 1 Quick Answer':'Ready to Preview'}</span><button class="btn small ${release?'success':''}" id="download-output" ${release?'':'disabled'}>${icon(release?'download':'lock')}${release?'Download Excel (.XLSX)':'Download Excel (.XLSX)'}</button></div></div>${r?.rows.length?`<div class="clean-toolbar"><span>${escapeHTML(vMeta.shortName)} Actions:</span>${toolbarButtonsHtml}</div>`:''}<div class="table-scroll" tabindex="0" aria-label="Output preview"><table><thead><tr>${headers.map((h:string)=>canMapCols?`<th><div class="th-col-wrap"><span>${escapeHTML(h)}</span><select class="col-map-select ${activeFieldMap[h]?'':'unmapped'}" data-map-target="${escapeHTML(h)}" aria-label="Source column for ${escapeHTML(h)}"><option value="">${activeFieldMap[h]?'— Unmap —':'Choose column…'}</option>${srcColHeaders.map((sh:string)=>`<option value="${escapeHTML(sh)}" ${activeFieldMap[h]===sh?'selected':''}>← ${escapeHTML(sh)}</option>`).join('')}</select></div></th>`:`<th>${escapeHTML(h)}</th>`).join('')}</tr></thead><tbody>${r?.rows.length?r.rows.map(row=>`<tr>${headers.map((h:string)=>`<td>${row[h]===null||row[h]===undefined?'<span class="missing">Ask in chat</span>':escapeHTML(row[h])}</td>`).join('')}</tr>`).join(''):`<tr><td class="table-empty" colspan="${headers.length}">${job?'Click <b>Fill My Sheet</b> on the left to fill your spreadsheet.':'Click one of the 3 cards at the top or <b>Try Example</b> on the left to preview your spreadsheet here.'}</td></tr>`}</tbody></table></div></section></div>`;
+
+  document.querySelectorAll<HTMLButtonElement>('[data-vcard]').forEach(card=>card.addEventListener('click',()=>void busy(card,async()=>{
+    const act=card.dataset.vcard!;
+    if(act.startsWith('sample:')){
+      const cVal=act.split(':')[1];
+      job=await api<Job>('/api/demo/jobs',{case:cVal,request_id:uid()});
+      if(cVal!=='chat_map'&&cVal!=='district_batch'){
+        job=await api<Job>(`/api/jobs/${job.id}/run`,{});
+      }
+      await refresh();shell();await showPage('workspace');
+    }else if(act==='page:quotes'){
+      await showPage('quotes');
+    }else if(act==='folder:open'){
+      const d=$('upload-drawer-box') as HTMLDetailsElement|null;
+      if(d)d.open=true;
+      $('folder-files')?.click();
+    }else if(act.startsWith('builder:')){
+      const sub=act.split(':')[1];
+      if(sub==='paste'){
+        builderState.pasteOpen=true;
+        await showPage('builder');
+      }else{
+        handleBuilderChatCommand(vMeta.builderPresetCmd);
+        await showPage('builder');
+      }
+    }
+  })));
 
   if($('new-job'))$('new-job').addEventListener('click',()=>{job=null;studio()});
   if($('load-example'))$('load-example').addEventListener('click',()=>void busy($('load-example'),async()=>{
@@ -234,17 +429,13 @@ function studio(){
 
   if(job){
     $('run-job').addEventListener('click',()=>void doRun());
-    $('edit-plan').addEventListener('click',editPlan);
-    $('ai-map').addEventListener('click',approveAI);
     $('download-output').addEventListener('click',()=>void download('output'));
-    $('download-evidence').addEventListener('click',()=>void download('evidence'));
-    document.querySelectorAll<HTMLButtonElement>('[data-source]').forEach(b=>b.addEventListener('click',()=>inspectSource(b.dataset.source!)));
     document.querySelectorAll<HTMLSelectElement>('.col-map-select').forEach(sel=>sel.addEventListener('change',()=>void busy(sel,async()=>{
       const tgt=sel.dataset.mapTarget!;
       const src=sel.value;
       job=await api<Job>(`/api/jobs/${job!.id}/map-column`,{target_column:tgt,source_column:src,request_id:uid()});
       await refresh();shell();await showPage('workspace');
-      toast(src?`Mapped ${src} → ${tgt}`:`Unmapped ${tgt}`);
+      toast(src?`Matched ${src} → ${tgt}`:`Cleared ${tgt}`);
     })));
     document.querySelectorAll<HTMLButtonElement>('[data-clean]').forEach(btn=>btn.addEventListener('click',()=>void busy(btn,async()=>{
       const op=btn.dataset.clean!;
@@ -263,11 +454,11 @@ function studio(){
           rows:job.report.rows.map(r=>({...r})),
           formulas:{}
         }],
-        chat:[{role:'qms',text:`Loaded ${job.report.rows.length} rows from "${job.title}". You can now split into tabs by Grade/Site, add formula columns, summarize, or compare tabs!`}],
+        chat:[{role:'qms',text:`Opened ${job.report.rows.length} rows from "${job.title}". You can now split into tabs, add formula columns, summarize, or compare tabs!`}],
         pasteOpen:false
       };
       void showPage('builder');
-      toast('Opened in Multi-Tab Sheet Studio!');
+      toast('Opened in Sheet Creator!');
     });
   }
   wireChat();
@@ -750,40 +941,40 @@ function handleBuilderChatCommand(promptText:string):string{
 
 function builderPage(){
   const tab=currentBuilderTab();
+  const vert=activeVertical();
+  const vMeta=VERTICAL_META[vert]||VERTICAL_META.education;
   const {title,tabs,activeTab,chat,pasteOpen}=builderState;
   const {headers,rows}=tab;
 
   $('page').innerHTML=`<div class="simple-studio">
-    <section class="chat-card" aria-label="Spreadsheet Studio Assistant">
+    <section class="chat-card" aria-label="Sheet Creator Helper">
       <div class="chat-top">
-        <div class="chat-top-title"><span class="bot-avatar">${icon('spark')}</span><div><h1>Sheet Studio Assistant</h1><small>Start blank, paste messy text, or build with chat</small></div></div>
-        <button id="builder-new-blank" class="btn small">${icon('plus')}New Blank Sheet</button>
+        <div class="chat-top-title"><span class="bot-avatar">${icon('spark')}</span><div><h1>Sheet Helper</h1><small>Start blank, paste text, or tell me what columns to make</small></div></div>
+        <button id="builder-new-blank" class="btn small">${icon('plus')}Start Blank</button>
       </div>
       <div class="picker-bar">
         <div class="quick-chips">
-          <button class="chip" data-bcmd="Start blank sheet">Start Blank</button>
-          <button class="chip" data-bcmd="Create a SA-SAMS student & tuition sheet">SA-SAMS Student Sheet</button>
-          <button class="chip" data-bcmd="Create a monthly expense tracker">Expense Tracker</button>
-          <button class="chip" data-bcmd="Create a warehouse inventory stock sheet">Inventory Sheet</button>
+          <button class="chip" data-bcmd="Start blank sheet">📄 Blank Sheet</button>
+          <button class="chip" data-bcmd="${escapeHTML(vMeta.builderPresetCmd)}">✨ ${escapeHTML(vMeta.builderPresetLabel)}</button>
         </div>
         <details class="upload-drawer" ${pasteOpen?'open':''} id="paste-drawer">
-          <summary>📋 Paste Messy Text (WhatsApp / Email / PDF → Clean Table)</summary>
-          <textarea id="paste-raw-text" rows="4" style="margin-top:8px;font-size:12px" placeholder="Paste lines from WhatsApp, an Email, or PDF here — e.g.&#10;STU001 - JOHN DOE - 1503155123084 - Gr 8 - 821234567 - jane@gmial.com&#10;STU002 - SARAH SMITH - 1407220145081 - Gr 9 - +27 83 987 6543 - mike@example.com"></textarea>
+          <summary>📋 Paste from WhatsApp / Email / Word into a Clean Table</summary>
+          <textarea id="paste-raw-text" rows="4" style="margin-top:8px;font-size:12px" placeholder="Paste lines from WhatsApp, an Email, or Word here — e.g.&#10;STU001 - JOHN DOE - 1503155123084 - Gr 8 - 821234567 - jane@gmial.com&#10;STU002 - SARAH SMITH - 1407220145081 - Gr 9 - +27 83 987 6543 - mike@example.com"></textarea>
           <div style="display:flex;gap:8px;margin-top:8px">
-            <button id="paste-convert-btn" class="btn primary small" style="flex:1">${icon('spark')}Convert Pasted Text to Sheet</button>
-            <button id="paste-sample-btn" class="btn small">Try Sample Paste</button>
+            <button id="paste-convert-btn" class="btn primary small" style="flex:1">${icon('spark')}Turn Pasted Text into Table</button>
+            <button id="paste-sample-btn" class="btn small">Try Example Paste</button>
           </div>
         </details>
       </div>
-      <div class="messages" id="builder-messages" tabindex="0" aria-label="Sheet Studio conversation">
-        ${chat.map(m=>`<article class="msg ${m.role==='user'?'user':''}"><span class="msg-sender">${m.role==='user'?'You':'Studio'}</span><div class="bubble">${escapeHTML(m.text)}</div></article>`).join('')}
+      <div class="messages" id="builder-messages" tabindex="0" aria-label="Sheet Creator conversation">
+        ${chat.map(m=>`<article class="msg ${m.role==='user'?'user':''}"><span class="msg-sender">${m.role==='user'?'You':'Helper'}</span><div class="bubble">${escapeHTML(m.text)}</div></article>`).join('')}
       </div>
       <div class="quick-action-bar">
         <div class="quick-chips">
-          <button class="chip" data-bcmd="Fix contacts and extract DOB from SA ID">SA ID & Contact Fix</button>
-          <button class="chip" data-bcmd="Split by Grade">Split into Tabs</button>
-          <button class="chip" data-bcmd="Summarize by Grade">Summarize Sheet</button>
-          <button class="chip" data-bcmd="Add Total row">+ Total Row</button>
+          <button class="chip" data-bcmd="Fix contacts and extract DOB from SA ID">🪪 Fix IDs & Phones</button>
+          <button class="chip" data-bcmd="Add Total row">➕ Add Total Row</button>
+          <button class="chip" data-bcmd="Split by Grade">📂 Split into Tabs</button>
+          <button class="chip" data-bcmd="Summarize by Grade">📊 Summarize</button>
         </div>
       </div>
       <form id="builder-chat-form" class="chat-compose">
@@ -796,21 +987,21 @@ function builderPage(){
       <div class="result-head">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="builder-title" value="${escapeHTML(title)}" aria-label="Workbook file name" style="max-width:220px;padding:6px 10px;font-size:13px;font-weight:700">
-          <span class="badge good">${tabs.length} tab${tabs.length>1?'s':''} · ${headers.length} cols · ${rows.length} rows</span>
+          <span class="badge good">${tabs.length} tab${tabs.length>1?'s':''} · ${headers.length} columns · ${rows.length} rows</span>
         </div>
         <div class="result-actions">
-          <button id="builder-to-transform" class="btn small cyan">${icon('shield')}Send to Transform & QMS</button>
-          <button id="builder-download" class="btn small success">${icon('download')}Download Multi-Tab .XLSX</button>
+          <button id="builder-to-transform" class="btn small cyan">${icon('check')}Finish & Check Sheet</button>
+          <button id="builder-download" class="btn small success">${icon('download')}Download Excel (.XLSX)</button>
         </div>
       </div>
       <div class="clean-toolbar">
-        <span>Sheet Power Tools:</span>
-        <button id="builder-add-col" class="btn small">${icon('plus')}Col</button>
+        <span>${escapeHTML(vMeta.shortName)} Actions:</span>
+        <button id="builder-add-col" class="btn small">${icon('plus')}Column</button>
         <button id="builder-add-row" class="btn small">${icon('plus')}Row</button>
-        <button id="builder-formula-btn" class="btn small">${icon('spark')}+ Formula Col</button>
-        <button id="builder-smart-fix" class="btn small">SA ID & Contact Fix</button>
+        <button id="builder-formula-btn" class="btn small">${icon('spark')}+ Formula</button>
+        <button id="builder-smart-fix" class="btn small">🪪 Fix IDs & Phones</button>
         <button id="builder-split-btn" class="btn small">Split into Tabs…</button>
-        <button id="builder-summary-btn" class="btn small">Summarize by…</button>
+        <button id="builder-summary-btn" class="btn small">Summarize…</button>
         <button id="builder-compare-btn" class="btn small">Compare 2 Tabs</button>
         <button id="builder-total-btn" class="btn small">+ Total Row</button>
       </div>
@@ -1281,21 +1472,24 @@ function quotesPage(){
 }
 
 async function templatesPage(){
+  const vert=activeVertical();
+  const vMeta=VERTICAL_META[vert]||VERTICAL_META.education;
   const res=await api('/api/templates',undefined,'GET');
-  const items:any[]=res.items||[];
-  $('page').innerHTML=`<div class="page-heading"><div><h1>Template Library</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Pick any ready-made template to use in Transform, download its blank Excel (.XLSX) file, or save your own custom template for your account.</p></div><button id="new-template-btn" class="btn primary small">${icon('plus')}Save Custom Template</button></div>
+  const allItems:any[]=res.items||[];
+  const items=allItems.filter(t=>!t.builtin||vMeta.templateCategories.includes(t.category));
+  $('page').innerHTML=`<div class="page-heading"><div><h1>${escapeHTML(vMeta.shortName)} Templates</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Pick a ready-made ${escapeHTML(vMeta.shortName.toLowerCase())} template below, download a blank Excel (.XLSX) file, or save your own template.</p></div><button id="new-template-btn" class="btn primary small">${icon('plus')}Save Custom Template</button></div>
   <div class="knowledge-grid">
     ${items.map((t,idx)=>`<article class="knowledge-card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
-        <span class="badge ${t.builtin?'purple':'good'}">${escapeHTML(t.category||(t.builtin?'Built-in':'Custom'))}</span>
+        <span class="badge ${t.builtin?'good':'purple'}">${escapeHTML(t.category||(t.builtin?'Ready-Made':'Custom'))}</span>
         <small style="color:var(--muted)">${t.headers.length} columns</small>
       </div>
       <h3>${escapeHTML(t.name)}</h3>
       <p style="margin-top:6px;font-size:13px">${escapeHTML(t.description||'')}</p>
       <div class="file-list" style="margin-top:10px">${t.headers.map((h:string)=>`<span class="file-chip">${escapeHTML(h)}</span>`).join('')}</div>
       <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn small primary" data-use-tpl="${idx}">${icon('spark')}Use in Transform</button>
-        <button class="btn small" data-dl-tpl="${idx}">${icon('download')}Download Blank .XLSX</button>
+        <button class="btn small primary" data-use-tpl="${idx}">${icon('spark')}Open Template</button>
+        <button class="btn small" data-dl-tpl="${idx}">${icon('download')}Download Blank Excel (.XLSX)</button>
       </div>
     </article>`).join('')}
   </div>`;
@@ -1309,7 +1503,7 @@ async function templatesPage(){
       job=await api<Job>('/api/jobs/from-builder',{title:`${t.name}.xlsx`,sheet:t.sheet||'Output',headers:t.headers,rows:t.sample_rows||[],request_id:uid()});
     }
     await refresh();shell();await showPage('workspace');
-    toast(`Loaded template: ${t.name}`);
+    toast(`Opened template: ${t.name}`);
   })));
 
   document.querySelectorAll<HTMLButtonElement>('[data-dl-tpl]').forEach(b=>b.addEventListener('click',()=>{
@@ -1325,15 +1519,15 @@ async function templatesPage(){
   }));
 
   $('new-template-btn').addEventListener('click',()=>{
-    openModal('Save Custom Template to Your Account',`
+    openModal('Save Your Own Template',`
       <form id="custom-tpl-form">
         <label for="tpl-name">Template Name</label>
-        <input id="tpl-name" required placeholder="e.g. Clinic Patient Intake Template">
+        <input id="tpl-name" required placeholder="e.g. Term 2 Class List">
         <label for="tpl-cat">Category</label>
-        <input id="tpl-cat" placeholder="e.g. Healthcare / Operations">
-        <label for="tpl-headers">Columns (comma-separated) — or upload a sample Excel/CSV below</label>
-        <input id="tpl-headers" required placeholder="e.g. Patient ID, First Name, Last Name, DOB, Medical Aid, Phone">
-        <label for="tpl-file">Or extract columns from an Excel / CSV file (optional)</label>
+        <input id="tpl-cat" value="${escapeHTML(vMeta.templateCategories[0]||'Custom')}" placeholder="e.g. School / Business">
+        <label for="tpl-headers">Column Names (comma-separated) — or upload an Excel/CSV file below</label>
+        <input id="tpl-headers" required placeholder="e.g. ID, First Name, Last Name, Phone, Amount">
+        <label for="tpl-file">Or copy columns from an existing Excel / CSV file (optional)</label>
         <input id="tpl-file" type="file" accept=".xlsx,.csv">
         <button type="submit" id="save-tpl-submit" class="btn primary" style="margin-top:14px">Save Template</button>
       </form>
@@ -1351,12 +1545,12 @@ async function templatesPage(){
       e.preventDefault();
       void busy($('save-tpl-submit'),async()=>{
         const name=$<HTMLInputElement>('tpl-name').value.trim();
-        const category=$<HTMLInputElement>('tpl-cat').value.trim()||'Custom Account Template';
+        const category=$<HTMLInputElement>('tpl-cat').value.trim()||vMeta.templateCategories[0]||'Custom';
         const headers=$<HTMLInputElement>('tpl-headers').value.split(',').map(s=>s.trim()).filter(Boolean);
         await api('/api/templates',{name,category,headers},'POST');
         closeModal();
         await templatesPage();
-        toast(`Saved "${name}" to your Template Library!`);
+        toast(`Saved "${name}" to your templates!`);
       });
     });
   });
@@ -1390,33 +1584,82 @@ async function doRun(){
   await busy($('run-job'),async()=>{
     job=await api<Job>(`/api/jobs/${job!.id}/run`,{});
     await refresh();shell();await showPage('workspace');
-    toast(job!.state==='RELEASED'?'Ready! Click Download XLSX on the right.':'Almost done — QMS asked a quick question in chat.');
+    toast(job!.state==='RELEASED'?'Ready! Click Download Excel (.XLSX) on the right.':'Almost done — check the quick question on the left.');
   });
 }
 
 async function loadJob(id:string){job=await api<Job>('/api/jobs/'+id);await showPage('workspace')}
 
 function jobHistory(){
-  $('page').innerHTML=`<div class="page-heading"><h1>Past Jobs</h1><button id="history-new" class="btn primary small">${icon('plus')}New transformation</button></div><div class="jobs-table" tabindex="0" aria-label="Past jobs"><table><thead><tr><th>Spreadsheet</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody>${overview.jobs.map((j:any)=>`<tr><td><strong>${escapeHTML(j.title)}</strong></td><td><span class="badge ${j.state==='RELEASED'?'good':j.state==='HELD'?'warn':''}">${escapeHTML(j.state)}</span></td><td>${new Date(j.created).toLocaleDateString()}</td><td><button class="btn small primary" data-open="${j.id}">Open</button> <button class="icon-button" data-delete="${j.id}" aria-label="Delete ${escapeHTML(j.title)}">${icon('trash')}</button></td></tr>`).join('')||'<tr><td colspan="4" class="table-empty">No past jobs yet.</td></tr>'}</tbody></table></div>`;
-  $('history-new').addEventListener('click',()=>{job=null;void showPage('workspace')});
-  document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach(b=>b.addEventListener('click',()=>void loadJob(b.dataset.open!)));
-  document.querySelectorAll<HTMLButtonElement>('[data-delete]').forEach(b=>b.addEventListener('click',()=>{
-    openModal('Delete this job?',`<p>Remove this job's uploaded files, output and chat history from your workspace.</p><button id="confirm-delete" class="btn danger" style="margin-top:14px">Delete job</button>`);
-    $('confirm-delete').addEventListener('click',()=>void busy($('confirm-delete'),async()=>{await api(`/api/jobs/${b.dataset.delete}`,{},'DELETE');closeModal();if(job?.id===b.dataset.delete)job=null;await refresh();shell();await showPage('jobs')}));
-  }));
+  void preferencesPage();
 }
 
 async function knowledgePage(){
-  const items=(await api('/api/knowledge')).items;
-  $('page').innerHTML=`<div class="page-heading"><h1>Saved Rules & Mappings</h1><span class="badge good">Auto-saved when jobs pass</span></div><div class="knowledge-grid">${items.map((k:any,i:number)=>`<article class="knowledge-card"><h3>${escapeHTML(k.template_name)}</h3><p>${escapeHTML(k.mapping_origin)} · ${k.headers.length} columns</p><div style="margin-top:12px;display:flex;gap:8px;align-items:center"><span class="badge ${k.active?'good':''}">${k.active?'Active':'Previous'}</span><button class="btn small" data-pattern="${i}">View mapping</button></div></article>`).join('')||`<section class="card" style="grid-column:1/-1;padding:32px;text-align:center"><h3>No saved mappings yet</h3><p style="margin-top:6px">Finish a spreadsheet in Transform and its mapping will be saved here automatically.</p></section>`}</div>`;
-  document.querySelectorAll<HTMLButtonElement>('[data-pattern]').forEach(b=>b.addEventListener('click',()=>openModal('Saved mapping',`<pre>${escapeHTML(JSON.stringify(items[Number(b.dataset.pattern)].plan,null,2))}</pre>`)));
+  await preferencesPage();
 }
 
-function preferencesPage(){
-  const p=overview.preferences;
+async function preferencesPage(){
+  const p=overview.preferences||{theme:'light',density:'comfortable',explanations:'detailed',auto_checks:true,vertical:'education'};
   const vert=p.vertical||'education';
-  $('page').innerHTML=`<div class="page-heading"><h1>Preferences & Vertical Tooling</h1></div><div class="settings-grid"><form id="preferences-form" class="settings-panel"><h2>Vertical Tooling, Appearance & Chat</h2><label for="pref-vertical">Active Industry Vertical</label><select id="pref-vertical">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)} — ${escapeHTML(v.badge)}</option>`).join('')}</select><label for="theme">Theme</label><select id="theme"><option value="dark" ${p.theme==='dark'?'selected':''}>Dark</option><option value="light" ${p.theme==='light'?'selected':''}>Light</option></select><label for="density">Table spacing</label><select id="density"><option value="comfortable">Comfortable</option><option value="compact" ${p.density==='compact'?'selected':''}>Compact</option></select><label for="explanations">Chat replies</label><select id="explanations"><option value="detailed">Standard</option><option value="concise" ${p.explanations==='concise'?'selected':''}>Short</option></select><label class="toggle"><input id="auto-checks" type="checkbox" ${p.auto_checks?'checked':''}>Automatically re-run checks when I confirm a fix</label><button id="save-preferences" class="btn primary">Save preferences${icon('check')}</button></form><section class="settings-panel"><h2>AI Status</h2><p style="margin-top:8px">Managed by the platform administrator.</p><label>Status</label><p>${overview.ai.enabled?'Enabled':'Paused'}</p><label>Model</label><p>${escapeHTML(overview.ai.model||'Not configured')}</p></section></div>`;
-  $('preferences-form').addEventListener('submit',e=>{e.preventDefault();void busy($('save-preferences'),async()=>{await api('/api/preferences',{theme:$<HTMLSelectElement>('theme').value,density:$<HTMLSelectElement>('density').value,explanations:$<HTMLSelectElement>('explanations').value,auto_checks:$<HTMLInputElement>('auto-checks').checked,vertical:$<HTMLSelectElement>('pref-vertical').value},'PUT');await refresh();applyPreferences();shell();await showPage('preferences');toast('Your preferences and vertical tooling were saved.')})});
+  const savedRules=(await api('/api/knowledge',undefined,'GET')).items||[];
+  $('page').innerHTML=`
+  <div class="page-heading"><h1>Past Files & Workspace Settings</h1></div>
+  <div class="settings-grid">
+    <section class="settings-panel">
+      <h2>Your Past Spreadsheets (${overview.jobs?.length||0})</h2>
+      <p style="margin-top:4px;font-size:13px">Reopen any spreadsheet you worked on recently or remove old files.</p>
+      <div class="jobs-table" style="margin-top:12px" tabindex="0" aria-label="Past spreadsheets">
+        <table>
+          <thead><tr><th>File Name</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${(overview.jobs||[]).map((j:any)=>`<tr>
+              <td><strong>${escapeHTML(j.title)}</strong><div style="font-size:11px;color:var(--muted)">${new Date(j.created).toLocaleDateString()}</div></td>
+              <td><span class="badge ${j.state==='RELEASED'?'good':'warn'}">${j.state==='RELEASED'?'✓ Ready':'In Progress'}</span></td>
+              <td><button class="btn small primary" data-open="${j.id}">Open</button> <button class="icon-button" data-delete="${j.id}" aria-label="Delete ${escapeHTML(j.title)}">${icon('trash')}</button></td>
+            </tr>`).join('')||'<tr><td colspan="3" class="table-empty">No saved spreadsheets yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <form id="preferences-form" class="settings-panel">
+      <h2>Workspace & Appearance</h2>
+      <label for="pref-vertical">Your Workspace Type</label>
+      <select id="pref-vertical">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)} — ${escapeHTML(v.badge)}</option>`).join('')}</select>
+      <label for="theme">Screen Theme</label>
+      <select id="theme"><option value="light" ${p.theme!=='dark'?'selected':''}>Light & Bright (Recommended)</option><option value="dark" ${p.theme==='dark'?'selected':''}>Dark Mode</option></select>
+      <label for="density">Table Row Spacing</label>
+      <select id="density"><option value="comfortable">Comfortable</option><option value="compact" ${p.density==='compact'?'selected':''}>Compact</option></select>
+      <label for="explanations">Helper Reply Style</label>
+      <select id="explanations"><option value="detailed">Friendly & Clear</option><option value="concise" ${p.explanations==='concise'?'selected':''}>Short</option></select>
+      <label class="toggle"><input id="auto-checks" type="checkbox" ${p.auto_checks!==false?'checked':''}>Automatically update the sheet when I confirm an answer</label>
+      <button id="save-preferences" class="btn primary">Save Settings${icon('check')}</button>
+    </form>
+  </div>
+
+  <details class="quiet-details" style="margin-top:20px">
+    <summary>Advanced & Technical Details (Optional — Saved Column Rules & Audit Logs)</summary>
+    <div class="quiet-body">
+      <div class="quiet-buttons">
+        ${job?`<button id="edit-plan" class="btn small">${icon('edit')}Inspect Current Mapping JSON</button><button id="download-evidence" class="btn small" ${job.report?'':'disabled'}>${icon('download')}Download Technical Audit JSON</button>`:''}
+      </div>
+      <h3 style="font-size:14px;margin-top:10px">Automatically Remembered Column Rules (${savedRules.length})</h3>
+      <div class="knowledge-grid" style="margin-top:8px">
+        ${savedRules.map((k:any,i:number)=>`<article class="knowledge-card"><h4>${escapeHTML(k.template_name)}</h4><p style="font-size:12px">${k.headers.length} columns remembered</p><button class="btn small" style="margin-top:8px" data-pattern="${i}">View Technical Rule</button></article>`).join('')||'<p style="font-size:13px">Finish a spreadsheet and your column matches will be remembered here automatically.</p>'}
+      </div>
+    </div>
+  </details>`;
+
+  document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach(b=>b.addEventListener('click',()=>void loadJob(b.dataset.open!)));
+  document.querySelectorAll<HTMLButtonElement>('[data-delete]').forEach(b=>b.addEventListener('click',()=>{
+    openModal('Remove this file?',`<p>Remove this spreadsheet from your saved list.</p><button id="confirm-delete" class="btn danger" style="margin-top:14px">Remove file</button>`);
+    $('confirm-delete').addEventListener('click',()=>void busy($('confirm-delete'),async()=>{await api(`/api/jobs/${b.dataset.delete}`,{},'DELETE');closeModal();if(job?.id===b.dataset.delete)job=null;await refresh();shell();await showPage('preferences')}));
+  }));
+  document.querySelectorAll<HTMLButtonElement>('[data-pattern]').forEach(b=>b.addEventListener('click',()=>openModal('Saved Rule Details',`<pre>${escapeHTML(JSON.stringify(savedRules[Number(b.dataset.pattern)].plan,null,2))}</pre>`)));
+  if($('edit-plan'))$('edit-plan').addEventListener('click',editPlan);
+  if($('download-evidence'))$('download-evidence').addEventListener('click',()=>void download('evidence'));
+
+  $('preferences-form').addEventListener('submit',e=>{e.preventDefault();void busy($('save-preferences'),async()=>{await api('/api/preferences',{theme:$<HTMLSelectElement>('theme').value,density:$<HTMLSelectElement>('density').value,explanations:$<HTMLSelectElement>('explanations').value,auto_checks:$<HTMLInputElement>('auto-checks').checked,vertical:$<HTMLSelectElement>('pref-vertical').value},'PUT');await refresh();applyPreferences();shell();await showPage('preferences');toast('Your settings were saved!')})});
 }
 
 async function adminPage(){
@@ -1550,18 +1793,18 @@ function buildXlsxBlob(sheetName:string,headers:string[],rows:Record<string,any>
 
 function loadStaticState():any{
   try{
-    const raw=localStorage.getItem('sheetqms_static_state_v1');
+    const raw=localStorage.getItem('sheetqms_static_state_v2');
     if(raw)return JSON.parse(raw);
   }catch{}
   return {
-    preferences:{theme:'dark',density:'comfortable',explanations:'detailed',auto_checks:true},
+    preferences:{theme:'light',density:'comfortable',explanations:'detailed',auto_checks:true,vertical:'education'},
     admin:{enabled:false,provider:'openai_compatible',base_url:'https://api.openai.com/v1',model:'gpt-4o-mini',monthly_budget_usd:'0',platform_budget_usd:'0',input_price_per_million_usd:'0.15',output_price_per_million_usd:'0.60',pricing_source_url:'https://openai.com/api/pricing/',pricing_verified_date:'2026-10-13',max_output_tokens:2048,timeout_seconds:75,auto_learn:true,key_configured:false,max_storage_mib_per_customer:250,max_jobs_per_customer:50},
     customers:[{id:'demo-a',name:'Demo Customer A',users:1,created:'2026-10-13T08:00:00Z'}],
     jobs:{} as Record<string,any>,
     knowledge:[] as any[]
   };
 }
-function saveStaticState(s:any){try{localStorage.setItem('sheetqms_static_state_v1',JSON.stringify(s))}catch{}}
+function saveStaticState(s:any){try{localStorage.setItem('sheetqms_static_state_v2',JSON.stringify(s))}catch{}}
 
 function makeStaticSampleJob(caseName:string):any{
   const id=uid();
@@ -2824,11 +3067,12 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
 }
 
 function showHelp(){
-  openModal('How to Access & Use Every Spreadsheet Feature',`
-    <p><b>1. Transform (Top Bar):</b> Upload 1 or 2+ messy Excel/CSV files (including 2-file SA-SAMS student & subject-percentage schedules) and map them into your template. Use the <b>column header dropdowns</b> or <b>chatbox</b> to adjust mappings, and use the <b>Data Tools bar</b> to deduplicate, clean text, or sort.</p>
-    <p style="margin-top:8px"><b>2. Create Sheet (Top Bar):</b> Describe any spreadsheet in plain words (or click a preset), edit columns and cells interactively, and click <b>Download XLSX</b> or <b>Open in Transform & QMS</b>.</p>
-    <p style="margin-top:8px"><b>3. Quotes & Invoices (Top Bar):</b> Your Business PA — type what to quote in plain words, customize your business & client details, and download a <b>Branded Excel (.XLSX)</b> or <b>Printable PDF Quote/Invoice</b>.</p>
-    <p style="margin-top:8px"><b>4. Templates (Top Bar):</b> Pick from ready-made templates (SA-SAMS Student Import, Regional Sales, Inventory, Quotes, Payroll), download blank <code>.xlsx</code> files, or click <b>+ Save Custom Template</b> to save your own template for your account.</p>
+  const vMeta=VERTICAL_META[activeVertical()]||VERTICAL_META.education;
+  openModal(`Quick Guide — ${vMeta.label}`,`
+    <p><b>1. Click any Big Action Card:</b> On your home screen, click one of the 3 big cards under <b>"What would you like to do today?"</b> to get started right away.</p>
+    <p style="margin-top:8px"><b>2. Upload Your Own Files or Folder:</b> Click <b>Upload Your Own Excel / CSV Files</b> (or <b>Merge an Entire Folder of Files</b>) to clean, combine, and fill your spreadsheet automatically.</p>
+    <p style="margin-top:8px"><b>3. Ask the Sheet Helper in Plain Words:</b> Type anything in the chat box on the left — like <i>"swap column 1 and 2"</i>, <i>"change row 1 Grade to Grade 9"</i>, or <i>"sort by name"</i>.</p>
+    <p style="margin-top:8px"><b>4. Switch Workspace Anytime:</b> Use the dropdown at the top right to switch between <b>Schools</b>, <b>Small Business & PA</b>, <b>Finance & HR</b>, and <b>Operations & Stock</b> — the tabs, cards, and tools will adjust automatically!</p>
   `);
 }
 
