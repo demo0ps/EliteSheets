@@ -35,9 +35,20 @@ async function api<T=any>(path:string,body?:any,method='POST'):Promise<T>{
 function toast(text:string,error=false){const el=$('toast');el.textContent=text;el.className='visible'+(error?' error':'');window.setTimeout(()=>{el.className=''},4000)}
 async function busy(element:HTMLElement,action:()=>Promise<void>){const b=element as HTMLButtonElement;const old=b.innerHTML;b.disabled=true;b.innerHTML=icon('clock')+'Working…';try{await action()}catch(e){toast(e instanceof Error?e.message:String(e),true)}finally{if(document.contains(b)){b.disabled=false;b.innerHTML=old}}}
 // Phone menu: on the Helper page the top-bar links, mode picker and Guide sit behind a menu button.
+// Marks the page while the Helper screen is showing (works without :has() support in older phone browsers).
+function syncHelperView(){
+  const card=document.querySelector('.simple-studio .chat-card') as HTMLElement|null;
+  const on=!!card&&card.offsetParent!==null;
+  document.documentElement.classList.toggle('helper-view',on);
+  document.querySelector('.shell')?.classList.toggle('helper-view',on);
+}
 function bindMobileMenu(){
   const shell=document.querySelector('.shell');
   const btn=document.getElementById('mobile-menu');
+  syncHelperView();
+  const rootEl=document.getElementById('root');
+  if(rootEl&&!(window as any).__helperObs){(window as any).__helperObs=new MutationObserver(syncHelperView);(window as any).__helperObs.observe(rootEl,{childList:true,subtree:true,attributes:true,attributeFilter:['class','style','hidden']});}
+  if(!(window as any).__helperClick){(window as any).__helperClick=true;document.addEventListener('click',()=>setTimeout(syncHelperView,60),true);}
   if(!shell||!btn)return;
   const setOpen=(open:boolean)=>{shell.classList.toggle('menu-open',open);btn.setAttribute('aria-expanded',String(open));btn.setAttribute('aria-label',open?'Close menu':'Open menu');};
   btn.addEventListener('click',()=>setOpen(!shell.classList.contains('menu-open')));

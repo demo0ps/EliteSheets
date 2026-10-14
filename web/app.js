@@ -26881,9 +26881,25 @@
       }
     }
   }
+  function syncHelperView() {
+    const card = document.querySelector(".simple-studio .chat-card");
+    const on = !!card && card.offsetParent !== null;
+    document.documentElement.classList.toggle("helper-view", on);
+    document.querySelector(".shell")?.classList.toggle("helper-view", on);
+  }
   function bindMobileMenu() {
     const shell2 = document.querySelector(".shell");
     const btn = document.getElementById("mobile-menu");
+    syncHelperView();
+    const rootEl = document.getElementById("root");
+    if (rootEl && !window.__helperObs) {
+      window.__helperObs = new MutationObserver(syncHelperView);
+      window.__helperObs.observe(rootEl, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden"] });
+    }
+    if (!window.__helperClick) {
+      window.__helperClick = true;
+      document.addEventListener("click", () => setTimeout(syncHelperView, 60), true);
+    }
     if (!shell2 || !btn) return;
     const setOpen = (open) => {
       shell2.classList.toggle("menu-open", open);
