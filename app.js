@@ -26899,6 +26899,12 @@
     if (!window.__helperClick) {
       window.__helperClick = true;
       document.addEventListener("click", () => setTimeout(syncHelperView, 60), true);
+      document.addEventListener("change", (e) => {
+        const t = e.target;
+        if (t && t.closest && t.closest(".upload-drawer") && window.matchMedia("(max-width: 1024px)").matches) {
+          document.getElementById("upload-drawer-box")?.removeAttribute("open");
+        }
+      }, true);
     }
     if (!shell2 || !btn) return;
     const setOpen = (open) => {

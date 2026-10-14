@@ -48,7 +48,8 @@ function bindMobileMenu(){
   syncHelperView();
   const rootEl=document.getElementById('root');
   if(rootEl&&!(window as any).__helperObs){(window as any).__helperObs=new MutationObserver(syncHelperView);(window as any).__helperObs.observe(rootEl,{childList:true,subtree:true,attributes:true,attributeFilter:['class','style','hidden']});}
-  if(!(window as any).__helperClick){(window as any).__helperClick=true;document.addEventListener('click',()=>setTimeout(syncHelperView,60),true);}
+  if(!(window as any).__helperClick){(window as any).__helperClick=true;document.addEventListener('click',()=>setTimeout(syncHelperView,60),true);
+    document.addEventListener('change',(e)=>{const t=e.target as HTMLElement;if(t&&t.closest&&t.closest('.upload-drawer')&&window.matchMedia('(max-width: 1024px)').matches){document.getElementById('upload-drawer-box')?.removeAttribute('open');}},true);}
   if(!shell||!btn)return;
   const setOpen=(open:boolean)=>{shell.classList.toggle('menu-open',open);btn.setAttribute('aria-expanded',String(open));btn.setAttribute('aria-label',open?'Close menu':'Open menu');};
   btn.addEventListener('click',()=>setOpen(!shell.classList.contains('menu-open')));

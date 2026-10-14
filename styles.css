@@ -1305,3 +1305,14 @@ body.compact td, body.compact th { padding: 8px 12px; }
   html.helper-view .shell main { overflow: hidden; }
   .simple-studio .chat-card .messages { overscroll-behavior: auto; }
 }
+
+/* Phone Helper: upload choices open as a pop-up over the chat, so the typing box never moves */
+@media (max-width: 1024px) {
+  .simple-studio .upload-drawer[open] > div {
+    position: fixed; left: 10px; right: 10px; top: 226px; z-index: 90;
+    max-height: calc(100dvh - 430px); min-height: 180px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    margin-top: 0 !important; padding: 16px; border-radius: 14px;
+    background: var(--panel); border: 1px solid var(--line-strong);
+    box-shadow: 0 12px 40px rgba(31, 41, 51, 0.22);
+  }
+}
