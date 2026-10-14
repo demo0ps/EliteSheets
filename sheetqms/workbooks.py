@@ -319,7 +319,13 @@ def _normalize_date_str(raw_val) -> str | None:
     if raw_val is None or isinstance(raw_val, bool):
         return None
     if isinstance(raw_val, (datetime, date)):
-        return raw_val.strftime('%Y-%m-%d')
+        dt_val = raw_val.date() if isinstance(raw_val, datetime) else raw_val
+        if 1900 <= dt_val.year <= 2030:
+            return dt_val.strftime('%Y-%m-%d')
+        # Recover raw 6-digit YYMMDD integer (e.g. 121007 -> year 2231) when a Date-formatted cell converted YYMMDD into a date!
+        serial = (dt_val - date(1899, 12, 30)).days
+        dob, _ = _extract_dob_from_sa_id_str(serial)
+        return dob
     if isinstance(raw_val, (int, float, Decimal)):
         num = float(raw_val)
         if 20000 <= num <= 50000:
@@ -327,14 +333,27 @@ def _normalize_date_str(raw_val) -> str | None:
             dt = date(1899, 12, 30) + timedelta(days=int(round(num)))
             if 1955 <= dt.year <= 2030:
                 return dt.strftime('%Y-%m-%d')
+        elif 50101 <= num <= 991231 and int(round(num)) == num:
+            dob, _ = _extract_dob_from_sa_id_str(int(round(num)))
+            if dob:
+                return dob
     s = str(raw_val).strip()
     if not s:
         return None
     m_iso = re.match(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s].*)?$', s)
     if m_iso:
         y, m, d = int(m_iso.group(1)), int(m_iso.group(2)), int(m_iso.group(3))
-        if 1 <= m <= 12 and 1 <= d <= 31 and 1900 <= y <= 2035:
-            return f'{y:04d}-{m:02d}-{d:02d}'
+        if 1 <= m <= 12 and 1 <= d <= 31:
+            if 1900 <= y <= 2035:
+                return f'{y:04d}-{m:02d}-{d:02d}'
+            if y > 2035:
+                try:
+                    serial = (date(y, m, d) - date(1899, 12, 30)).days
+                    dob, _ = _extract_dob_from_sa_id_str(serial)
+                    if dob:
+                        return dob
+                except Exception:
+                    pass
     m_dmy4 = re.match(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:\s.*)?$', s)
     if m_dmy4:
         a, b, y = int(m_dmy4.group(1)), int(m_dmy4.group(2)), int(m_dmy4.group(3))
@@ -432,20 +451,39 @@ def _is_banner_or_metadata_row(row: list[object]) -> bool:
     return False
 
 
-def _is_mid_sheet_school_header_row(row: list[object]) -> bool:
-    filled = [v for v in (row or []) if v is not None and str(v).strip() != '']
-    if len(filled) < 3:
+def _is_mid_sheet_school_header_row(row: list[object], prev_row: list[object] | None = None) -> bool:
+    max_len = max(len(row or []), len(prev_row or []))
+    if max_len < 3:
+        return False
+    row_filled = [v for v in (row or []) if v is not None and str(v).strip() != '']
+    if len(row_filled) < 2:
         return False
     first_cell = row[0] if row else None
     if isinstance(first_cell, (int, float)) or (first_cell is not None and re.fullmatch(r'\d+', str(first_cell).strip())):
         return False
+    composite: list[object] = []
+    for c_i in range(max_len):
+        cur = row[c_i] if row and c_i < len(row) else None
+        cur_s = str(cur).strip() if cur is not None else ''
+        prv = prev_row[c_i] if prev_row and c_i < len(prev_row) else None
+        prv_s = str(prv).strip() if prv is not None else ''
+        if cur_s and prv_s and len(prv_s) < 40 and not _SECTION_HEADER_CELL_RE.match(cur_s) and _SECTION_HEADER_CELL_RE.match(f'{prv_s} {cur_s}'):
+            composite.append(f'{prv_s} {cur_s}')
+        elif cur_s:
+            composite.append(cur)
+        elif prv_s and len(prv_s) < 45 and _SECTION_HEADER_CELL_RE.match(prv_s):
+            composite.append(prv)
+    if len(composite) < 3:
+        return False
     hits = 0
-    for v in filled:
+    non_num_filled = 0
+    for v in composite:
         if isinstance(v, (int, float, Decimal)):
-            return False
-        s = re.sub(r'\s+', ' ', str(v).strip())
-        if not s:
             continue
+        s = re.sub(r'\s+', ' ', str(v).strip())
+        if not s or re.fullmatch(r'\d+', s):
+            continue
+        non_num_filled += 1
         if '@' in s or re.fullmatch(r'(?:\+27|0)[1-9]\d{7,8}', re.sub(r'[\s()-]', '', s)):
             return False
         if re.fullmatch(r'\d{10,13}', re.sub(r'\s+', '', s)) or re.fullmatch(r'\d+[.,]\d+', s):
@@ -454,7 +492,7 @@ def _is_mid_sheet_school_header_row(row: list[object]) -> bool:
             return False
         if _SECTION_HEADER_CELL_RE.match(s):
             hits += 1
-    return hits >= 3 and hits >= len(filled) * 0.5
+    return hits >= 3 and non_num_filled >= 2 and hits >= non_num_filled * 0.45
 
 
 def _split_and_normalize_sheet_sections(sheet_name: str, rows: list[list[object]]) -> dict[str, list[list[object]]]:
@@ -462,24 +500,48 @@ def _split_and_normalize_sheet_sections(sheet_name: str, rows: list[list[object]
         return {sheet_name: rows}
     first_h_idx = 0
     for idx, r in enumerate(rows[:35]):
-        if _is_mid_sheet_school_header_row(r):
+        prev_r = rows[idx - 1] if idx > 0 else None
+        if _is_mid_sheet_school_header_row(r, prev_r):
             first_h_idx = idx
             break
     header_indices = [first_h_idx]
     for r_idx in range(first_h_idx + 2, len(rows)):
-        if _is_mid_sheet_school_header_row(rows[r_idx]):
-            if r_idx - header_indices[-1] <= 2:
+        if _is_mid_sheet_school_header_row(rows[r_idx], rows[r_idx - 1]):
+            if r_idx - header_indices[-1] <= 3:
+                header_indices[-1] = r_idx
                 continue
             header_indices.append(r_idx)
     if len(header_indices) == 1:
-        return {sheet_name: _normalize_school_sheet_rows(rows)}
+        return {sheet_name: _normalize_school_sheet_rows(rows, sheet_name=sheet_name)}
     out_sections: dict[str, list[list[object]]] = {}
     for s_i, h_idx in enumerate(header_indices):
-        start_idx = 0 if s_i == 0 else h_idx
+        section_banner_grade: str | None = None
+        scan_min = 0 if s_i == 0 else max(header_indices[s_i - 1] + 1, h_idx - 18)
+        for b_idx in range(h_idx, scan_min - 1, -1):
+            for cell in (rows[b_idx] or []):
+                if not isinstance(cell, str):
+                    continue
+                gm = re.search(r'(?:for\s*:\s*grade\s*|grade\s*:\s*|\(\s*gr(?:ade)?\.?\s*|\bgrade\s+|gr\.?\s*)0*(8|9|10|11|12)\b', cell, re.I)
+                if gm:
+                    section_banner_grade = f'Grade {int(gm.group(1))}'
+                    break
+            if section_banner_grade:
+                break
+        start_idx = 0 if s_i == 0 else max(header_indices[s_i - 1] + 2, h_idx - 6)
         if s_i > 0:
             back = h_idx - 1
-            min_back = max(header_indices[s_i - 1] + 2, h_idx - 12)
-            while back >= min_back and _is_banner_or_metadata_row(rows[back]):
+            min_back = max(header_indices[s_i - 1] + 2, h_idx - 14)
+            while back >= min_back:
+                r_back = rows[back] or []
+                is_data = any(
+                    isinstance(c, str) and (
+                        re.match(r'^[A-Z][A-Z\s\'-]+,\s*[A-Za-z]+', c.strip())
+                        or re.fullmatch(r'\d{10,13}', re.sub(r'\s+', '', c.strip()))
+                    )
+                    for c in r_back
+                )
+                if is_data:
+                    break
                 start_idx = back
                 back -= 1
         end_idx = len(rows)
@@ -495,34 +557,52 @@ def _split_and_normalize_sheet_sections(sheet_name: str, rows: list[list[object]
         if not sub_rows:
             continue
         sec_key = sheet_name if s_i == 0 else f'{sheet_name} (Section {s_i + 1})'
-        out_sections[sec_key] = _normalize_school_sheet_rows(sub_rows)
-    return out_sections or {sheet_name: _normalize_school_sheet_rows(rows)}
+        out_sections[sec_key] = _normalize_school_sheet_rows(sub_rows, sheet_name=sheet_name, section_banner_grade=section_banner_grade)
+    return out_sections or {sheet_name: _normalize_school_sheet_rows(rows, sheet_name=sheet_name)}
 
 
-def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]:
+def _normalize_school_sheet_rows(
+    rows: list[list[object]],
+    sheet_name: str | None = None,
+    section_banner_grade: str | None = None,
+) -> list[list[object]]:
     if not rows or len(rows) < 2:
         return rows
-    # Scan top 35 rows for either a SA-SAMS / GDE Learner-Parent Bio header row (duplicate Name/Surname/Cell#)
-    # or a GDE Mark Schedule header row (Accession Number + Learner Name).
-    banner_grade: str | None = None
+    # Scan sheet tab name, section banner grade, and top 20 rows for Grade 8..12 banner
+    banner_grade: str | None = section_banner_grade
+    if not banner_grade and sheet_name:
+        sm = re.search(r'\b(?:grade|gr\.?)\s*0*(8|9|10|11|12)\b', sheet_name, re.I)
+        if sm:
+            banner_grade = f'Grade {int(sm.group(1))}'
     for r in rows[:20]:
+        if banner_grade:
+            break
         for cell in (r or []):
             if not isinstance(cell, str):
                 continue
-            m = re.search(r'(?:for\s*:\s*grade\s*|grade\s*:\s*|\(\s*gr(?:ade)?\.?\s*)(\d{1,2})\b', cell, re.I)
+            m = re.search(r'(?:for\s*:\s*grade\s*|grade\s*:\s*|\(\s*gr(?:ade)?\.?\s*)0*(\d{1,2})\b', cell, re.I)
             if m:
                 banner_grade = f'Grade {int(m.group(1))}'
                 break
-        if banner_grade:
-            break
 
     header_idx: int | None = None
     mode: str | None = None
     for idx, r in enumerate(rows[:35]):
+        max_c = max([len(rows[k] or []) for k in range(max(0, idx - 4), idx + 1)] or [0])
+        comp_norms: list[str] = []
+        for c_i in range(max_c):
+            for k in range(idx, max(-1, idx - 5), -1):
+                if k < len(rows) and c_i < len(rows[k] or []):
+                    v = rows[k][c_i]
+                    if v is not None and str(v).strip():
+                        comp_norms.append(norm(v))
+                        break
         norms = [norm(v) for v in (r or []) if v is not None and str(v).strip()]
         if not norms:
             continue
-        if any('accession' in n or n in {'date of birth', 'dob', 'birth date', 'birthdate'} for n in norms) and any('learner name' in n or 'student name' in n for n in norms):
+        if any('learner name' in n or 'student name' in n for n in comp_norms) and (
+            any('accession' in n or n in {'date of birth', 'dob', 'birth date', 'birthdate', 'no', 'no.', 'number', 'gender'} for n in comp_norms)
+        ):
             header_idx = idx
             mode = 'gde_marks'
             break
@@ -542,20 +622,23 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
         h_row.pop()
 
     if mode == 'gde_marks':
-        # Clean long comment header and composite any blank header cells from h_idx-1 / h_idx-2
+        # Clean long comment header and composite any blank header cells from up to 5 rows above header_idx
         clean_h: list[str] = []
         for c_i, cell in enumerate(h_row):
             hs = str(cell or '').strip()
-            if not hs and header_idx > 0 and c_i < len(out_rows[header_idx - 1]):
-                p1 = str(out_rows[header_idx - 1][c_i] or '').strip()
-                if p1 and len(p1) < 45:
-                    hs = p1
+            if not hs:
+                for k in range(header_idx - 1, max(-1, header_idx - 6), -1):
+                    if c_i < len(out_rows[k]):
+                        pk = str(out_rows[k][c_i] or '').strip()
+                        if pk and len(pk) < 65 and not re.search(r'\b(department\s+of\s+education|mark\s+schedule|school\s*:|district\s*:|for\s*:\s*grade)\b', pk, re.I):
+                            hs = pk
+                            break
             if re.search(r'report\s+general\s+comment', hs, re.I):
                 hs = 'Report General Comment'
             if not hs:
                 hs = f'Col{c_i + 1}'
             if not banner_grade:
-                gm = re.search(r'\(\s*gr(?:ade)?\.?\s*(\d{1,2})\s*\)', hs, re.I)
+                gm = re.search(r'\(\s*gr(?:ade)?\.?\s*0*(\d{1,2})\s*\)', hs, re.I)
                 if gm:
                     banner_grade = f'Grade {int(gm.group(1))}'
             clean_h.append(hs)
@@ -566,13 +649,19 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
         clean_h.extend(['Last Name', 'First Name'])
         if dob_col_idx is None:
             clean_h.append('Date of Birth')
-        if banner_grade and not has_grade:
+        if not has_grade:
             clean_h.append('Grade')
         out_rows[header_idx] = clean_h
+        current_grade = banner_grade
         for r_i in range(header_idx + 1, len(out_rows)):
             r = list(out_rows[r_i])
             if not any(v is not None and str(v).strip() != '' for v in r):
                 continue
+            for cell_v in r[:6]:
+                if isinstance(cell_v, str):
+                    gm_row = re.search(r'(?:for\s*:\s*grade\s*|grade\s*:\s*|\(\s*gr(?:ade)?\.?\s*)0*(8|9|10|11|12)\b', cell_v, re.I)
+                    if gm_row:
+                        current_grade = f'Grade {int(gm_row.group(1))}'
             while len(r) < len(h_row):
                 r.append(None)
             r = r[:len(h_row)]
@@ -603,11 +692,23 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
                         r[dob_col_idx] = ext_dob
                 if padded_id:
                     r[acc_idx] = padded_id
+            if not dob_val:
+                for sc_i in range(min(5, len(r))):
+                    if sc_i == lname_idx:
+                        continue
+                    ext_dob, _ = _extract_dob_from_sa_id_str(r[sc_i])
+                    if not ext_dob:
+                        ext_dob = _normalize_date_str(r[sc_i])
+                    if ext_dob and 1990 <= int(ext_dob[:4]) <= 2022:
+                        dob_val = ext_dob
+                        if dob_col_idx is not None and dob_col_idx < len(r):
+                            r[dob_col_idx] = ext_dob
+                        break
             r.extend([ln_val, fn_val])
             if dob_col_idx is None:
                 r.append(dob_val)
-            if banner_grade and not has_grade:
-                r.append(banner_grade)
+            if not has_grade:
+                r.append(current_grade)
             out_rows[r_i] = r
         return out_rows
 
@@ -699,6 +800,22 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
                 if col_name.endswith('Phone') and re.fullmatch(r'0+', s):
                     return ''
                 return s
+
+            # If a row in bio_parents has a comma-separated "SURNAME, FirstName" in First Name / Last Name (e.g. a mid-sheet table where Col B is 6-digit YYMMDD and Col C is "MASHABA, Boitumelo, Faith"), split it cleanly!
+            fn_ci, ln_ci = idx_map.get('First Name'), idx_map.get('Last Name')
+            fn_cur = _cell_str('First Name')
+            ln_cur = _cell_str('Last Name')
+            if (not fn_cur or not ln_cur or re.search(r'\d', fn_cur) or re.search(r'\d', ln_cur) or ',' in fn_cur or ',' in ln_cur):
+                for sc_i in range(min(5, len(r))):
+                    sv = str(r[sc_i] or '').strip()
+                    if re.match(r'^[A-Za-z][A-Za-z\s\'-]+,\s*[A-Za-z]+', sv):
+                        parts = [p.strip() for p in sv.split(',') if p.strip()]
+                        if len(parts) >= 2:
+                            if ln_ci is not None and ln_ci < len(r):
+                                r[ln_ci] = _title_case_person(parts[0])
+                            if fn_ci is not None and fn_ci < len(r):
+                                r[fn_ci] = _title_case_person(' '.join(parts[1:]))
+                            break
 
             # Normalize learner Date of Birth on the row (from Date of Birth column, SA ID column, or date cell scan)
             resolved_dob = None

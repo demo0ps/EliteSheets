@@ -861,6 +861,67 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     assert st_rows[1]['Parent Last Name'] == 'Nkosi'
     assert st_rows[1]['Parent Phone'] == '0839998877'
 
+    # 7. Grade 8 & 9 Mark Schedule with "No | Date of Birth | Learner Name | Gender" (6-digit YYMMDD 121007, 120218, 111103)
+    # including vertically split multi-row headers, Date-formatted serial day 121007 (2231-04-16), and Bio class suffix "08A" / "9B"
+    from datetime import date as dt_date
+    gr89_bio_wb = Workbook()
+    gr89_bio_ws = gr89_bio_wb.active
+    gr89_bio_ws.title = 'Bio_Gr8_9'
+    gr89_bio_ws.append(['Number', 'Surname', 'First Name', 'Gender', 'Grade', 'Name', 'Surname', 'Cell#', 'Name', 'Surname', 'Cell#'])
+    gr89_bio_ws.append([1, 'MASHABA', 'Boitumelo Faith', 'F', '08A', 'Johannes', 'MASHABA', '0821112222', '', '', ''])
+    gr89_bio_ws.append([2, 'MASHEGO', 'Phendile Prudence', 'F', 'Grade 9B', '', '', '', 'Grace', 'MASHEGO', '0732223333'])
+    gr89_bio_ws.append([3, 'MASHIGO', 'Thabang Gift', 'M', 'Grade 8', 'Samuel', 'MASHIGO', '0713334444', '', '', ''])
+    gr89_bio_bytes = BytesIO()
+    gr89_bio_wb.save(gr89_bio_bytes)
+
+    gr89_ms_wb = Workbook()
+    gr89_ms_ws = gr89_ms_wb.active
+    gr89_ms_ws.title = 'Grade_8_9_Marks'
+    gr89_ms_ws.append(['GAUTENG DEPARTMENT OF EDUCATION'])
+    gr89_ms_ws.append(['For: Grade 8'])
+    # Row 3 has "No", "Date of Birth", "Learner Name", "Gender" while Row 4 has long subject headers (>40 chars)
+    gr89_ms_ws.append(['No', 'Date of Birth', 'Learner Name', 'Gender', None, None])
+    gr89_ms_ws.append([None, None, None, None, 'English First Additional Language (Gr 08)', 'Economic and Management Sciences (Gr 08)'])
+    # Learner 1: Date-formatted serial day 121007 (which openpyxl/SheetJS converts to date(2231, 4, 21))
+    gr89_ms_ws.append([1, dt_date(2231, 4, 21), 'MASHABA, Boitumelo, Faith', 'F', '62,00', '58,00'])
+    # Learner 2: Grade 9 learner with 6-digit YYMMDD 120218 and middle name spelling "Prodence" vs "Prudence"
+    gr89_ms_ws.append([2, 120218, 'MASHEGO, Phendile, Prodence', 'F', '71,00', '64,00'])
+    # Learner 3: Grade 8 learner with 6-digit YYMMDD 111103
+    gr89_ms_ws.append([3, 111103, 'MASHIGO, Thabang, Gift', 'M', '55,00', '60,00'])
+    gr89_ms_bytes = BytesIO()
+    gr89_ms_wb.save(gr89_ms_bytes)
+
+    gr89_res = c.post('/api/jobs', data={'request_id': 'gr89-yymmdd-dob-001', 'title': 'Gr89-DOB-Import.xlsx'}, files=[
+        ('target', ('student-import-template.xlsx', tpl_bio.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+        ('sources', ('bio-gr89.xlsx', gr89_bio_bytes.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+        ('sources', ('marks-gr89.xlsx', gr89_ms_bytes.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+    ])
+    assert gr89_res.status_code == 200, gr89_res.text
+    gr89_job = gr89_res.json()
+    if not gr89_job.get('report'):
+        gr89_job = c.post(f'/api/jobs/{gr89_job["id"]}/run', json={}).json()
+    gr89_rows = gr89_job['report']['rows']
+    assert len(gr89_rows) == 3
+    assert gr89_rows[0]['Student ID'] == 'STU0001'
+    assert gr89_rows[0]['First Name'] == 'Boitumelo Faith'
+    assert gr89_rows[0]['Last Name'] == 'Mashaba'
+    assert gr89_rows[0]['Grade'] == 'Grade 8'
+    assert gr89_rows[0]['Date of Birth'] == '2012-10-07'
+    assert gr89_rows[0]['Parent First Name'] == 'Johannes'
+    assert gr89_rows[1]['Student ID'] == 'STU0002'
+    assert gr89_rows[1]['First Name'] == 'Phendile Prudence'
+    assert gr89_rows[1]['Last Name'] == 'Mashego'
+    assert gr89_rows[1]['Grade'] == 'Grade 9'
+    assert gr89_rows[1]['Date of Birth'] == '2012-02-18'
+    assert gr89_rows[1]['Parent First Name'] == 'Grace'
+    assert gr89_rows[2]['Student ID'] == 'STU0003'
+    assert gr89_rows[2]['First Name'] == 'Thabang Gift'
+    assert gr89_rows[2]['Last Name'] == 'Mashigo'
+    assert gr89_rows[2]['Grade'] == 'Grade 8'
+    assert gr89_rows[2]['Date of Birth'] == '2011-11-03'
+    assert gr89_rows[2]['Parent First Name'] == 'Samuel'
+
+
 
 
 

@@ -430,15 +430,18 @@ def format_field_value(target_field: str, value, numeric_fields: set[str], confi
             s = str(int(d)) if d == d.to_integral_value() else str(value).strip()
         else:
             s = str(value).strip()
-        m = re.fullmatch(r'(?:grade|gr\.?|g)?\s*0*(\d{1,2}[a-zA-Z]?)', s, re.I)
+        m = re.fullmatch(r'(?:grade|gr\.?|g)?\s*0*(\d{1,2})(?:[\s-]*[a-zA-Z])?', s, re.I)
         if m:
-            return f'Grade {m.group(1)}'
+            return f'Grade {int(m.group(1))}'
         return s
     if nf in {'date of birth', 'dob', 'birth date', 'birthdate', 'date_of_birth', 'learner dob'}:
         norm_dt = _normalize_date_str(value)
         if norm_dt:
             return norm_dt
-        return str(value).strip()
+        s_dt = str(value).strip()
+        if not s_dt or re.fullmatch(r'[-—–0]+|n/?a|none|null|unknown|\d+', s_dt, re.I):
+            return None
+        return s_dt
     if any(w in nf for w in ('phone', 'cell', 'mobile', 'telephone', 'contact number')):
         if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
             d = Decimal(str(value))
@@ -842,7 +845,13 @@ def build_rows(records, destination, rules):
             def _is_real_key(kv: str) -> bool:
                 return bool(kv and (len(kv) >= 10 or not kv.isdigit()))
 
-            def _are_compatible_given_names(fn_a: str, fn_b: str, same_region: bool) -> bool:
+            def _norm_grade_num(gv: str) -> str:
+                if not gv:
+                    return ''
+                m = re.match(r'^(?:grade|gr\.?|g)?\s*0*(8|9|10|11|12)\b', gv.strip(), re.I) or re.match(r'^0*(8|9|10|11|12)[a-z]$', gv.strip(), re.I)
+                return str(int(m.group(1))) if m else ''
+
+            def _are_compatible_given_names(fn_a: str, fn_b: str, same_region: bool, strict_multi_token: bool = True) -> bool:
                 if not fn_a or not fn_b:
                     return False
                 if fn_a == fn_b:
@@ -850,8 +859,10 @@ def build_rows(records, destination, rules):
                 tok_a = fn_a.split()
                 tok_b = fn_b.split()
                 if tok_a[0] == tok_b[0]:
+                    if not same_region and not strict_multi_token:
+                        return True
                     shorter, longer = (tok_a, tok_b) if len(tok_a) <= len(tok_b) else (tok_b, tok_a)
-                    return all(t in longer for t in shorter)
+                    return all(t in longer or (len(t) == 1 and any(lt.startswith(t) for lt in longer)) for t in shorter)
                 if same_region:
                     return False
                 if len(tok_a) == 1 and len(tok_a[0]) >= 3 and tok_a[0] in tok_b:
@@ -860,30 +871,69 @@ def build_rows(records, destination, rules):
                     return True
                 return False
 
-            def _pick_candidate(cands: list[tuple[int, str]], reg: str, rec_fn: str, rec_gr: str, rec_gen: str, rec_dob: str, rec_pfn: str, is_marks: bool) -> int | None:
-                for idx, r_reg in cands:
-                    same_reg = (r_reg == reg)
-                    c_fn = norm(rows[idx].get('First Name') or rows[idx].get('first_name'))
-                    if not _are_compatible_given_names(rec_fn, c_fn, same_reg):
-                        continue
-                    if is_marks and idx in matched_marks_idxs:
-                        continue
-                    c_gr = row_grades.get(idx) or norm(rows[idx].get('Grade') or rows[idx].get('grade'))
-                    # STRICT GRADE LOCK: Never match a Grade 10 Mark Schedule row to a Grade 8, 9, 11, or 12 Bio learner!
-                    if rec_gr and c_gr and c_gr != rec_gr:
-                        continue
-                    c_gen = row_genders.get(idx, '')
-                    # STRICT GENDER LOCK: If both sheets provide Gender (M/F), require Gender to match!
-                    if rec_gen and c_gen and c_gen != rec_gen:
-                        continue
-                    c_dob = str(rows[idx].get('Date of Birth') or '').strip()
-                    if rec_dob and c_dob and rec_dob != c_dob:
-                        continue
-                    if same_reg:
-                        c_pfn = norm(rows[idx].get('Parent First Name') or '')
-                        if rec_pfn and c_pfn and rec_pfn != c_pfn:
+            def _pick_candidate(
+                cands: list[tuple[int, str]],
+                reg: str,
+                rec_fn: str,
+                rec_gr: str,
+                rec_gen: str,
+                rec_dob: str,
+                rec_pfn: str,
+                is_marks: bool,
+                is_senior_phase_dob: bool = False,
+            ) -> int | None:
+                rec_gr_num = _norm_grade_num(rec_gr)
+
+                def _run_filter(require_exact_grade: bool, allow_senior_phase_89: bool, strict_multi_token: bool) -> list[int]:
+                    hits: list[int] = []
+                    for idx, r_reg in cands:
+                        same_reg = (r_reg == reg)
+                        c_fn = norm(rows[idx].get('First Name') or rows[idx].get('first_name'))
+                        if not _are_compatible_given_names(rec_fn, c_fn, same_reg, strict_multi_token):
                             continue
-                    return idx
+                        if is_marks and same_reg and idx in matched_marks_idxs:
+                            continue
+                        c_gr = row_grades.get(idx) or norm(rows[idx].get('Grade') or rows[idx].get('grade'))
+                        c_gr_num = _norm_grade_num(c_gr)
+                        if require_exact_grade:
+                            if rec_gr_num and c_gr_num and c_gr_num != rec_gr_num:
+                                continue
+                            elif rec_gr and c_gr and not rec_gr_num and c_gr != rec_gr:
+                                continue
+                        elif allow_senior_phase_89:
+                            if c_gr_num and c_gr_num not in {'8', '9'}:
+                                continue
+                        c_gen = row_genders.get(idx, '')
+                        if rec_gen and c_gen and c_gen != rec_gen:
+                            continue
+                        c_dob = str(rows[idx].get('Date of Birth') or '').strip()
+                        if rec_dob and c_dob and rec_dob != c_dob:
+                            continue
+                        if same_reg:
+                            c_pfn = norm(rows[idx].get('Parent First Name') or '')
+                            if rec_pfn and c_pfn and rec_pfn != c_pfn:
+                                continue
+                        hits.append(idx)
+                    hits.sort(key=lambda i: (1 if i in matched_marks_idxs else 0, 1 if rows[i].get('Date of Birth') else 0))
+                    return hits
+
+                h1 = _run_filter(True, False, True)
+                if h1:
+                    return h1[0]
+                h2 = _run_filter(True, False, False)
+                if len(h2) == 1:
+                    return h2[0]
+                if is_senior_phase_dob:
+                    h3 = _run_filter(False, True, True)
+                    if h3:
+                        return h3[0]
+                    h3_loose = _run_filter(False, True, False)
+                    if len(h3_loose) == 1:
+                        return h3_loose[0]
+                if rec_dob:
+                    missing_dob = [i for i in _run_filter(False, False, False) if not str(rows[i].get('Date of Birth') or '').strip()]
+                    if len(missing_dob) == 1:
+                        return missing_dob[0]
                 return None
 
             for record in ordered_records:
@@ -904,6 +954,8 @@ def build_rows(records, destination, rules):
                 fn = norm(fn_raw)
                 ln = norm(ln_raw)
                 rec_dob = str(data.get('Date of Birth') or '').strip()
+                has_13_id = bool(k_val and k_val.isdigit() and len(k_val) >= 10)
+                is_senior_phase_dob = bool(rec_dob and not has_13_id)
                 rec_pfn = norm(data.get('Parent First Name') or '')
                 exact_nm = (ln, fn) if (fn and ln) else None
                 short_nm = (ln, fn.split()[0]) if (fn and ln) else None
@@ -912,11 +964,11 @@ def build_rows(records, destination, rules):
                 if is_real_k and k_val in by_real_key:
                     target_idx = by_real_key[k_val][0]
                 elif exact_nm and exact_nm in by_exact_name:
-                    target_idx = _pick_candidate(by_exact_name[exact_nm], reg, fn, rec_gr, rec_gen, rec_dob, rec_pfn, is_marks)
+                    target_idx = _pick_candidate(by_exact_name[exact_nm], reg, fn, rec_gr, rec_gen, rec_dob, rec_pfn, is_marks, is_senior_phase_dob)
                 if target_idx is None and short_nm and short_nm in by_short_name:
-                    target_idx = _pick_candidate(by_short_name[short_nm], reg, fn, rec_gr, rec_gen, rec_dob, rec_pfn, is_marks)
+                    target_idx = _pick_candidate(by_short_name[short_nm], reg, fn, rec_gr, rec_gen, rec_dob, rec_pfn, is_marks, is_senior_phase_dob)
                 if target_idx is None and ln and fn and ln in by_surname:
-                    target_idx = _pick_candidate(by_surname[ln], reg, fn, rec_gr, rec_gen, rec_dob, rec_pfn, is_marks)
+                    target_idx = _pick_candidate(by_surname[ln], reg, fn, rec_gr, rec_gen, rec_dob, rec_pfn, is_marks, is_senior_phase_dob)
                 if target_idx is not None:
                     merged_row = rows[target_idx]
                     if is_marks:
@@ -935,6 +987,8 @@ def build_rows(records, destination, rules):
                         cur_v = merged_row.get(f)
                         # Upgrade a row-counter Student ID (e.g. '5') to a real 13-digit Accession Number ('0905245292081') when matched!
                         if f == destination.key and is_real_k and (cur_v in (None, '') or (str(cur_v).strip().isdigit() and len(str(cur_v).strip()) <= 5)):
+                            merged_row[f] = v
+                        elif f == 'Date of Birth' and (cur_v in (None, '') or not re.match(r'^\d{4}-\d{2}-\d{2}$', str(cur_v).strip())):
                             merged_row[f] = v
                         elif cur_v in (None, ''):
                             merged_row[f] = v
