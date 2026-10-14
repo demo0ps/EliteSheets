@@ -1146,14 +1146,14 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         data = blobs.get(job['output_object'])
         if hashlib.sha256(data).hexdigest() != job['report']['output_sha256']:
             raise HTTPException(409, 'Final artifact hash changed; download blocked.')
-        return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="SheetQMS-verified.xlsx"'})
+        return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="EduSheetManager-verified.xlsx"'})
 
     @app.get('/api/jobs/{identifier}/evidence')
     def evidence(identifier: str, identity=Depends(workspace)):
         _, tenant = identity
         job = get_job(tenant, identifier)
         result = public(job) | {'audit_events': store.events(tenant, identifier)}
-        return JSONResponse(result, headers={'Content-Disposition': 'attachment; filename="SheetQMS-evidence.json"'})
+        return JSONResponse(result, headers={'Content-Disposition': 'attachment; filename="EduSheetManager-evidence.json"'})
 
     @app.delete('/api/jobs/{identifier}')
     @job_lease

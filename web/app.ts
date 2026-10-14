@@ -1,3 +1,4 @@
+import { EDUSCF_LOGO_URI } from './eduscf_logo';
 interface User{id:string;name:string;email:string;role:string;tenant_id:string}
 interface Q{ id:string;text:string;evidence:string;kind:string }
 interface Check{id:string;name:string;passed:boolean;detail:string}
@@ -32,7 +33,8 @@ async function api<T=any>(path:string,body?:any,method='POST'):Promise<T>{
 }
 function toast(text:string,error=false){const el=$('toast');el.textContent=text;el.className='visible'+(error?' error':'');window.setTimeout(()=>{el.className=''},4000)}
 async function busy(element:HTMLElement,action:()=>Promise<void>){const b=element as HTMLButtonElement;const old=b.innerHTML;b.disabled=true;b.innerHTML=icon('clock')+'Working…';try{await action()}catch(e){toast(e instanceof Error?e.message:String(e),true)}finally{if(document.contains(b)){b.disabled=false;b.innerHTML=old}}}
-function logo(){return `<div class="logo"><span class="logo-box">${icon('grid')}</span><span><b>Sheet</b>QMS</span></div>`}
+function logo(){return `<div class="logo"><span class="logo-box">${icon('grid')}</span><span><b>Edu</b>SheetManager<small class="brand-by">by EduSCF</small></span></div>`}
+function poweredByEduSCF(){return `<div class="powered-by-eduscf" aria-label="Powered by EduSCF — Edu School Communicator Foundation (NPC)"><span>Powered by</span><img src="${EDUSCF_LOGO_URI}" alt="EduSCF — Edu School Communicator Foundation (NPC)" class="eduscf-logo-img"></div>`}
 function openModal(title:string,body:string){previousFocus=document.activeElement as HTMLElement;$('modal-title').textContent=title;$('modal-content').innerHTML=body;$('modal').hidden=false;$('close-modal').focus()}
 function closeModal(){$('modal').hidden=true;previousFocus?.focus()}
 
@@ -234,7 +236,8 @@ function loginPage(){
       <button class="btn primary" style="width:100%;margin-top:14px" id="sign-up-btn">Create Account & Open Workspace${icon('arrow')}</button>
     </form>
   </details>
-  <details class="divider-details" ${boot.demo_mode?'':'open'}><summary>Sign in to an existing account</summary><form id="login-form"><label for="login-email">Email</label><input id="login-email" type="email" autocomplete="username" required placeholder="you@example.com"><label for="login-password">Password</label><input id="login-password" type="password" autocomplete="current-password" required placeholder="Password"><button class="btn primary" style="width:100%;margin-top:16px" id="sign-in">Sign in${icon('arrow')}</button></form></details></section></main>`;
+  <details class="divider-details" ${boot.demo_mode?'':'open'}><summary>Sign in to an existing account</summary><form id="login-form"><label for="login-email">Email</label><input id="login-email" type="email" autocomplete="username" required placeholder="you@example.com"><label for="login-password">Password</label><input id="login-password" type="password" autocomplete="current-password" required placeholder="Password"><button class="btn primary" style="width:100%;margin-top:16px" id="sign-in">Sign in${icon('arrow')}</button></form></details>
+  <div class="signin-powered-wrap">${poweredByEduSCF()}</div></section></main>`;
 
   $('login-form').addEventListener('submit',e=>{e.preventDefault();void busy($('sign-in'),async()=>{const r=await api('/api/auth/login',{email:$<HTMLInputElement>('login-email').value,password:$<HTMLInputElement>('login-password').value});$<HTMLInputElement>('login-password').value='';await signedIn(r)})});
   $('signup-form').addEventListener('submit',e=>{e.preventDefault();void busy($('sign-up-btn'),async()=>{
@@ -265,7 +268,7 @@ function shell(){
   if(!user)return;
   const vert=activeVertical();
   const vMeta=VERTICAL_META[vert]||VERTICAL_META.general;
-  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${vMeta.tabs.map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)}</option>`).join('')}</select>${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}<button id="help" class="btn small">${icon('info')}Guide</button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main></div>`;
+  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${vMeta.tabs.map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)}</option>`).join('')}</select>${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}<button id="help" class="btn small">${icon('info')}Guide</button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>EduSheetManager</strong> <span style="opacity:0.75">by EduSCF</span> · Calm, everyday spreadsheet helper</div>${poweredByEduSCF()}</footer></div>`;
   document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach(b=>b.addEventListener('click',()=>void showPage(b.dataset.page!)));
   $('logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
   $('mobile-logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
@@ -631,20 +634,24 @@ function showBatchAuditModal(){
   }
   const filesMerged=ba.files_merged||(job?.profiles?.sources?.length||1);
   const totalRows=ba.total_rows||rows.length;
-  openModal('Batch & Consultant Data Quality Audit Certificate',`
+  openModal('EduSheetManager — Data Quality Summary Report',`
     <div style="display:grid;gap:12px">
-      <p style="margin:0;color:var(--muted)">Official QMS Before-vs-After Data Quality Audit Summary for schools, district offices, consultants, and business compliance:</p>
+      <p style="margin:0;color:var(--muted)">Before-vs-After Data Quality Summary for schools, district offices, consultants, and business compliance:</p>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-        <div class="stat-box" style="padding:12px;border:1px solid var(--border);border-radius:10px"><strong>${filesMerged}</strong><small style="display:block;color:var(--muted)">Files Consolidated</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--border);border-radius:10px"><strong>${totalRows}</strong><small style="display:block;color:var(--muted)">Total Master Rows</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--border);border-radius:10px"><strong>${validIds + repairedIds}</strong><small style="display:block;color:var(--muted)">Verified Luhn SA IDs</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--border);border-radius:10px"><strong>${repairedIds}</strong><small style="display:block;color:var(--muted)">Leading-Zero IDs Restored (Born 2000–2009)</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--border);border-radius:10px"><strong>${foreignIds}</strong><small style="display:block;color:var(--muted)">Foreign / Study Permit IDs</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--border);border-radius:10px"><strong>${invalidIds}</strong><small style="display:block;color:var(--muted)">Checksum Failures Flagged</small></div>
+        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${filesMerged}</strong><small style="display:block;color:var(--muted)">Files Consolidated</small></div>
+        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${totalRows}</strong><small style="display:block;color:var(--muted)">Total Master Rows</small></div>
+        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${validIds + repairedIds}</strong><small style="display:block;color:var(--muted)">Verified 13-Digit SA IDs</small></div>
+        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${repairedIds}</strong><small style="display:block;color:var(--muted)">Leading-Zero IDs Restored (Born 2000–2009)</small></div>
+        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${foreignIds}</strong><small style="display:block;color:var(--muted)">Foreign / Study Permit IDs</small></div>
+        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${invalidIds}</strong><small style="display:block;color:var(--muted)">Checksum Issues Flagged</small></div>
       </div>
       <div class="check ${dupRows>0?'fail':''}">
-        <strong>${dupRows>0?`! ${dupRows} Cross-File Duplicate Record(s) ("Ghost Learners / Duplicate Clients") Flagged`:'✓ 0 Cross-File Duplicates Found'}</strong>
+        <strong>${dupRows>0?`! ${dupRows} Cross-File Duplicate Record(s) Flagged`:'✓ 0 Cross-File Duplicates Found'}</strong>
         <small>All rows are preserved in your Master Sheet with <b>Source File</b>, <b>Duplicate Status</b>, and <b>SA ID Status</b> columns so no data is silently lost.</small>
+      </div>
+      <div style="margin-top:6px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <small style="color:var(--muted)">Generated by <b>EduSheetManager</b></small>
+        ${poweredByEduSCF()}
       </div>
     </div>
   `);
@@ -1218,7 +1225,7 @@ function builderPage(){
     const cur=currentBuilderTab();
     openModal('Split Sheet into Multiple Tabs by Column',`
       <form id="split-modal-form">
-        <p>Pick which column to group by — SheetQMS will create a separate tab for each unique value (e.g. Grade 7, Grade 8, Grade 9) inside your workbook:</p>
+        <p>Pick which column to group by — EduSheetManager will create a separate tab for each unique value (e.g. Grade 7, Grade 8, Grade 9) inside your workbook:</p>
         <label for="split-col">Split by Column</label>
         <select id="split-col">${cur.headers.map(h=>`<option value="${escapeHTML(h)}" ${/grade|site|branch|category|status/i.test(h)?'selected':''}>${escapeHTML(h)}</option>`).join('')}</select>
         <button type="submit" class="btn primary" style="margin-top:14px">Split into Tabs</button>
@@ -1240,7 +1247,7 @@ function builderPage(){
     const cur=currentBuilderTab();
     openModal('Generate Summary Breakdown Tab',`
       <form id="sum-modal-form">
-        <p>Choose a column to group by — SheetQMS will create a new <b>Summary</b> tab with Row Counts, Totals, and Averages:</p>
+        <p>Choose a column to group by — EduSheetManager will create a new <b>Summary</b> tab with Row Counts, Totals, and Averages:</p>
         <label for="sum-col">Summarize by Column</label>
         <select id="sum-col">${cur.headers.map(h=>`<option value="${escapeHTML(h)}" ${/grade|site|branch|category|subjects/i.test(h)?'selected':''}>${escapeHTML(h)}</option>`).join('')}</select>
         <button type="submit" class="btn primary" style="margin-top:14px">Create Summary Tab</button>
@@ -1505,7 +1512,10 @@ function quotesPage(){
           <div>VAT (${s.vatRate}%): <b>${escapeHTML(s.currency)} ${vatAmt.toLocaleString()}</b></div>
           <div style="font-size:16px;margin-top:4px">Grand Total: <b>${escapeHTML(s.currency)} ${grandTotal.toLocaleString()}</b></div>
         </div>
-        <button id="print-modal-btn" class="btn primary small" style="margin-top:14px">Print / Save as PDF</button>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <button id="print-modal-btn" class="btn primary small">Print / Save as PDF</button>
+          ${poweredByEduSCF()}
+        </div>
       </div>
     `);
     $('print-modal-btn').addEventListener('click',()=>window.print());
@@ -1758,7 +1768,7 @@ async function download(kind:string){
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url;
-    a.download=kind==='output'?'SheetQMS-verified.xlsx':'SheetQMS-evidence.json';
+    a.download=kind==='output'?'EduSheetManager-verified.xlsx':'EduSheetManager-evidence.json';
     a.click();
     URL.revokeObjectURL(url);
   }catch(e){toast(e instanceof Error?e.message:String(e),true)}
