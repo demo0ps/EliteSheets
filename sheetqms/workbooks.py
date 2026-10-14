@@ -46,7 +46,7 @@ BUILTIN_SYNONYMS = [
     ['parent first name', 'parent firstname', 'guardian first name', 'parent_first_name', 'parent given name', 'parent 1 first name', 'parent 2 first name', 'father name', 'mother name'],
     ['parent last name', 'parent lastname', 'parent surname', 'guardian surname', 'guardian last name', 'parent_last_name', 'parent 1 last name', 'parent 2 last name', 'father surname', 'mother surname'],
     ['parent email', 'guardian email', 'email', 'email address', 'parent_email', 'contact email', 'parent 1 email', 'parent 2 email'],
-    ['parent phone', 'parent cell', 'guardian phone', 'guardian cell', 'cellphone', 'cell number', 'cell#', 'cell #', 'phone number', 'mobile', 'telephone', 'contact number', 'parent_phone', 'parent 1 phone', 'parent 2 phone'],
+    ['parent phone', 'parent cell', 'guardian phone', 'guardian cell', 'father cell', 'father phone', 'mother cell', 'mother phone', 'cellphone', 'cell number', 'cell#', 'cell #', 'phone number', 'mobile', 'telephone', 'contact number', 'parent_phone', 'parent 1 phone', 'parent 2 phone'],
     ['jan', 'january'], ['feb', 'february'], ['mar', 'march'], ['apr', 'april'], ['jun', 'june'],
     ['jul', 'july'], ['aug', 'august'], ['sep', 'sept', 'september'], ['oct', 'october'], ['nov', 'november'], ['dec', 'december'],
 ]
@@ -388,6 +388,109 @@ def _title_case_person(val) -> str | None:
     return s
 
 
+_SECTION_HEADER_CELL_RE = re.compile(
+    r'^((?:learner\s*|student\s*|parent\s*|guardian\s*|father\s*|mother\s*)?'
+    r'(?:number|no\.?|#|id|student\s*id|learner\s*id|accession(?:\s*number|\s*no\.?)?|'
+    r'admission(?:\s*number|\s*no\.?)?|sa\s*id(?:\s*number)?|id\s*number|identity\s*number|'
+    r'lurits(?:\s*no\.?)?|cemis(?:\s*no\.?)?|surname|last\s*name|lastname|first\s*name|firstname|'
+    r'name|names|given\s*name|forename|full\s*name|gender|sex|grade|gr\.?|class|birth\s*date|'
+    r'date\s*of\s*birth|dob|d\.o\.b\.?|birthdate|age|cell\s*#?|cell\s*no\.?|cellphone|'
+    r'phone(?:\s*number)?|tel(?:ephone)?|mobile|contact(?:\s*number)?|email|e-mail|email\s*address|'
+    r'home\s*language|first\s*additional\s*language|second\s*additional\s*language|subjects?|'
+    r'subject\s*list|enrolled\s*subjects|learner\s*average.*|learner\s*rank|learner\s*total|code|'
+    r'deviation\s*comment|.*report\s*general\s*comment.*|.*\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)|'
+    r'accounting|business\s*studies|economics|mathematics|mathematical\s*literacy|physical\s*sciences|'
+    r'life\s*sciences|life\s*orientation|geography|history|tourism|consumer\s*studies|'
+    r'computer\s*applications\s*technology|natural\s*sciences|social\s*sciences|technology|'
+    r'creative\s*arts|economic\s*and\s*management\s*sciences.*|ems))$',
+    re.I,
+)
+
+
+def _is_banner_or_metadata_row(row: list[object]) -> bool:
+    filled = [v for v in (row or []) if v is not None and str(v).strip() != '']
+    if not filled:
+        return True
+    if len(filled) <= 3:
+        joined = ' | '.join(re.sub(r'\s+', ' ', str(v).strip()) for v in filled)
+        if re.search(
+            r'\b(department\s+of\s+education|internal\s+school|mark\s+schedule|school\s*:|'
+            r'district\s*:|circuit\s*:|emis\s*:|for\s*:\s*grade|report\s+generated|prepared\s+by|'
+            r'page\s+\d+\s+of|summary\s+report|total\s+learners|learner\s+information|parent\s+information)\b',
+            joined,
+            re.I,
+        ):
+            return True
+    return False
+
+
+def _is_mid_sheet_school_header_row(row: list[object]) -> bool:
+    filled = [v for v in (row or []) if v is not None and str(v).strip() != '']
+    if len(filled) < 3:
+        return False
+    first_cell = row[0] if row else None
+    if isinstance(first_cell, (int, float)) or (first_cell is not None and re.fullmatch(r'\d+', str(first_cell).strip())):
+        return False
+    hits = 0
+    for v in filled:
+        if isinstance(v, (int, float, Decimal)):
+            return False
+        s = re.sub(r'\s+', ' ', str(v).strip())
+        if not s:
+            continue
+        if '@' in s or re.fullmatch(r'(?:\+27|0)[1-9]\d{7,8}', re.sub(r'[\s()-]', '', s)):
+            return False
+        if re.fullmatch(r'\d{10,13}', re.sub(r'\s+', '', s)) or re.fullmatch(r'\d+[.,]\d+', s):
+            return False
+        if re.fullmatch(r'(?:grade|gr\.?)\s*\d{1,2}[a-z]?', s, re.I) or re.match(r'^[A-Z][A-Z\s\'-]+,\s*[A-Za-z]+', s):
+            return False
+        if _SECTION_HEADER_CELL_RE.match(s):
+            hits += 1
+    return hits >= 3 and hits >= len(filled) * 0.5
+
+
+def _split_and_normalize_sheet_sections(sheet_name: str, rows: list[list[object]]) -> dict[str, list[list[object]]]:
+    if not rows or len(rows) < 2 or norm(sheet_name) in RULE_SHEETS:
+        return {sheet_name: rows}
+    first_h_idx = 0
+    for idx, r in enumerate(rows[:35]):
+        if _is_mid_sheet_school_header_row(r):
+            first_h_idx = idx
+            break
+    header_indices = [first_h_idx]
+    for r_idx in range(first_h_idx + 2, len(rows)):
+        if _is_mid_sheet_school_header_row(rows[r_idx]):
+            if r_idx - header_indices[-1] <= 2:
+                continue
+            header_indices.append(r_idx)
+    if len(header_indices) == 1:
+        return {sheet_name: _normalize_school_sheet_rows(rows)}
+    out_sections: dict[str, list[list[object]]] = {}
+    for s_i, h_idx in enumerate(header_indices):
+        start_idx = 0 if s_i == 0 else h_idx
+        if s_i > 0:
+            back = h_idx - 1
+            min_back = max(header_indices[s_i - 1] + 2, h_idx - 12)
+            while back >= min_back and _is_banner_or_metadata_row(rows[back]):
+                start_idx = back
+                back -= 1
+        end_idx = len(rows)
+        if s_i + 1 < len(header_indices):
+            next_start = header_indices[s_i + 1]
+            back = next_start - 1
+            min_back = max(h_idx + 2, next_start - 12)
+            while back >= min_back and _is_banner_or_metadata_row(rows[back]):
+                next_start = back
+                back -= 1
+            end_idx = next_start
+        sub_rows = [r for r in rows[start_idx:end_idx] if any(v is not None and str(v).strip() != '' for v in (r or []))]
+        if not sub_rows:
+            continue
+        sec_key = sheet_name if s_i == 0 else f'{sheet_name} (Section {s_i + 1})'
+        out_sections[sec_key] = _normalize_school_sheet_rows(sub_rows)
+    return out_sections or {sheet_name: _normalize_school_sheet_rows(rows)}
+
+
 def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]:
     if not rows or len(rows) < 2:
         return rows
@@ -625,9 +728,15 @@ def _normalize_school_sheet_rows(rows: list[list[object]]) -> list[list[object]]
 def book_rows(path: Path, data_only=False):
     check_file(path)
     if path.suffix.lower() == '.csv':
-        return {k: _normalize_school_sheet_rows(v) for k, v in {'CSV': csv_rows(path)}.items()}
+        out_csv: dict[str, list[list[object]]] = {}
+        for k, v in {'CSV': csv_rows(path)}.items():
+            out_csv.update(_split_and_normalize_sheet_sections(k, v))
+        return out_csv
     if path.suffix.lower() == '.xls':
-        return {k: _normalize_school_sheet_rows(v) for k, v in xls_rows(path).items()}
+        out_xls: dict[str, list[list[object]]] = {}
+        for k, v in xls_rows(path).items():
+            out_xls.update(_split_and_normalize_sheet_sections(k, v))
+        return out_xls
     try:
         wb = load_workbook(path, read_only=True, data_only=data_only, keep_links=False)
     except Exception as exc:
@@ -642,7 +751,10 @@ def book_rows(path: Path, data_only=False):
             if total > MAX_CELLS:
                 raise ValueError('Workbook exceeds the one-million-cell inspection limit.')
             raw_sheet = [list(row) for row in ws.iter_rows(values_only=True)]
-            result[ws.title] = _normalize_school_sheet_rows(raw_sheet) if norm(ws.title) not in RULE_SHEETS else raw_sheet
+            if norm(ws.title) not in RULE_SHEETS:
+                result.update(_split_and_normalize_sheet_sections(ws.title, raw_sheet))
+            else:
+                result[ws.title] = raw_sheet
     finally:
         wb.close()
     return result
@@ -797,7 +909,7 @@ def profile(path: Path, file_id: str, template=False):
                 prefix_rule = has_rules_sheet and number <= prefix_end and re.search(r'\b(must|required|unique|rule|ignore|exclude|do not|nonnegative)\b', value, re.I)
                 if explicit or prefix_rule:
                     capture_instruction(value, f'{name}!{get_column_letter(col)}{number}')
-        if wb and has_rules_sheet:
+        if wb and has_rules_sheet and name in wb.sheetnames:
             for row in wb[name]:
                 for cell in row:
                     if cell.comment and re.search(r'\b(must|required|unique|rule|ignore|exclude|do not|nonnegative)\b', cell.comment.text, re.I):

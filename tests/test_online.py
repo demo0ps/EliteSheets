@@ -810,6 +810,56 @@ def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(cli
     assert gde_rows[3]['Parent Phone'] == '0783496897'
     assert gde_rows[3]['Subjects'] == 'Accounting; Business Studies; Economics; English First Additional Language; Life Orientation; Mathematics; Sepedi Home Language'
 
+    # 6. Stacked Multi-Section Sheet (e.g. from line 1800 going down inside the SAME sheet)
+    # Section 1 (top of sheet): Learner roster where some learners are missing Date of Birth, Accession Number, or Parent Phone
+    # Section 2 (stacked below in the same sheet with its own banner & header row): Contains the missing Accession Number, Birth Date, and Parent details for those same learners!
+    stacked_wb = Workbook()
+    stacked_ws = stacked_wb.active
+    stacked_ws.title = 'School_Combined'
+    stacked_ws.append(['Number', 'Surname', 'First Name', 'Gender', 'Grade', 'Class', 'Name', 'Surname', 'Cell#', 'Name', 'Surname', 'Cell#'])
+    stacked_ws.append([1, 'MOKOENA', 'Lerato', 'F', 'Grade 08', '8A', '', '', '', 'Nomsa', 'MOKOENA', '0721112233'])
+    stacked_ws.append([2, 'NKOSI', 'Sibusiso', 'M', 'Grade 11', '11B', '', '', '', '', '', ''])
+    # Blank & banner rows before the second stacked table (representing line 1800+ going down)
+    stacked_ws.append([None])
+    stacked_ws.append(['GAUTENG DEPARTMENT OF EDUCATION'])
+    stacked_ws.append(['LEARNER INFORMATION & SUBJECTS REGISTER'])
+    stacked_ws.append(['Accession Number', 'Surname', 'First Name', 'Gender', 'Grade', 'Birth Date', 'Subjects', 'Father Name', 'Father Surname', 'Father Cell'])
+    stacked_ws.append(['1204150234081', 'MOKOENA', 'Lerato', 'F', 'Grade 8', '2012-04-15', None, None, None, None])
+    stacked_ws.append(['0809105123087', 'NKOSI', 'Sibusiso', 'M', 'Grade 11', '10/09/2008', 'Mathematics; Physical Sciences; Accounting; Life Orientation', 'Sipho', 'NKOSI', '0839998877'])
+    stacked_ws.append(['Total Learners', '2', None, None, None, None, None, None, None, None])
+    stacked_bytes = BytesIO()
+    stacked_wb.save(stacked_bytes)
+
+    stacked_res = c.post('/api/jobs', data={'request_id': 'stacked-section-1800-001', 'title': 'Stacked-Master-Import.xlsx'}, files=[
+        ('target', ('student-import-template.xlsx', tpl_bio.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+        ('sources', ('school-combined-1800.xlsx', stacked_bytes.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+    ])
+    assert stacked_res.status_code == 200, stacked_res.text
+    stacked_job = stacked_res.json()
+    if not stacked_job.get('report'):
+        stacked_job = c.post(f'/api/jobs/{stacked_job["id"]}/run', json={}).json()
+    st_rows = stacked_job['report']['rows']
+    # Strictly capped to the 2 unique learners (no duplicate rows from Section 2, and 'Total Learners' summary row excluded!)
+    assert len(st_rows) == 2
+    assert st_rows[0]['Student ID'] == '1204150234081'
+    assert st_rows[0]['First Name'] == 'Lerato'
+    assert st_rows[0]['Last Name'] == 'Mokoena'
+    assert st_rows[0]['Date of Birth'] == '2012-04-15'
+    assert st_rows[0]['Grade'] == 'Grade 8'
+    assert st_rows[0]['Parent First Name'] == 'Nomsa'
+    assert st_rows[0]['Parent Phone'] == '0721112233'
+    assert 'Economic and Management Sciences (EMS)' in st_rows[0]['Subjects']
+    assert st_rows[1]['Student ID'] == '0809105123087'
+    assert st_rows[1]['First Name'] == 'Sibusiso'
+    assert st_rows[1]['Last Name'] == 'Nkosi'
+    assert st_rows[1]['Date of Birth'] == '2008-09-10'
+    assert st_rows[1]['Grade'] == 'Grade 11'
+    assert st_rows[1]['Subjects'] == 'Mathematics; Physical Sciences; Accounting; Life Orientation'
+    assert st_rows[1]['Parent First Name'] == 'Sipho'
+    assert st_rows[1]['Parent Last Name'] == 'Nkosi'
+    assert st_rows[1]['Parent Phone'] == '0839998877'
+
+
 
 
 

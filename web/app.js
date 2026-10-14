@@ -28910,7 +28910,7 @@
   function loadStaticState() {
     if (memStaticState) return memStaticState;
     try {
-      const raw = localStorage.getItem("sheetqms_static_state_v6");
+      const raw = localStorage.getItem("sheetqms_static_state_v7");
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.jobs) {
@@ -28938,7 +28938,7 @@
   function saveStaticState(s) {
     memStaticState = s;
     try {
-      localStorage.setItem("sheetqms_static_state_v6", JSON.stringify(s));
+      localStorage.setItem("sheetqms_static_state_v7", JSON.stringify(s));
     } catch {
     }
   }
@@ -29264,6 +29264,77 @@
     }
     return bestIdx;
   }
+  var SECTION_HEADER_CELL_RE = /^((?:learner\s*|student\s*|parent\s*|guardian\s*|father\s*|mother\s*)?(?:number|no\.?|#|id|student\s*id|learner\s*id|accession(?:\s*number|\s*no\.?)?|admission(?:\s*number|\s*no\.?)?|sa\s*id(?:\s*number)?|id\s*number|identity\s*number|lurits(?:\s*no\.?)?|cemis(?:\s*no\.?)?|surname|last\s*name|lastname|first\s*name|firstname|name|names|given\s*name|forename|full\s*name|gender|sex|grade|gr\.?|class|birth\s*date|date\s*of\s*birth|dob|d\.o\.b\.?|birthdate|age|cell\s*#?|cell\s*no\.?|cellphone|phone(?:\s*number)?|tel(?:ephone)?|mobile|contact(?:\s*number)?|email|e-mail|email\s*address|home\s*language|first\s*additional\s*language|second\s*additional\s*language|subjects?|subject\s*list|enrolled\s*subjects|learner\s*average.*|learner\s*rank|learner\s*total|code|deviation\s*comment|.*report\s*general\s*comment.*|.*\(\s*gr(?:ade)?\.?\s*\d{1,2}\s*\)|accounting|business\s*studies|economics|mathematics|mathematical\s*literacy|physical\s*sciences|life\s*sciences|life\s*orientation|geography|history|tourism|consumer\s*studies|computer\s*applications\s*technology|natural\s*sciences|social\s*sciences|technology|creative\s*arts|economic\s*and\s*management\s*sciences.*|ems))$/i;
+  function isBannerOrMetadataRow(row) {
+    const filled = (row || []).filter((v) => v !== void 0 && v !== null && String(v).trim() !== "");
+    if (!filled.length) return true;
+    if (filled.length <= 3) {
+      const joined = filled.map((v) => String(v).replace(/\s+/g, " ").trim()).join(" | ");
+      if (/\b(department\s+of\s+education|internal\s+school|mark\s+schedule|school\s*:|district\s*:|circuit\s*:|emis\s*:|for\s*:\s*grade|report\s+generated|prepared\s+by|page\s+\d+\s+of|summary\s+report|total\s+learners|learner\s+information|parent\s+information)\b/i.test(joined)) return true;
+    }
+    return false;
+  }
+  function isMidSheetHeaderRow(row) {
+    const filled = (row || []).filter((v) => v !== void 0 && v !== null && String(v).trim() !== "");
+    if (filled.length < 3) return false;
+    if (typeof row[0] === "number" || /^\d+$/.test(String(row[0] ?? "").trim())) return false;
+    let headerHits = 0;
+    for (const v of filled) {
+      if (typeof v === "number") return false;
+      const s = String(v).replace(/\s+/g, " ").trim();
+      if (!s) continue;
+      if (isDataValueCell(s)) return false;
+      if (/^\d+[.,]\d+$/.test(s)) return false;
+      if (SECTION_HEADER_CELL_RE.test(s) || s.length <= 40 && HEADER_KEYWORDS_RE.test(s)) headerHits++;
+    }
+    return headerHits >= 3 && headerHits >= filled.length * 0.5;
+  }
+  function splitMatrixIntoSections(baseSheetName, matrix) {
+    if (!matrix.length) return [{ sheet: baseSheetName, headers: ["Col1"], rows: [] }];
+    const firstHIdx = pickHeaderIndex(matrix);
+    const headerIndices = [firstHIdx];
+    for (let rIdx = firstHIdx + 2; rIdx < matrix.length; rIdx++) {
+      if (isMidSheetHeaderRow(matrix[rIdx])) {
+        if (rIdx - headerIndices[headerIndices.length - 1] <= 2) continue;
+        headerIndices.push(rIdx);
+      }
+    }
+    if (headerIndices.length === 1) {
+      return [matrixToTable(baseSheetName, matrix)];
+    }
+    const sections = [];
+    for (let s = 0; s < headerIndices.length; s++) {
+      const hIdx = headerIndices[s];
+      let startIdx = s === 0 ? 0 : headerIndices[s];
+      if (s > 0) {
+        let back = hIdx - 1;
+        const minBack = Math.max(headerIndices[s - 1] + 2, hIdx - 12);
+        while (back >= minBack && isBannerOrMetadataRow(matrix[back])) {
+          startIdx = back;
+          back--;
+        }
+      }
+      let endIdx = matrix.length;
+      if (s + 1 < headerIndices.length) {
+        let nextStart = headerIndices[s + 1];
+        let back = nextStart - 1;
+        const minBack = Math.max(hIdx + 2, nextStart - 12);
+        while (back >= minBack && isBannerOrMetadataRow(matrix[back])) {
+          nextStart = back;
+          back--;
+        }
+        endIdx = nextStart;
+      }
+      const subMatrix = matrix.slice(startIdx, endIdx);
+      if (!subMatrix.length) continue;
+      const secName = s === 0 ? baseSheetName : `${baseSheetName} (Section ${s + 1})`;
+      const tbl = matrixToTable(secName, subMatrix);
+      if (tbl.rows.length > 0) {
+        sections.push(tbl);
+      }
+    }
+    return sections.length ? sections : [matrixToTable(baseSheetName, matrix)];
+  }
   function matrixToTable(sheet, matrix) {
     if (!matrix.length) return { sheet, headers: ["Col1"], rows: [] };
     let hIdx = pickHeaderIndex(matrix);
@@ -29475,8 +29546,11 @@
     const ignoredLabels = /* @__PURE__ */ new Set(["subtotal", "total", "grand total", "sum", "average", "notes", "source:"]);
     const rows = [];
     let anyRowHasDob = false;
+    let anyRowHasAccession = false;
+    let anyRowHasGrade = false;
     for (const r of matrix.slice(dataStartIdx)) {
       if (!r || r.every((v) => v === void 0 || v === null || String(v).trim() === "")) continue;
+      if (isBannerOrMetadataRow(r)) continue;
       const rNorm = baseHeaders.map((_, i) => String(r[i] ?? "").trim().toLowerCase());
       if (!headerless && rNorm.every((v, i) => v === headNorm[i])) continue;
       const firstVal = String(r[0] ?? "").trim().toLowerCase();
@@ -29497,6 +29571,16 @@
           obj["First Name"] = parts[0] || null;
           obj["Last Name"] = parts.slice(1).join(" ") || null;
         }
+      } else if ((!obj["First Name"] || !obj["Last Name"]) && (hasParentBlocks || hasCombinedLearnerName || bannerGrade)) {
+        for (let cIdx = 0; cIdx < Math.min(r.length, 6); cIdx++) {
+          const sv = String(r[cIdx] ?? "").trim();
+          const mComma = sv.match(/^([A-Za-z][A-Za-z\s'-]{1,35}),\s*([A-Za-z][A-Za-z\s,'-]{1,50})$/);
+          if (mComma && !HEADER_KEYWORDS_RE.test(sv)) {
+            obj["Last Name"] = mComma[1].trim();
+            obj["First Name"] = mComma[2].replace(/,/g, " ").replace(/\s+/g, " ").trim();
+            break;
+          }
+        }
       }
       let resolvedDob = normalizeDateValue(obj["Date of Birth"]);
       if (!resolvedDob) {
@@ -29512,20 +29596,29 @@
           if (dob && !resolvedDob) resolvedDob = dob;
         }
       }
-      if (!resolvedDob && (hasParentBlocks || hasCombinedLearnerName || bannerGrade)) {
-        for (let cIdx = 0; cIdx < baseHeaders.length; cIdx++) {
-          const ch = baseHeaders[cIdx];
+      if (hasParentBlocks || hasCombinedLearnerName || bannerGrade || headers.includes("First Name")) {
+        for (let cIdx = 0; cIdx < r.length; cIdx++) {
+          const ch = baseHeaders[cIdx] || "";
           if (/phone|cell|tel|mobile|parent|guardian|father|mother|average|rank|total|mark|\(\s*gr/i.test(ch)) continue;
           const cellVal = r[cIdx];
           if (cellVal === null || cellVal === void 0 || cellVal === "") continue;
-          if (typeof cellVal === "number" && cellVal < 19e3) continue;
-          if (typeof cellVal === "string" && /^\d{1,9}([.,]\d+)?$/.test(cellVal.trim()) && !/^(?:19|20)\d{6}$/.test(cellVal.trim())) continue;
-          const candDob = normalizeDateValue(cellVal);
-          if (candDob) {
-            const yr = Number(candDob.slice(0, 4));
-            if (yr >= 1990 && yr <= 2022) {
-              resolvedDob = candDob;
-              break;
+          const { id13, dob: saDob } = extractDobFromSaId(cellVal);
+          if (id13) {
+            if (!obj["Accession Number"]) {
+              obj["Accession Number"] = id13;
+              anyRowHasAccession = true;
+            }
+            if (saDob && !resolvedDob) resolvedDob = saDob;
+          }
+          if (!resolvedDob) {
+            if (typeof cellVal === "number" && cellVal < 19e3) continue;
+            if (typeof cellVal === "string" && /^\d{1,9}([.,]\d+)?$/.test(cellVal.trim()) && !/^(?:19|20)\d{6}$/.test(cellVal.trim())) continue;
+            const candDob = normalizeDateValue(cellVal);
+            if (candDob) {
+              const yr = Number(candDob.slice(0, 4));
+              if (yr >= 1990 && yr <= 2022) {
+                resolvedDob = candDob;
+              }
             }
           }
         }
@@ -29534,8 +29627,28 @@
         obj["Date of Birth"] = resolvedDob;
         anyRowHasDob = true;
       }
-      if (bannerGrade && !obj["Grade"]) {
-        obj["Grade"] = bannerGrade;
+      if (!obj["Grade"] || !/\d/.test(String(obj["Grade"]))) {
+        if (bannerGrade) {
+          obj["Grade"] = bannerGrade;
+          anyRowHasGrade = true;
+        } else {
+          const clsVal = String(obj["Class"] ?? obj["class"] ?? obj["Grade/Class"] ?? "").trim();
+          const mCls = clsVal.match(/^0*(8|9|10|11|12)\s*[A-Za-z]$/);
+          if (mCls) {
+            obj["Grade"] = `Grade ${Number(mCls[1])}`;
+            anyRowHasGrade = true;
+          } else if (hasParentBlocks || hasCombinedLearnerName) {
+            for (let cIdx = 0; cIdx < Math.min(r.length, 10); cIdx++) {
+              const sv = String(r[cIdx] ?? "").trim();
+              const mGr = sv.match(/^(?:grade|gr\.?)\s*0*(8|9|10|11|12)[a-z]?$/i) || sv.match(/^0*(8|9|10|11|12)[A-HJ-Z]$/);
+              if (mGr) {
+                obj["Grade"] = `Grade ${Number(mGr[1])}`;
+                anyRowHasGrade = true;
+                break;
+              }
+            }
+          }
+        }
       }
       if (hasParentBlocks) {
         const p1First = obj["Parent 1 First Name"] ? String(obj["Parent 1 First Name"]).trim() : "";
@@ -29569,6 +29682,12 @@
     }
     if (anyRowHasDob && !headers.includes("Date of Birth")) {
       headers.push("Date of Birth");
+    }
+    if (anyRowHasAccession && !headers.includes("Accession Number")) {
+      headers.unshift("Accession Number");
+    }
+    if (anyRowHasGrade && !headers.includes("Grade")) {
+      headers.push("Grade");
     }
     return { sheet, headers, rows };
   }
@@ -29629,14 +29748,45 @@
               return cell;
             })).filter((r) => r.some((x) => x !== null && x !== void 0 && x !== ""));
             if (matrix.length) {
-              const tbl = matrixToTable(sName, matrix);
-              if (tbl.rows.length > 0 || outSheets.length === 0) {
-                outSheets.push({ name: wb.SheetNames.length > 1 ? `${name} (${sName})` : name, sheet: tbl.sheet, headers: tbl.headers, rows: tbl.rows });
+              const secTables = splitMatrixIntoSections(sName, matrix);
+              for (const tbl of secTables) {
+                if (tbl.rows.length > 0 || outSheets.length === 0) {
+                  outSheets.push({ name: wb.SheetNames.length > 1 || secTables.length > 1 ? `${name} (${tbl.sheet})` : name, sheet: tbl.sheet, headers: tbl.headers, rows: tbl.rows });
+                }
               }
             }
           }
           if (outSheets.length) return outSheets;
         }
+      } catch {
+      }
+    }
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    if (/<table[\s>]|<tr[\s>]/i.test(text.slice(0, 4096)) && typeof DOMParser !== "undefined") {
+      try {
+        const htmlDoc = new DOMParser().parseFromString(text, "text/html");
+        const tables = Array.from(htmlDoc.querySelectorAll("table"));
+        const tableEls = tables.length ? tables : [htmlDoc.body];
+        const outHtmlSheets = [];
+        tableEls.forEach((tEl, tIdx) => {
+          const trs = Array.from(tEl.querySelectorAll("tr"));
+          const htmlMatrix = trs.map((tr) => Array.from(tr.querySelectorAll("th,td")).map((td) => {
+            const raw = (td.textContent || "").trim();
+            if (!raw) return null;
+            if (!/^0\d+/.test(raw) && !/^\d{10,}$/.test(raw) && !Number.isNaN(Number(raw))) return Number(raw);
+            return raw;
+          })).filter((r) => r.some((x) => x !== null));
+          if (htmlMatrix.length) {
+            const baseName = tableEls.length > 1 ? `Table${tIdx + 1}` : "Sheet1";
+            const secs = splitMatrixIntoSections(baseName, htmlMatrix);
+            for (const tbl of secs) {
+              if (tbl.rows.length > 0) {
+                outHtmlSheets.push({ name: tableEls.length > 1 || secs.length > 1 ? `${name} (${tbl.sheet})` : name, sheet: tbl.sheet, headers: tbl.headers, rows: tbl.rows });
+              }
+            }
+          }
+        });
+        if (outHtmlSheets.length) return outHtmlSheets;
       } catch {
       }
     }
@@ -30711,17 +30861,27 @@
           }
           unmappedTargets = headers.filter((th) => th !== "Total" && !allCovered.has(th));
           unusedSources = Array.from(allUnused);
-          if (parsedSources.length > 1) {
+          const isSchoolLearnerJob = headers.some((h) => /^first\s*name$/i.test(h)) && headers.some((h) => /^(last\s*name|surname)$/i.test(h));
+          if (parsedSources.length > 1 || isSchoolLearnerJob) {
             const orderedPlans = [...sourcePlans].sort((a, b) => {
               const aIsMarks = a.columns.length > 0 ? 1 : 0;
               const bIsMarks = b.columns.length > 0 ? 1 : 0;
-              return aIsMarks - bIsMarks;
+              if (aIsMarks !== bIsMarks) return aIsMarks - bIsMarks;
+              return 0;
             });
             const byRealId = {};
             const byExactName = {};
             const byShortName = {};
             const bySurname = {};
+            const byRowNumSurname = {};
             const rowMeta = /* @__PURE__ */ new WeakMap();
+            const NON_PERSON_NAME_RE = /^(total|subtotal|grand\s*total|average|grade\s*average|learner\s*average.*|mean|summary|count|learners?|students?|male|female|boys|girls|grade\s*\d*|class|school.*|principal.*|teacher.*|educator.*|hod|signature.*|date.*|page\s*\d*|printed.*|generated.*|sa-?sams|gde|gauteng.*|department.*|district.*|circuit.*|emis.*|comment.*|code.*|achieved|not\s*achieved|pass|fail|surname|last\s*name|first\s*name|name|names|learner\s*name|student\s*name|gender|number|no\.?|accession.*)$/i;
+            const isValidPersonName = (s2) => {
+              if (!s2 || s2.length < 2) return false;
+              if (!/[A-Za-z]{2}/.test(s2)) return false;
+              if (NON_PERSON_NAME_RE.test(s2.trim())) return false;
+              return true;
+            };
             const normGender = (r) => {
               const gv = r["Gender"] ?? r["gender"] ?? r["Sex"] ?? r["sex"];
               if (gv !== void 0 && gv !== null) {
@@ -30738,34 +30898,55 @@
               const tc = toTitleCaseName(s2);
               return new RegExp(suffix, "i").test(tc) ? tc : `${tc} ${suffix}`;
             };
+            const areCompatibleGivenNames = (fnA, fnB, sameSection) => {
+              if (!fnA || !fnB) return false;
+              if (fnA === fnB) return true;
+              const tokA = fnA.split(/\s+/).filter(Boolean);
+              const tokB = fnB.split(/\s+/).filter(Boolean);
+              if (tokA[0] === tokB[0]) {
+                const [shorter, longer] = tokA.length <= tokB.length ? [tokA, tokB] : [tokB, tokA];
+                return shorter.every((t) => longer.includes(t));
+              }
+              if (sameSection) return false;
+              if (tokA.length === 1 && tokA[0].length >= 3 && tokB.includes(tokA[0])) return true;
+              if (tokB.length === 1 && tokB[0].length >= 3 && tokA.includes(tokB[0])) return true;
+              return false;
+            };
             const indexRec = (rec) => {
               const kv = String(rec[keyCol] || "").trim().toLowerCase();
               if (kv && (kv.length >= 6 || !/^\d+$/.test(kv))) byRealId[kv] = rec;
               const fn = String(rec["First Name"] || "").trim().toLowerCase();
               const ln = String(rec["Last Name"] || "").trim().toLowerCase();
+              const rNum = rowMeta.get(rec)?.rowNum;
+              if (rNum && ln && !byRowNumSurname[`${rNum}|${ln}`]) {
+                byRowNumSurname[`${rNum}|${ln}`] = rec;
+              }
               if (fn && ln) {
                 const exactKey = `${ln}|${fn}`;
-                (byExactName[exactKey] = byExactName[exactKey] || []).push(rec);
+                if (!(byExactName[exactKey] = byExactName[exactKey] || []).includes(rec)) byExactName[exactKey].push(rec);
                 const firstWord = fn.split(/\s+/)[0];
                 const shortKey = `${ln}|${firstWord}`;
-                (byShortName[shortKey] = byShortName[shortKey] || []).push(rec);
-                (bySurname[ln] = bySurname[ln] || []).push(rec);
+                if (!(byShortName[shortKey] = byShortName[shortKey] || []).includes(rec)) byShortName[shortKey].push(rec);
+                if (!(bySurname[ln] = bySurname[ln] || []).includes(rec)) bySurname[ln].push(rec);
               }
             };
-            const findBestNameMatch = (cands, objGr, objGen, isMarksSheet, pIdx, requireTokenOverlapFrom) => {
+            const findBestNameMatch = (cands, objFn, objGr, objGen, objDob, objPfn, isMarksSheet, pIdx) => {
               if (!cands || !cands.length) return void 0;
-              const queryTokens = requireTokenOverlapFrom ? requireTokenOverlapFrom.split(/\s+/).filter((t) => t.length >= 2) : [];
               const filtered = cands.filter((c) => {
                 const meta = rowMeta.get(c);
-                if (meta?.sourceIdx === pIdx) return false;
+                const sameSection = meta?.sourceIdx === pIdx;
+                const cFn = String(c["First Name"] || "").trim().toLowerCase();
+                if (!areCompatibleGivenNames(objFn, cFn, sameSection)) return false;
                 if (isMarksSheet && meta?.matchedMarks) return false;
                 const cGr = String(c["Grade"] || meta?.grade || "").trim().toLowerCase();
                 if (objGr && cGr && cGr !== objGr) return false;
                 const cGen = meta?.gender || "";
                 if (objGen && cGen && cGen !== objGen) return false;
-                if (queryTokens.length) {
-                  const cFnTokens = String(c["First Name"] || "").trim().toLowerCase().split(/\s+/).filter((t) => t.length >= 2);
-                  if (!queryTokens.some((qt) => cFnTokens.includes(qt))) return false;
+                const cDob = String(c["Date of Birth"] || "").trim();
+                if (objDob && cDob && cDob !== objDob) return false;
+                if (sameSection) {
+                  const cPfn = String(c["Parent First Name"] || "").trim().toLowerCase();
+                  if (objPfn && cPfn && objPfn !== cPfn) return false;
                 }
                 return true;
               });
@@ -30779,31 +30960,54 @@
                 Object.entries(sp.field_map).forEach(([th, sh]) => {
                   obj[th] = fmtField(th, r[sh]);
                 });
-                if ((!obj["Date of Birth"] || obj["Date of Birth"] === "") && r["Date of Birth"]) {
-                  obj["Date of Birth"] = fmtField("Date of Birth", r["Date of Birth"]);
+                for (const th of headers) {
+                  if ((obj[th] === null || obj[th] === void 0 || obj[th] === "") && r[th] !== void 0 && r[th] !== null && r[th] !== "") {
+                    obj[th] = fmtField(th, r[th]);
+                  }
                 }
                 if (sp.period && sp.columns.length) {
                   const taken = sp.columns.filter((c) => isPresentMark(r[c])).map((c) => cleanSubjectName(c));
                   obj[sp.period] = taken.join("; ");
                 }
+                if ((!obj[keyCol] || /^\d{1,5}$/.test(String(obj[keyCol]).trim())) && r["Accession Number"]) {
+                  obj[keyCol] = String(r["Accession Number"]).trim();
+                }
                 if ((!obj["Date of Birth"] || obj["Date of Birth"] === "") && obj[keyCol]) {
                   const { dob } = extractDobFromSaId(obj[keyCol]);
                   if (dob) obj["Date of Birth"] = dob;
                 }
-                const objGr = String(obj["Grade"] || (r["Grade"] ? fmtField("Grade", r["Grade"]) : "") || "").trim().toLowerCase();
-                const objGen = normGender(r);
-                const rowHL = normLangLabel(r["Home Language"] ?? r["home language"] ?? r["HL"], "Home Language");
-                const rowFAL = normLangLabel(r["First Additional Language"] ?? r["first additional language"] ?? r["FAL"], "First Additional Language");
                 const kVal = String(obj[keyCol] || "").trim().toLowerCase();
                 const isRealId = Boolean(kVal && (kVal.length >= 6 || !/^\d+$/.test(kVal)));
-                const fn = String(obj["First Name"] || "").trim().toLowerCase();
-                const ln = String(obj["Last Name"] || "").trim().toLowerCase();
+                const rawRowNum = String(r["Number"] ?? r["No"] ?? r["No."] ?? r["#"] ?? (!isRealId ? kVal : "") ?? "").trim();
+                const rowNum = /^\d{1,4}$/.test(rawRowNum) ? rawRowNum : "";
+                const fnRaw = String(obj["First Name"] || "").trim();
+                const lnRaw = String(obj["Last Name"] || "").trim();
+                if (isSchoolLearnerJob) {
+                  const validBothNames = isValidPersonName(fnRaw) && isValidPersonName(lnRaw);
+                  const matchesExistingByNumAndSurname = Boolean(rowNum && isValidPersonName(lnRaw) && byRowNumSurname[`${rowNum}|${lnRaw.toLowerCase()}`]);
+                  if (!validBothNames && !(isRealId && byRealId[kVal]) && !matchesExistingByNumAndSurname) continue;
+                }
+                const objGr = String(obj["Grade"] || (r["Grade"] ? fmtField("Grade", r["Grade"]) : "") || "").trim().toLowerCase();
+                const objGen = normGender(r);
+                const objDob = String(obj["Date of Birth"] || "").trim();
+                const objPfn = String(obj["Parent First Name"] || "").trim().toLowerCase();
+                const rowHL = normLangLabel(r["Home Language"] ?? r["home language"] ?? r["HL"], "Home Language");
+                const rowFAL = normLangLabel(r["First Additional Language"] ?? r["first additional language"] ?? r["FAL"], "First Additional Language");
+                const fn = fnRaw.toLowerCase();
+                const ln = lnRaw.toLowerCase();
                 const exactKey = fn && ln ? `${ln}|${fn}` : "";
                 const shortKey = fn && ln ? `${ln}|${fn.split(/\s+/)[0]}` : "";
-                let targetRec = isRealId && byRealId[kVal] && rowMeta.get(byRealId[kVal])?.sourceIdx !== pIdx ? byRealId[kVal] : void 0;
-                if (!targetRec && exactKey) targetRec = findBestNameMatch(byExactName[exactKey], objGr, objGen, isMarksSheet, pIdx);
-                if (!targetRec && shortKey) targetRec = findBestNameMatch(byShortName[shortKey], objGr, objGen, isMarksSheet, pIdx);
-                if (!targetRec && ln && fn) targetRec = findBestNameMatch(bySurname[ln], objGr, objGen, isMarksSheet, pIdx, fn);
+                let targetRec = isRealId ? byRealId[kVal] : void 0;
+                if (!targetRec && exactKey) targetRec = findBestNameMatch(byExactName[exactKey], fn, objGr, objGen, objDob, objPfn, isMarksSheet, pIdx);
+                if (!targetRec && shortKey) targetRec = findBestNameMatch(byShortName[shortKey], fn, objGr, objGen, objDob, objPfn, isMarksSheet, pIdx);
+                if (!targetRec && ln && fn) targetRec = findBestNameMatch(bySurname[ln], fn, objGr, objGen, objDob, objPfn, isMarksSheet, pIdx);
+                if (!targetRec && !isMarksSheet && rowNum && ln && byRowNumSurname[`${rowNum}|${ln}`]) {
+                  const candByNum = byRowNumSurname[`${rowNum}|${ln}`];
+                  const candFn = String(candByNum["First Name"] || "").trim().toLowerCase();
+                  if (!fn || !candFn || areCompatibleGivenNames(fn, candFn, false)) {
+                    targetRec = candByNum;
+                  }
+                }
                 if (!targetRec) {
                   targetRec = {};
                   headers.forEach((h) => {
@@ -30813,9 +31017,12 @@
                   const mergedRaw = { ...r };
                   mergedRawRows.push(mergedRaw);
                   Object.entries(obj).forEach(([k, v]) => {
-                    if (v !== null && v !== void 0 && v !== "") targetRec[k] = v;
+                    if (v !== null && v !== void 0 && v !== "") {
+                      targetRec[k] = v;
+                      allCovered.add(k);
+                    }
                   });
-                  rowMeta.set(targetRec, { grade: objGr, gender: objGen, matchedMarks: isMarksSheet, sourceIdx: pIdx, rawRow: mergedRaw, hl: rowHL || void 0, fal: rowFAL || void 0 });
+                  rowMeta.set(targetRec, { grade: objGr, gender: objGen, matchedMarks: isMarksSheet, sourceIdx: pIdx, rawRow: mergedRaw, rowNum: rowNum || void 0, hl: rowHL || void 0, fal: rowFAL || void 0 });
                   indexRec(targetRec);
                 } else {
                   const prevMeta = rowMeta.get(targetRec) || { grade: objGr, gender: objGen, matchedMarks: false, sourceIdx: 0, rawRow: {} };
@@ -30833,15 +31040,31 @@
                   Object.entries(obj).forEach(([k, v]) => {
                     if (v === null || v === void 0 || v === "") return;
                     const cur = targetRec[k];
-                    if (k === keyCol && isRealId && cur && /^\d{1,5}$/.test(String(cur).trim())) {
+                    if (k === keyCol && isRealId && (!cur || /^\d{1,5}$/.test(String(cur).trim()))) {
                       targetRec[k] = v;
+                      allCovered.add(k);
                     } else if (cur === null || cur === void 0 || cur === "") {
                       targetRec[k] = v;
+                      allCovered.add(k);
                     }
                   });
-                  if (isRealId) byRealId[kVal] = targetRec;
+                  if ((!targetRec["Date of Birth"] || targetRec["Date of Birth"] === "") && targetRec[keyCol]) {
+                    const { dob } = extractDobFromSaId(targetRec[keyCol]);
+                    if (dob) {
+                      targetRec["Date of Birth"] = dob;
+                      allCovered.add("Date of Birth");
+                    }
+                  }
+                  indexRec(targetRec);
                 }
               }
+            }
+            if (headers.includes("Student ID")) {
+              rows.forEach((rec, rIdx) => {
+                if (rec["Student ID"] === null || rec["Student ID"] === void 0 || rec["Student ID"] === "") {
+                  rec["Student ID"] = `STU${String(rIdx + 1).padStart(4, "0")}`;
+                }
+              });
             }
             if (listTargets.length) {
               const allSubjCols = sourcePlans.flatMap((sp) => sp.columns);
@@ -30864,8 +31087,8 @@
                   }
                 }
               }
-              unmappedTargets = headers.filter((th) => th !== "Total" && !allCovered.has(th));
             }
+            unmappedTargets = headers.filter((th) => th !== "Total" && !allCovered.has(th));
           } else {
             const sp = sourcePlans[0];
             const allH = parsed.headers;
@@ -30923,7 +31146,7 @@
           finalSources = sourcePlans.map(({ ps: _, ...rest }) => rest);
         }
         const id = uid(), now = (/* @__PURE__ */ new Date()).toISOString();
-        const rawSourceRowsForJob = !isPivot && parsedSources.length > 1 ? rows.map((_, i) => typeof mergedRawRows !== "undefined" && mergedRawRows[i] ? mergedRawRows[i] : parsed.rows[i] || {}) : parsed.rows;
+        const rawSourceRowsForJob = !isPivot && mergedRawRows.length > 0 ? mergedRawRows : parsed.rows;
         const j2 = {
           id,
           title: tplParsed.name,

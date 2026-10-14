@@ -793,7 +793,8 @@ def build_rows(records, destination, rules):
                             r_dict[subj_key] = f'{hl}; {fal}; Mathematics; Natural Sciences; Social Sciences; Technology; Economic and Management Sciences (EMS); Life Orientation; Creative Arts'
 
         source_regions = {r['id'].rsplit(':', 1)[0] for r in records}
-        if len(source_regions) > 1:
+        is_school_learner_job = any('First Name' in r.get('data', {}) and 'Last Name' in r.get('data', {}) for r in records)
+        if len(source_regions) > 1 or is_school_learner_job:
             # Sort records so Bio/Parent-Info sheets (without horizontal subject matrix) run FIRST and Mark Schedule sheets run SECOND
             ordered_records = sorted(records, key=lambda rec: 1 if 'horizontal subject-percentage matrix' in rec.get('operation', '') else 0)
             by_real_key: dict[str, tuple[int, str]] = {}
@@ -805,13 +806,49 @@ def build_rows(records, destination, rules):
             row_hls: dict[int, str] = {}
             row_fals: dict[int, str] = {}
             matched_marks_idxs: set[int] = set()
+            non_person_re = re.compile(
+                r'^(total|subtotal|grand\s*total|average|grade\s*average|learner\s*average.*|mean|summary|count|'
+                r'learners?|students?|male|female|boys|girls|grade\s*\d*|class|school.*|principal.*|teacher.*|'
+                r'educator.*|hod|signature.*|date.*|page\s*\d*|printed.*|generated.*|sa-?sams|gde|gauteng.*|'
+                r'department.*|district.*|circuit.*|emis.*|comment.*|code.*|achieved|not\s*achieved|pass|fail|'
+                r'surname|last\s*name|first\s*name|name|names|learner\s*name|student\s*name|gender|number|no\.?|accession.*)$',
+                re.I,
+            )
+
+            def _is_valid_person_name(s_val: str) -> bool:
+                s_c = (s_val or '').strip()
+                if len(s_c) < 2 or not re.search(r'[A-Za-z]{2}', s_c):
+                    return False
+                if non_person_re.match(s_c):
+                    return False
+                return True
 
             def _is_real_key(kv: str) -> bool:
                 return bool(kv and (len(kv) >= 6 or not kv.isdigit()))
 
-            def _pick_candidate(cands: list[tuple[int, str]], reg: str, rec_gr: str, rec_gen: str, is_marks: bool, fn_tokens: set[str] | None = None) -> int | None:
+            def _are_compatible_given_names(fn_a: str, fn_b: str, same_region: bool) -> bool:
+                if not fn_a or not fn_b:
+                    return False
+                if fn_a == fn_b:
+                    return True
+                tok_a = fn_a.split()
+                tok_b = fn_b.split()
+                if tok_a[0] == tok_b[0]:
+                    shorter, longer = (tok_a, tok_b) if len(tok_a) <= len(tok_b) else (tok_b, tok_a)
+                    return all(t in longer for t in shorter)
+                if same_region:
+                    return False
+                if len(tok_a) == 1 and len(tok_a[0]) >= 3 and tok_a[0] in tok_b:
+                    return True
+                if len(tok_b) == 1 and len(tok_b[0]) >= 3 and tok_b[0] in tok_a:
+                    return True
+                return False
+
+            def _pick_candidate(cands: list[tuple[int, str]], reg: str, rec_fn: str, rec_gr: str, rec_gen: str, rec_dob: str, rec_pfn: str, is_marks: bool) -> int | None:
                 for idx, r_reg in cands:
-                    if r_reg == reg:
+                    same_reg = (r_reg == reg)
+                    c_fn = norm(rows[idx].get('First Name') or rows[idx].get('first_name'))
+                    if not _are_compatible_given_names(rec_fn, c_fn, same_reg):
                         continue
                     if is_marks and idx in matched_marks_idxs:
                         continue
@@ -823,9 +860,12 @@ def build_rows(records, destination, rules):
                     # STRICT GENDER LOCK: If both sheets provide Gender (M/F), require Gender to match!
                     if rec_gen and c_gen and c_gen != rec_gen:
                         continue
-                    if fn_tokens:
-                        c_fn_tokens = {t for t in norm(rows[idx].get('First Name') or rows[idx].get('first_name')).split() if len(t) >= 2}
-                        if not (fn_tokens & c_fn_tokens):
+                    c_dob = str(rows[idx].get('Date of Birth') or '').strip()
+                    if rec_dob and c_dob and rec_dob != c_dob:
+                        continue
+                    if same_reg:
+                        c_pfn = norm(rows[idx].get('Parent First Name') or '')
+                        if rec_pfn and c_pfn and rec_pfn != c_pfn:
                             continue
                     return idx
                 return None
@@ -839,22 +879,28 @@ def build_rows(records, destination, rules):
                 rec_fal = record.get('_fal', '')
                 k_val = norm(data.get(destination.key)) if destination.key else ''
                 is_real_k = _is_real_key(k_val)
-                fn = norm(data.get('First Name') or data.get('first_name'))
-                ln = norm(data.get('Last Name') or data.get('last_name') or data.get('Surname'))
+                fn_raw = str(data.get('First Name') or data.get('first_name') or '').strip()
+                ln_raw = str(data.get('Last Name') or data.get('last_name') or data.get('Surname') or '').strip()
+                if is_school_learner_job:
+                    valid_both = _is_valid_person_name(fn_raw) and _is_valid_person_name(ln_raw)
+                    if not valid_both and not (is_real_k and k_val in by_real_key):
+                        continue
+                fn = norm(fn_raw)
+                ln = norm(ln_raw)
+                rec_dob = str(data.get('Date of Birth') or '').strip()
+                rec_pfn = norm(data.get('Parent First Name') or '')
                 exact_nm = (ln, fn) if (fn and ln) else None
                 short_nm = (ln, fn.split()[0]) if (fn and ln) else None
                 reg = record['id'].rsplit(':', 1)[0]
                 target_idx = None
-                if is_real_k and k_val in by_real_key and by_real_key[k_val][1] != reg:
+                if is_real_k and k_val in by_real_key:
                     target_idx = by_real_key[k_val][0]
                 elif exact_nm and exact_nm in by_exact_name:
-                    target_idx = _pick_candidate(by_exact_name[exact_nm], reg, rec_gr, rec_gen, is_marks)
+                    target_idx = _pick_candidate(by_exact_name[exact_nm], reg, fn, rec_gr, rec_gen, rec_dob, rec_pfn, is_marks)
                 if target_idx is None and short_nm and short_nm in by_short_name:
-                    target_idx = _pick_candidate(by_short_name[short_nm], reg, rec_gr, rec_gen, is_marks)
+                    target_idx = _pick_candidate(by_short_name[short_nm], reg, fn, rec_gr, rec_gen, rec_dob, rec_pfn, is_marks)
                 if target_idx is None and ln and fn and ln in by_surname:
-                    fn_tok_set = {t for t in fn.split() if len(t) >= 2}
-                    if fn_tok_set:
-                        target_idx = _pick_candidate(by_surname[ln], reg, rec_gr, rec_gen, is_marks, fn_tok_set)
+                    target_idx = _pick_candidate(by_surname[ln], reg, fn, rec_gr, rec_gen, rec_dob, rec_pfn, is_marks)
                 if target_idx is not None:
                     merged_row = rows[target_idx]
                     if is_marks:
@@ -872,10 +918,14 @@ def build_rows(records, destination, rules):
                             continue
                         cur_v = merged_row.get(f)
                         # Upgrade a row-counter Student ID (e.g. '5') to a real 13-digit Accession Number ('0905245292081') when matched!
-                        if f == destination.key and is_real_k and cur_v is not None and str(cur_v).strip().isdigit() and len(str(cur_v).strip()) <= 5:
+                        if f == destination.key and is_real_k and (cur_v in (None, '') or (str(cur_v).strip().isdigit() and len(str(cur_v).strip()) <= 5)):
                             merged_row[f] = v
                         elif cur_v in (None, ''):
                             merged_row[f] = v
+                    if not merged_row.get('Date of Birth') and merged_row.get(destination.key):
+                        sa_info = validate_and_repair_sa_id(merged_row.get(destination.key))
+                        if sa_info.get('dob'):
+                            merged_row['Date of Birth'] = sa_info['dob']
                     if is_real_k:
                         by_real_key[k_val] = (target_idx, reg)
                     provenance.append({'record_id': record['id'], 'target_row': destination.header_row + target_idx + 1, 'target_fields': list(data), 'sources': record['refs'], 'operation': 'multi-sheet relational join + ' + record.get('operation', 'column mapping')})

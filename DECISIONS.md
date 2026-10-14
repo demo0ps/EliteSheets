@@ -420,6 +420,24 @@ Status: Implemented, verified (`71 passed`), and deployed to `https://demo0ps.gi
      - Added `sourceIdx: pIdx` to `rowMeta` and enforced `if (meta?.sourceIdx === pIdx) return false` inside `findBestNameMatch` so two learners on the Bio sheet who share a surname, first given name, grade, and gender are never merged into one row.
      - Added `bySurname` / `by_surname` cross-sheet fallback (requiring matching Surname, Grade, Gender, 1-to-1 lock, and at least one shared given-name token) and bumped `localStorage` state key to `'sheetqms_static_state_v6'`.
 
+## D-040: Stacked Multi-Section Table Splitting (Line 1800+ Going Down) & Unified Single-Master-Row Learner Profile Merger (2026-10-14)
+- **Owner-Confirmed Decisions (`ask_user`):**
+  1. `section_from_line_1800_layout`: **`stacked_second_table_in_same_sheet`** — Inside the same spreadsheet, below row ~1800, another table/section starts (with its own headers/columns) containing extra details for the same learners listed at the top.
+  2. `fields_found_below_1800`: **`all_missing_pieces_across_sections`** — Different sections/sheets each hold a piece of the learner's profile (`Date of Birth`, `SA ID / Accession Number`, `Subjects`, `Parent` details, `Grade`).
+  3. `master_sheet_row_limit_and_merge_rule`: **`one_row_per_unique_learner_fill_gaps`** — Keep strictly 1 row per unique learner (bounded to the actual number of learners on the spreadsheet, e.g. ~1,800), pulling missing fields from line 1800+ and across all sheets into that learner's single master row.
+  4. `matching_key_for_1800_down`: **`match_by_name_grade_or_id`** — Match by `Surname + First Name` (with `Grade`/`Gender` when available), or by `SA ID / Accession Number` when present.
+- **Implemented across `web/app.ts` (`web/app.js`), `sheetqms/workbooks.py`, `sheetqms/engine.py`, and `tests/test_online.py`:**
+  1. **Automatic Stacked-Table / Mid-Sheet Section Splitter (`splitMatrixIntoSections` / `_split_and_normalize_sheet_sections`):**
+     - Scans the entire worksheet (beyond the top header row, including line 1800+ going down) for any mid-sheet table header rows (`isMidSheetHeaderRow` / `_is_mid_sheet_school_header_row`) and preceding banner rows (`isBannerOrMetadataRow` / `_is_banner_or_metadata_row`), plus multiple `<table>` elements in HTML `.xls` files.
+     - Splits each stacked section into its own table (`Sheet1`, `Sheet1 (Section 2)`, etc.) so each section is parsed with its own header row, its own `bannerGrade`, and its own column mapping rather than being misread under Row 1's columns.
+  2. **Row-Level Field Recovery (`Class -> Grade`, Shifted `SURNAME, FirstName`, 10–13 Digit SA ID & DOB):**
+     - Automatically infers `Grade` (`Grade 8`..`Grade 12`) from `Class` codes (`8A`..`12Z`) when `Grade` is blank, recovers `Accession Number` and `Date of Birth` from any non-parent cell on the row, and splits shifted `"SURNAME, FirstName"` cells when `First Name` / `Last Name` are empty.
+  3. **Unified Relational Master-Row Merger (`parsedSources.length > 1 || isSchoolLearnerJob`) & Non-Learner Row Filter:**
+     - Runs the deduplicating relational merger across all sections and sheets (even within a single uploaded file), merging any matching learner from line 1800+ or secondary sheets into their single Master Row at the top (`byRealId`, `byExactName`, `byShortName`, `bySurname`, and `byRowNumSurname` fallback).
+     - Filters out non-learner banner, summary, total, average, and footer rows (`isValidPersonName` / `_is_valid_person_name`) so the Master Sheet stays strictly bounded to the actual learners on the spreadsheet.
+     - Bumped `localStorage` state key to `'sheetqms_static_state_v7'`.
+
+
 
 
 

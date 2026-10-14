@@ -25,14 +25,14 @@ Implemented in `sheetqms-cloud/`:
 
 ## Executed verification — v0.2 (`sheetqms-cloud/`)
 
-- Full pytest: **71 passed, 1 test-client deprecation warning**, exit 0 (`14.66s`). Evidence: `sheetqms-cloud/verification/automated-tests.txt`.
-- Bundle build: `web/app.ts` $\rightarrow$ `web/app.js` (`1050.1kb` with SheetJS `.xls`/`.xlsx` engine + SA-SAMS/GDE 2-sheet Bio + Mark Schedule joiner with Strict Grade + Gender + 1-to-1 Lock, Grade 8/9 CAPS Senior Phase 9-subject auto-fill, blank `Parent Email` on Bio sheets without parent email columns, full multi-format Bio `Birth Date`/`Date of Birth` normalization across Grades 8–12, and no same-sheet learner merging (`D-037`, `D-038`, `D-039`), `styles.css?v=b331f82728e9`, `app.js?v=269a6c4a92ad`).
-- Deliverable archive: `/home/user/SheetQMS-online.zip` (`1,707,836 bytes`, 64 files, `sha256=d45fecd456d5d1751c0efc38662f934dd0abce1a9f80058b36d34ff185c4f1ad`).
+- Full pytest: **71 passed, 1 test-client deprecation warning**, exit 0 (`14.87s`). Evidence: `sheetqms-cloud/verification/automated-tests.txt`.
+- Bundle build: `web/app.ts` $\rightarrow$ `web/app.js` (`1056.8kb` with SheetJS `.xls`/`.xlsx` engine + Stacked Multi-Section Table Splitter (`line 1800+ going down`) + Unified Single-Master-Row Learner Profile Merger (`D-037`, `D-038`, `D-039`, `D-040`), `styles.css?v=b331f82728e9`, `app.js?v=23ae4ef9ee62`).
+- Deliverable archive: `/home/user/SheetQMS-online.zip` (`1,716,378 bytes`, 64 files, `sha256=4620d22019a8a1d8d64ffebaefe48a9ea4bee5e9becacaad88d76a40d13b283d`).
 
 ## Running development preview & published GitHub Pages preview
 
-- **Arena Sandbox FastAPI Preview:** `EduSheetManager — by EduSCF` is running on port **3001**, managed process `edusheetmanager-by-eduscf-9ef38e81` (`SHEETQMS_DEMO=1`).
-- **GitHub Repository & Pages:** `https://github.com/demo0ps/SheetQMS` and `https://demo0ps.github.io/SheetQMS/` (note: to push `D-039` (`app.js?v=269a6c4a92ad`) to GitHub Pages, provide a transient GitHub PAT for `demo0ps/SheetQMS` as earlier tokens are immediately wiped after push per credential hygiene).
+- **Arena Sandbox FastAPI Preview:** `EduSheetManager — by EduSCF` is running on port **3001**, managed process `edusheetmanager-by-eduscf-a113cc12` (`SHEETQMS_DEMO=1`).
+- **GitHub Repository & Pages:** `https://github.com/demo0ps/SheetQMS` and `https://demo0ps.github.io/SheetQMS/` (last pushed at `8e12a24`; send a transient PAT whenever you want `D-040` (`app.js?v=23ae4ef9ee62`) pushed to GitHub Pages).
 
 ## Known gaps / blockers before production
 
