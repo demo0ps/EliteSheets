@@ -566,6 +566,104 @@ def test_template_library_sheet_builder_and_cleaning_tools(client):
     assert r0['Parent Phone'] == '0821234567'
 
 
+def test_four_vertical_signup_luhn_sa_id_repair_caps_levels_and_folder_batch(client):
+    from io import BytesIO
+    from openpyxl import Workbook
+    c, _ = client
+
+    # 1. Self-service Sign-Up with Vertical Selection (e.g. 'sme_pa' or 'education')
+    signup_resp = c.post('/api/auth/signup', json={
+        'name': 'Greenwood District Academy',
+        'email': 'principal@greenwood.edu.za',
+        'display_name': 'Principal Mokoena',
+        'password': 'SecurePassword123!',
+        'vertical': 'education',
+    })
+    assert signup_resp.status_code == 200
+    data = signup_resp.json()
+    c.headers['X-CSRF-Token'] = data['csrf']
+    c.headers['X-Workspace-ID'] = data['user']['tenant_id']
+
+    ov = c.get('/api/overview').json()
+    assert ov['preferences']['vertical'] == 'education'
+
+    # Switch vertical in Top Bar / Preferences to 'finance_hr' and verify persistence
+    pref_resp = c.put('/api/preferences', json={
+        'theme': 'dark',
+        'density': 'comfortable',
+        'explanations': 'detailed',
+        'auto_checks': True,
+        'vertical': 'finance_hr',
+    })
+    assert pref_resp.status_code == 200
+    assert pref_resp.json()['vertical'] == 'finance_hr'
+
+    # 2. Luhn 13-digit SA ID Validator + Born 2000-2009 Leading-Zero Auto-Repair + CAPS Achievement Levels (1-7)
+    sa_caps_job = c.post('/api/jobs/from-builder', json={
+        'title': 'SA-ID-Luhn-and-CAPS.xlsx',
+        'sheet': 'Learners',
+        'headers': ['Student ID', 'Learner Name', 'SA ID Number', 'Date of Birth', 'Gender', 'Grade', 'Mathematics'],
+        'rows': [
+            # Valid 13-digit SA ID (Luhn digit 8)
+            {'Student ID': 'STU001', 'Learner Name': 'JOHN DOE', 'SA ID Number': '1503155123088', 'Date of Birth': '', 'Gender': '', 'Grade': '8', 'Mathematics': 82},
+            # 12-digit SA ID born 2008-03-05 where Excel stripped leading '0' (Luhn digit 4)
+            {'Student ID': 'STU002', 'Learner Name': 'thabo mokoena', 'SA ID Number': 803055123084, 'Date of Birth': '', 'Gender': '', 'Grade': '10', 'Mathematics': 34},
+            # Foreign Passport / Study Permit ID
+            {'Student ID': 'STU003', 'Learner Name': 'Chipo Ndlovu', 'SA ID Number': 'P8492011', 'Date of Birth': '', 'Gender': '', 'Grade': '9', 'Mathematics': 65},
+            # Invalid Luhn checksum digit (9 instead of 7)
+            {'Student ID': 'STU004', 'Learner Name': 'Emma Johnson', 'SA ID Number': '1601100234089', 'Date of Birth': '', 'Gender': '', 'Grade': '7', 'Mathematics': 25},
+        ],
+        'request_id': 'said-luhn-caps-001',
+    }).json()
+
+    cleaned = c.post(f'/api/jobs/{sa_caps_job["id"]}/clean', json={'operation': 'smart_fix_contacts', 'request_id': 'clean-luhn-001'}).json()
+    rows = cleaned['report']['rows']
+    assert rows[0]['SA ID Number'] == '1503155123088'
+    assert rows[0]['SA ID Status'].startswith('Valid SA ID')
+    assert rows[1]['SA ID Number'] == '0803055123084'
+    assert rows[1]['SA ID Status'].startswith('Repaired SA ID (Leading 0 Restored')
+    assert rows[1]['Date of Birth'] == '2008-03-05'
+    assert rows[2]['SA ID Status'] == 'Foreign / Passport / Permit ID'
+    assert 'Checksum Failed' in rows[3]['SA ID Status']
+
+    caps_res = c.post(f'/api/jobs/{sa_caps_job["id"]}/clean', json={'operation': 'caps_levels', 'request_id': 'clean-caps-001'}).json()
+    c_rows = caps_res['report']['rows']
+    assert c_rows[0]['Mathematics (CAPS 1-7)'] == 'Level 7'
+    assert c_rows[1]['Mathematics (CAPS 1-7)'] == 'Level 2'
+    assert 'At Risk' in c_rows[3]['CAPS Summary']
+
+    # 3. Multi-Batch Folder Upload (/api/jobs/batch-folder) merging 3 spreadsheets with Source File + Cross-File Duplicate Flagging
+    def make_school_bytes(rows_list):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Learners'
+        ws.append(['Student ID', 'Learner Name', 'SA ID Number', 'Grade'])
+        for r in rows_list:
+            ws.append(r)
+        bio = BytesIO()
+        wb.save(bio)
+        return bio.getvalue()
+
+    b1 = make_school_bytes([['STU001', 'John Doe', '1503155123088', 'Gr 8'], ['STU002', 'Thabo Mokoena', 803055123084, 'Gr 10']])
+    b2 = make_school_bytes([['STU001', 'John Doe', '1503155123088', 'Grade 8'], ['STU003', 'Emma Johnson', '1601100234089', 'Gr 7']])
+
+    batch_job = c.post('/api/jobs/batch-folder', data={'request_id': 'batch-folder-001', 'title': 'District-Master.xlsx'}, files=[
+        ('sources', ('School-A.xlsx', b1, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+        ('sources', ('School-B.xlsx', b2, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')),
+    ]).json()
+    assert batch_job['state'] == 'RELEASED'
+    assert batch_job['batch_audit']['files_merged'] == 2
+    assert batch_job['batch_audit']['total_rows'] == 4
+    assert batch_job['batch_audit']['cross_file_duplicates'] == 2
+    assert batch_job['batch_audit']['repaired_sa_ids'] == 1
+    b_rows = batch_job['report']['rows']
+    assert b_rows[0]['Source File'] == 'School-A.xlsx'
+    assert 'Duplicate across: School-A.xlsx, School-B.xlsx' in b_rows[0]['Duplicate Status']
+    assert b_rows[1]['SA ID Number'] == '0803055123084'
+    assert b_rows[1]['SA ID Status'].startswith('Repaired SA ID (Leading 0 Restored')
+
+
+
 
 
 

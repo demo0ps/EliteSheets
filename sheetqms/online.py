@@ -24,13 +24,13 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import ai
 from .blobs import LocalBlobs, R2Blobs, materialise
 from .cloud_store import CloudStore
-from .engine import infer_plan, finalise_cell_profiles, input_signature, rebind_knowledge, transform, decimal_value
+from .engine import infer_plan, finalise_cell_profiles, input_signature, rebind_knowledge, transform, decimal_value, validate_and_repair_sa_id, percentage_to_caps_level
 from .models import MappingPlan, SourcePlan, AISettings
-from .online_models import Login, DemoLogin, Preferences, PlatformSettings, CustomerCreate, ChatInput, ProposalConfirm, Run, Analyse, PlanConfirm
+from .online_models import Login, Signup, DemoLogin, Preferences, PlatformSettings, CustomerCreate, ChatInput, ProposalConfirm, Run, Analyse, PlanConfirm
 from .samples import create_samples, sample_case
 from .security import password_hash, password_matches, Vault
 from .store import now, canonical, digest, microdollars
-from .workbooks import profile, check_file, public_value
+from .workbooks import profile, check_file, public_value, norm, book_rows
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = logging.getLogger('sheetqms.online')
@@ -137,7 +137,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         return {'enabled': settings.enabled and not demo, 'model': settings.model or 'Not configured', 'key_configured': bool(store.encrypted_key()), 'demo_mode': demo, 'auto_learn': settings.auto_learn, 'note': 'Only the platform admin can change AI credentials, models and spending.'}
 
     def public(job):
-        return {k: job.get(k) for k in ['id', 'title', 'created', 'state', 'trace_id', 'profiles', 'plan', 'report', 'mapping_origin', 'clarifications', 'chat', 'proposal', 'knowledge_conflict', 'use_workbook_rules', 'knowledge_id', 'plan_confirmation']}
+        return {k: job.get(k) for k in ['id', 'title', 'created', 'state', 'trace_id', 'profiles', 'plan', 'report', 'mapping_origin', 'clarifications', 'chat', 'proposal', 'knowledge_conflict', 'use_workbook_rules', 'knowledge_id', 'plan_confirmation', 'batch_audit']}
 
     def get_job(tenant, identifier):
         job = store.job(tenant, identifier)
@@ -362,12 +362,32 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             raise HTTPException(401, 'Email or password is incorrect.')
         return login_result(user, response)
 
+    @app.post('/api/auth/signup')
+    def signup(body: Signup, request: Request, response: Response):
+        key = digest(['signup', request.client.host, body.email.lower()])
+        if not store.take_rate(key):
+            raise HTTPException(429, 'Too many sign-up attempts. Try later.')
+        if store.user_email(body.email):
+            raise HTTPException(409, 'An account with this email already exists.')
+        tenant = str(uuid.uuid4())
+        user = store.bootstrap_user(tenant, body.name.strip(), body.email.strip(), body.display_name.strip(), 'operator', password_hash(body.password))
+        prefs = Preferences.model_validate(store.preferences(user['id'])).model_dump()
+        prefs['vertical'] = body.vertical
+        store.save_preferences(user['id'], prefs)
+        store.event('platform', None, str(uuid.uuid4()), 'customer_signup', {'tenant_id': tenant, 'vertical': body.vertical})
+        return login_result(user, response)
+
     @app.post('/api/auth/demo')
     def demo_login(body: DemoLogin, response: Response):
         if not demo:
             raise HTTPException(404, 'Demo sign-in is disabled.')
         email = {'operator': 'operator@demo.sheetqms', 'admin': 'admin@demo.sheetqms', 'other_customer': 'other@demo.sheetqms'}[body.role]
-        return login_result(store.user_email(email), response)
+        user = store.user_email(email)
+        if body.vertical:
+            prefs = Preferences.model_validate(store.preferences(user['id'])).model_dump()
+            prefs['vertical'] = body.vertical
+            store.save_preferences(user['id'], prefs)
+        return login_result(user, response)
 
     @app.get('/api/auth/session')
     def session(user=Depends(current)):
@@ -405,12 +425,14 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             raise HTTPException(404, 'Synthetic intake is disabled in production.')
         _, tenant = identity
         case = body.get('case', 'pivot')
-        if case not in {'pivot', 'hold', 'unpivot', 'direct', 'form', 'chat_map', 'sasams_students'}:
+        if case not in {'pivot', 'hold', 'unpivot', 'direct', 'form', 'chat_map', 'sasams_students', 'district_batch'}:
             raise HTTPException(422, 'Unknown example case.')
         request_id = str(body.get('request_id', ''))
         if not 8 <= len(request_id) <= 100:
             raise HTTPException(422, 'A bounded intake request identity is required.')
         target, sources = sample_case(samples_dir, case)
+        if case == 'district_batch':
+            return _merge_batch_files(identity, request_id, [(p.name, p.read_bytes()) for p in sources], 'District-Schools-Master-Batch.xlsx')
         job = create_job(tenant, request_id, (target.name, target.read_bytes()), [(p.name, p.read_bytes()) for p in sources], '')
         return public(job)
 
@@ -1366,21 +1388,37 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             id_col = next((h for h in headers if any(w in h.casefold() for w in ('sa id', 'id number', 'identity', 'id no'))), None)
             dob_col = next((h for h in headers if any(w in h.casefold() for w in ('date of birth', 'dob', 'birth'))), None)
             gender_col = next((h for h in headers if 'gender' in h.casefold() or 'sex' in h.casefold()), None)
+            status_col = 'SA ID Status' if id_col else None
+            if status_col and status_col not in headers:
+                headers.append(status_col)
+                report['headers'] = headers
             fixed_count = 0
+            luhn_valid = 0
+            repaired_zeros = 0
+            luhn_failed = 0
             for r in rows:
-                if id_col and r.get(id_col) is not None:
-                    digits = re.sub(r'\D', '', str(r[id_col]))
-                    if len(digits) == 13:
-                        yy, mm, dd = int(digits[:2]), int(digits[2:4]), int(digits[4:6])
-                        century = 2000 if yy <= 26 else 1900
-                        if 1 <= mm <= 12 and 1 <= dd <= 31:
-                            if dob_col and not r.get(dob_col):
-                                r[dob_col] = f'{century + yy:04d}-{mm:02d}-{dd:02d}'
-                                fixed_count += 1
-                        if gender_col and not r.get(gender_col):
-                            r[gender_col] = 'Male' if int(digits[6:10]) >= 5000 else 'Female'
-                            fixed_count += 1
+                if id_col:
+                    info = validate_and_repair_sa_id(r.get(id_col))
+                    if info['id_str'] and str(r.get(id_col, '')) != info['id_str']:
+                        r[id_col] = info['id_str']
+                        fixed_count += 1
+                    if info['repaired']:
+                        repaired_zeros += 1
+                    if info['valid_luhn']:
+                        luhn_valid += 1
+                    elif info['id_str'] and 'Checksum Failed' in info['status']:
+                        luhn_failed += 1
+                    if dob_col and not r.get(dob_col) and info['dob']:
+                        r[dob_col] = info['dob']
+                        fixed_count += 1
+                    if gender_col and not r.get(gender_col) and info['gender']:
+                        r[gender_col] = info['gender']
+                        fixed_count += 1
+                    if status_col:
+                        r[status_col] = info['status']
                 for h in headers:
+                    if h == status_col:
+                        continue
                     val = r.get(h)
                     if val is None:
                         continue
@@ -1409,7 +1447,32 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
                         if m and f'Grade {m.group(1)}' != s:
                             r[h] = f'Grade {m.group(1)}'
                             fixed_count += 1
-            return save_edited_workbook(tenant, job, f'Done! I ran SA ID & Contact Smart Fix ({fixed_count} field(s) normalized across names, phones, emails, grades, and SA IDs).')
+            id_note = f' (SA IDs: {luhn_valid} Luhn-valid, {repaired_zeros} leading-zero repaired, {luhn_failed} checksum warnings)' if id_col else ''
+            return save_edited_workbook(tenant, job, f'Done! I ran SA ID Luhn Validation & Contact Smart Fix — {fixed_count} field(s) updated{id_note}.')
+        if op == 'caps_levels':
+            skip_cols = {'student id', 'learner id', 'admission no', 'first name', 'last name', 'surname', 'full name', 'date of birth', 'dob', 'gender', 'grade', 'sa id', 'sa id number', 'sa id status', 'parent phone', 'parent email', 'source file', 'duplicate status'}
+            subj_cols = [h for h in headers if h.casefold() not in skip_cols and any(percentage_to_caps_level(r.get(h)) is not None for r in rows)]
+            if not subj_cols:
+                return save_edited_workbook(tenant, job, 'No numeric/percentage subject columns found on this sheet for CAPS Level (1–7) calculation.')
+            for sc in subj_cols:
+                lvl_col = f'{sc} (CAPS 1-7)'
+                if lvl_col not in headers:
+                    headers.append(lvl_col)
+                for r in rows:
+                    lvl = percentage_to_caps_level(r.get(sc))
+                    r[lvl_col] = f'Level {lvl}' if lvl is not None else ''
+            if 'CAPS Summary' not in headers:
+                headers.append('CAPS Summary')
+            for r in rows:
+                lvls = [percentage_to_caps_level(r.get(sc)) for sc in subj_cols]
+                valid_lvls = [x for x in lvls if x is not None]
+                if valid_lvls:
+                    avg_lvl = round(sum(valid_lvls) / len(valid_lvls), 1)
+                    r['CAPS Summary'] = f'Avg Level {avg_lvl} ({"Pass" if min(valid_lvls) >= 3 else "At Risk"})'
+                else:
+                    r['CAPS Summary'] = ''
+            report['headers'] = headers
+            return save_edited_workbook(tenant, job, f'Done! I calculated CAPS Achievement Levels (1–7) and At-Risk status across {len(subj_cols)} subject column(s).')
         if op == 'add_total_row':
             rows = [r for r in rows if str(r.get(key_col, '')).strip().casefold() != 'total']
             tot_row: dict[str, object] = {h: '' for h in headers}
@@ -1425,6 +1488,181 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             report['rows'] = rows
             return save_edited_workbook(tenant, job, 'Done! I calculated and appended a Total summary row at the bottom of your sheet.')
         raise HTTPException(422, 'Unsupported cleaning operation.')
+
+    def _merge_batch_files(identity, request_id: str, source_bytes: list[tuple[str, bytes]], title: str):
+        from openpyxl import Workbook
+        from .samples import style_sheet
+        from .engine import format_field_value
+        _, tenant = identity
+        # Inspect headers of each file to decide between Relational Join vs Multi-File Folder Stack
+        inspected_tables = []
+        with tempfile.TemporaryDirectory() as tmpd:
+            for idx, (fname, data) in enumerate(source_bytes):
+                ext = Path(fname).suffix.lower()
+                p = Path(tmpd) / f'batch_{idx}{ext}'
+                p.write_bytes(data)
+                prof = profile(p, f'source-{idx+1}')
+                sh = prof['sheets'][0]
+                hr = sh['header_row']
+                raw_rows = book_rows(p, data_only=True)[sh['name']]
+                hs = [str(v or '').strip() for v in raw_rows[hr - 1]] if hr <= len(raw_rows) else list(sh['headers'])
+                while hs and not hs[-1]:
+                    hs.pop()
+                data_rows = []
+                ignored = {'subtotal', 'total', 'grand total', 'sum', 'average', 'notes'}
+                for r in raw_rows[hr:]:
+                    if not r or all(v is None or str(v).strip() == '' for v in r):
+                        continue
+                    if [norm(v) for v in r[:len(hs)]] == [norm(h) for h in hs]:
+                        continue
+                    if norm(r[0] if r else '') in ignored:
+                        continue
+                    row_dict = {hs[i]: (r[i] if i < len(r) else None) for i in range(len(hs))}
+                    data_rows.append(row_dict)
+                inspected_tables.append({'name': fname, 'headers': hs, 'rows': data_rows})
+
+        # Check if this is a 2-file relational pair (e.g. Bio + Subject Marks) with low header overlap
+        if len(inspected_tables) == 2:
+            h0 = {norm(h) for h in inspected_tables[0]['headers']}
+            h1 = {norm(h) for h in inspected_tables[1]['headers']}
+            overlap = len(h0 & h1) / max(1, min(len(h0), len(h1)))
+            if overlap < 0.55 and (h0 & h1):
+                all_Demo = list(inspected_tables[0]['headers'])
+                if not any(norm(h) == 'subjects' for h in all_Demo):
+                    all_Demo.insert(min(5, len(all_Demo)), 'Subjects')
+                wb_t = Workbook()
+                ws_t = wb_t.active
+                ws_t.title = 'Merged_Output'
+                ws_t.append(all_Demo)
+                style_sheet(ws_t, 1, 20)
+                bio_t = BytesIO()
+                wb_t.save(bio_t)
+                job = create_job(tenant, request_id, ('Master-Relational-Join.xlsx', bio_t.getvalue()), source_bytes, title or 'Master-Relational-Join.xlsx')
+                job['chat'] = []
+                job = run_job(tenant, job)
+                return public(job)
+
+        # Otherwise: Stack all files from the folder into one Master Sheet with 'Source File', 'Duplicate Status', and SA ID Luhn Audit!
+        master_headers: list[str] = ['Source File']
+        for tbl in inspected_tables:
+            for h in tbl['headers']:
+                if not any(norm(existing) == norm(h) for existing in master_headers):
+                    master_headers.append(h)
+
+        key_col = master_headers[1] if len(master_headers) > 1 else master_headers[0]
+        sa_id_col = next((h for h in master_headers if any(w in h.casefold() for w in ('sa id', 'id number', 'identity', 'id no'))), None)
+        dob_col = next((h for h in master_headers if any(w in h.casefold() for w in ('date of birth', 'dob', 'birth'))), None)
+        gender_col = next((h for h in master_headers if 'gender' in h.casefold() or 'sex' in h.casefold()), None)
+        if sa_id_col and 'SA ID Status' not in master_headers:
+            master_headers.append('SA ID Status')
+        if 'Duplicate Status' not in master_headers:
+            master_headers.append('Duplicate Status')
+
+        # Track cross-file occurrences by primary key AND by SA ID
+        key_files: dict[str, list[str]] = {}
+        said_files: dict[str, list[str]] = {}
+        stacked_rows: list[dict] = []
+        file_breakdown: list[dict] = []
+        sa_valid = 0
+        sa_repaired = 0
+        sa_foreign = 0
+        sa_invalid = 0
+
+        for tbl in inspected_tables:
+            fname = tbl['name']
+            file_breakdown.append({'file': fname, 'rows': len(tbl['rows'])})
+            norm_to_master = {norm(mh): mh for mh in master_headers}
+            for raw_r in tbl['rows']:
+                rec: dict[str, object] = {mh: '' for mh in master_headers}
+                rec['Source File'] = fname
+                for h, val in raw_r.items():
+                    mh = norm_to_master.get(norm(h), h)
+                    fmt_v = format_field_value(mh, val, set())
+                    rec[mh] = '' if fmt_v is None else fmt_v
+                if sa_id_col:
+                    info = validate_and_repair_sa_id(rec.get(sa_id_col))
+                    if info['id_str']:
+                        rec[sa_id_col] = info['id_str']
+                    if info['repaired']:
+                        sa_repaired += 1
+                    elif info['status'].startswith('Valid SA ID'):
+                        sa_valid += 1
+                    elif info['status'].startswith('Foreign'):
+                        sa_foreign += 1
+                    elif info['id_str'] and 'Checksum Failed' in info['status']:
+                        sa_invalid += 1
+                    if dob_col and not rec.get(dob_col) and info['dob']:
+                        rec[dob_col] = info['dob']
+                    if gender_col and not rec.get(gender_col) and info['gender']:
+                        rec[gender_col] = info['gender']
+                    rec['SA ID Status'] = info['status']
+                    if info['id_str']:
+                        said_files.setdefault(info['id_str'].lower(), []).append(fname)
+                kv = str(rec.get(key_col, '')).strip().lower()
+                if kv:
+                    key_files.setdefault(kv, []).append(fname)
+                stacked_rows.append(rec)
+
+        cross_dups = 0
+        for rec in stacked_rows:
+            kv = str(rec.get(key_col, '')).strip().lower()
+            sv = str(rec.get(sa_id_col, '')).strip().lower() if sa_id_col else ''
+            f_list = key_files.get(kv, []) if kv else []
+            s_list = said_files.get(sv, []) if sv else []
+            dup_sources = sorted(set(f_list if len(f_list) > 1 else (s_list if len(s_list) > 1 else [])))
+            if len(f_list) > 1 or len(s_list) > 1:
+                cross_dups += 1
+                rec['Duplicate Status'] = f'Duplicate across: {", ".join(dup_sources)}'
+            else:
+                rec['Duplicate Status'] = 'Unique'
+
+        job = create_job_from_builder({
+            'title': title or 'Master-Batch-Consolidation.xlsx',
+            'sheet': 'Master_Batch',
+            'headers': master_headers,
+            'rows': stacked_rows,
+            'request_id': request_id,
+        }, identity=identity)
+        stored_job = get_job(tenant, job['id'])
+        stored_job['report']['headers'] = master_headers
+        stored_job['report']['rows'] = stacked_rows
+        stored_job['batch_audit'] = {
+            'files_merged': len(inspected_tables),
+            'total_rows': len(stacked_rows),
+            'cross_file_duplicates': cross_dups,
+            'valid_sa_ids': sa_valid,
+            'repaired_sa_ids': sa_repaired,
+            'foreign_or_permit_ids': sa_foreign,
+            'invalid_sa_ids': sa_invalid,
+            'sa_ids_validated': sa_valid + sa_repaired,
+            'sa_ids_repaired': sa_repaired,
+            'sa_ids_invalid_checksum': sa_invalid,
+            'file_breakdown': file_breakdown,
+        }
+        stored_job['chat'] = []
+        summary_msg = (
+            f"Batch Folder Merge Complete! Consolidated {len(inspected_tables)} files ({len(stacked_rows)} total rows) into one Master Sheet. "
+            f"Flagged {cross_dups} cross-file duplicate row(s)"
+            + (f" and validated SA IDs ({sa_valid} Luhn-valid, {sa_repaired} leading-0 repaired, {sa_foreign} foreign/permit, {sa_invalid} checksum warnings)." if sa_id_col else ".")
+            + " Click 'Audit Certificate' in Tools or Download XLSX!"
+        )
+        stored_job = save_edited_workbook(tenant, stored_job, summary_msg)
+        store.save_job(tenant, stored_job, 'batch_folder_merged', stored_job['batch_audit'])
+        return public(stored_job)
+
+    @app.post('/api/jobs/batch-folder')
+    async def batch_folder_intake(sources: list[UploadFile] = File(...), request_id: str = Form(...), title: str = Form('Master-Batch-Consolidation.xlsx'), identity=Depends(workspace)):
+        if not 1 <= len(sources) <= 50:
+            raise HTTPException(422, 'Upload between 1 and 50 spreadsheets in a folder batch.')
+        source_bytes = []
+        for src in sources:
+            fname = Path(src.filename or 'sheet.xlsx').name
+            if Path(fname).suffix.lower() not in {'.xlsx', '.csv'}:
+                continue
+            source_bytes.append((fname, await src.read(20 * 1024 * 1024 + 1)))
+        if not source_bytes:
+            raise HTTPException(422, 'No .xlsx or .csv files found in the selected folder.')
+        return _merge_batch_files(identity, request_id, source_bytes, title)
 
     return app
 

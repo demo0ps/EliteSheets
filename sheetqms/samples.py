@@ -72,6 +72,7 @@ def create_samples(folder: Path):
     folder.mkdir(parents=True, exist_ok=True)
     row_label_samples(folder)
     sasams_student_samples(folder)
+    district_batch_samples(folder)
     target(folder / 'monthly-output-template.xlsx')
     target(folder / 'long-output-template.xlsx', 'long')
     target(folder / 'items-output-template.xlsx', 'direct')
@@ -122,6 +123,12 @@ def create_samples(folder: Path):
 
 
 def sample_case(folder: Path, case: str):
+    if case == 'district_batch':
+        return folder / 'School-A-Greenwood-High.xlsx', [
+            folder / 'School-A-Greenwood-High.xlsx',
+            folder / 'School-B-Horizon-Academy.xlsx',
+            folder / 'School-C-Lakeside-Secondary.xlsx',
+        ]
     if case == 'sasams_students':
         return folder / 'student-import-template.xlsx', [
             folder / 'sasams-sheet1-learner-parent-bio.xlsx',
@@ -226,3 +233,38 @@ def row_label_samples(folder: Path):
     ws.append(['Name', 'City', 'Reference'])
     ws.append(['Example Person', 'Sample City', 'REQ-001'])
     wb.save(folder / 'expected-row-label-output.xlsx')
+
+
+def district_batch_samples(folder: Path):
+    # 3 school spreadsheets for Multi-School District Folder Batch + SA ID Luhn & Ghost Learner Audit
+    wb_a = Workbook()
+    ws_a = wb_a.active
+    ws_a.title = 'Learners'
+    ws_a.append(['Student ID', 'Learner Name', 'SA ID Number', 'Grade', 'Parent Phone', 'Mathematics'])
+    # STU001: Valid 13-digit SA ID 1503155123088 (Luhn digit 8), also enrolled at School B -> Ghost Learner duplicate!
+    # STU002: 12-digit SA ID 803055123084 (born 2008-03-05, Excel stripped leading '0') -> Auto-repaired to '0803055123084'!
+    ws_a.append(['STU001', 'John Doe', '1503155123088', 'Gr 8', 821234567, 78])
+    ws_a.append(['STU002', 'thabo mokoena', 803055123084, 10, '083 987 6543', 64])
+    style_sheet(ws_a, 1, 20)
+    wb_a.save(folder / 'School-A-Greenwood-High.xlsx')
+
+    wb_b = Workbook()
+    ws_b = wb_b.active
+    ws_b.title = 'Learners'
+    ws_b.append(['Student ID', 'Learner Name', 'SA ID Number', 'Grade', 'Parent Phone', 'Mathematics'])
+    # STU001: Cross-school duplicate ("Ghost Learner")
+    # STU003: Invalid SA ID 1601100234089 (Luhn check digit 9 instead of 7)
+    ws_b.append(['STU001', 'John Doe', '1503155123088', 'Grade 8', '0821234567', 78])
+    ws_b.append(['STU003', 'Emma Johnson', '1601100234089', 'Gr 7', '0847654321', 28])
+    style_sheet(ws_b, 1, 20)
+    wb_b.save(folder / 'School-B-Horizon-Academy.xlsx')
+
+    wb_c = Workbook()
+    ws_c = wb_c.active
+    ws_c.title = 'Learners'
+    ws_c.append(['Student ID', 'Learner Name', 'SA ID Number', 'Grade', 'Parent Phone', 'Mathematics'])
+    # STU004: Foreign Passport / Study Permit ID
+    ws_c.append(['STU004', 'Chipo Ndlovu', 'P8492011', 'Grade 9', '+27 84 111 2233', 82])
+    style_sheet(ws_c, 1, 20)
+    wb_c.save(folder / 'School-C-Lakeside-Secondary.xlsx')
+

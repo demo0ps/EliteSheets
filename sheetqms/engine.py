@@ -434,7 +434,86 @@ def format_field_value(target_field: str, value, numeric_fields: set[str], confi
     if nf in {'subjects', 'subject', 'enrolled subjects', 'subject list', 'courses', 'modules'} and isinstance(value, str):
         parts = [p.strip() for p in re.split(r'[;,|]+', value) if p.strip()]
         return '; '.join(parts)
+    if any(w in nf for w in ('sa id', 'id number', 'identity number', 'id no')):
+        if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
+            d = Decimal(str(value))
+            return str(int(d)) if d == d.to_integral_value() else str(value).strip()
+        return str(value).strip()
     return numeric_or_original(value)
+
+
+def sa_id_luhn_check_digit(first_12: str) -> int:
+    odd_sum = sum(int(first_12[i]) for i in (0, 2, 4, 6, 8, 10))
+    even_sum = sum((int(first_12[i]) * 2) if (int(first_12[i]) * 2) < 10 else (int(first_12[i]) * 2 - 9) for i in (1, 3, 5, 7, 9, 11))
+    return (10 - ((odd_sum + even_sum) % 10)) % 10
+
+
+def validate_and_repair_sa_id(value) -> dict:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return {'id_str': '', 'dob': None, 'gender': None, 'citizenship': None, 'valid_luhn': False, 'repaired': False, 'status': 'Missing ID'}
+    if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
+        d = Decimal(str(value))
+        raw = str(int(d)) if d == d.to_integral_value() else str(value).strip()
+    else:
+        raw = str(value).strip()
+    # Check if alphanumeric foreign passport / study permit
+    if re.search(r'[A-Za-z]', raw) and not re.match(r'^\d+(\.\d+)?[eE]\+\d+$', raw):
+        return {'id_str': raw, 'dob': None, 'gender': None, 'citizenship': 'Foreign / Permit', 'valid_luhn': False, 'repaired': False, 'status': 'Foreign / Passport / Permit ID'}
+    digits = re.sub(r'\D', '', raw)
+    repaired = False
+    if len(digits) in {11, 12}:
+        padded = digits.zfill(13)
+        mm_p, dd_p = int(padded[2:4]), int(padded[4:6])
+        if 1 <= mm_p <= 12 and 1 <= dd_p <= 31:
+            digits = padded
+            repaired = True
+    if len(digits) != 13:
+        return {'id_str': raw, 'dob': None, 'gender': None, 'citizenship': None, 'valid_luhn': False, 'repaired': False, 'status': f'Invalid Length ({len(digits)} digits)'}
+    yy, mm, dd = int(digits[:2]), int(digits[2:4]), int(digits[4:6])
+    if not (1 <= mm <= 12 and 1 <= dd <= 31):
+        return {'id_str': digits, 'dob': None, 'gender': None, 'citizenship': None, 'valid_luhn': False, 'repaired': repaired, 'status': 'Invalid Calendar Date in SA ID'}
+    century = 2000 if yy <= 26 else 1900
+    dob = f'{century + yy:04d}-{mm:02d}-{dd:02d}'
+    gender = 'Male' if int(digits[6:10]) >= 5000 else 'Female'
+    cit = 'SA Citizen' if digits[10] == '0' else ('Permanent Resident' if digits[10] == '1' else 'Other')
+    exp_z = sa_id_luhn_check_digit(digits[:12])
+    luhn_ok = int(digits[12]) == exp_z
+    if repaired and luhn_ok:
+        status = f'Repaired SA ID (Leading 0 Restored · {cit})'
+    elif repaired and not luhn_ok:
+        status = f'Repaired Leading 0 (Checksum Warning — expected {exp_z})'
+    elif luhn_ok:
+        status = f'Valid SA ID ({cit})'
+    else:
+        status = f'Invalid SA ID (Checksum Failed — expected {exp_z})'
+    return {'id_str': digits, 'dob': dob, 'gender': gender, 'citizenship': cit, 'valid_luhn': luhn_ok, 'repaired': repaired, 'status': status}
+
+
+def percentage_to_caps_level(value) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    s = str(value).strip().rstrip('%').strip()
+    if not s or norm(s) in {'-', '—', '--', 'n/a', 'na', 'none', 'null', 'absent', 'exempt'}:
+        return None
+    try:
+        pct = float(s)
+    except ValueError:
+        return None
+    if pct < 0:
+        return None
+    if pct <= 29.99:
+        return 1
+    if pct <= 39.99:
+        return 2
+    if pct <= 49.99:
+        return 3
+    if pct <= 59.99:
+        return 4
+    if pct <= 69.99:
+        return 5
+    if pct <= 79.99:
+        return 6
+    return 7
 
 
 def is_present_subject_mark(value) -> bool:
@@ -814,8 +893,8 @@ def render_output(job, plan, rows, path, headers):
                 values[cell.coordinate] = value
             else:
                 cell.value = value
-                if isinstance(value, str) and (value.startswith(('=', '+', '-', '@')) or re.fullmatch(r'0\d+', value)):
-                    cell.data_type = 's'  # Source content is data, not executable Excel formulas or stripped leading-zero numbers.
+                if isinstance(value, str) and (value.startswith(('=', '+', '-', '@')) or re.fullmatch(r'0\d+|\d{13}', value)):
+                    cell.data_type = 's'  # Source content is data, not executable Excel formulas or stripped leading-zero / 13-digit IDs.
                 values[cell.coordinate] = value
     computed, visiting = {}, set()
     def lookup(coordinate):
