@@ -1,0 +1,215 @@
+{
+  "version": "0.2.0",
+  "artifact": "SheetQMS-online.zip",
+  "verification_scope": "Development/synthetic automated (67) and headless Chromium (22) checks passed; live cloud deployment, live AI and real customer spreadsheets not yet verified",
+  "files": {
+    ".env.example": {
+      "sha256": "7d48647aaf1f9468ac3358b58110b0248cb4df4e046e5f7ddb766ead74de1997",
+      "bytes": 993
+    },
+    ".gitignore": {
+      "sha256": "8681f21479ba00bb50e5b4e62872b60b140c3bb05496943588ab8fbc86cacdeb",
+      "bytes": 116
+    },
+    ".nojekyll": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "README.md": {
+      "sha256": "c81430af5f3a7b1741e22e8c70f5d7d498e5957f3e241a7b10804fd144d2a77d",
+      "bytes": 4157
+    },
+    "browser_checks.py": {
+      "sha256": "bf2af53197b8ab3eb4054849f738751944619730452462fe44f03a10368fb609",
+      "bytes": 7331
+    },
+    "deploy/Dockerfile": {
+      "sha256": "ab3a5362a57fb7cc9210e28ec787a7ed08573acf87ebcde94ba4664be5271464",
+      "bytes": 534
+    },
+    "docs/ARCHITECTURE.md": {
+      "sha256": "fa0ec87d8bd9e14f2fc625b095281606f357cd0050dc71a1842a5ad79a411f4c",
+      "bytes": 6017
+    },
+    "docs/DEPLOY.md": {
+      "sha256": "36925413c55c748523a521374f7f30c6a7bc91fa7a06febb1605f10402fb8aa0",
+      "bytes": 4287
+    },
+    "docs/project/BRIEF.md": {
+      "sha256": "21f35e93e61df94b3769c906895853e8d4ae263d6d3aa90428ca42efbaff4d08",
+      "bytes": 8815
+    },
+    "docs/project/DECISIONS.md": {
+      "sha256": "8d41d8cf92eb5cfa85ac21366b48776fc0e57faca5c7ab231e4c0467220470fa",
+      "bytes": 20515
+    },
+    "docs/project/STATUS.md": {
+      "sha256": "539d3a1f9ad379aed06acd4c875d864fba5d555192167067ec9b1d221c329518",
+      "bytes": 6332
+    },
+    "docs/project/TEAM.md": {
+      "sha256": "0105fc0e1f3447441d20bb6072e41648bb7ca8b0b23217c540192cf3349d3dee",
+      "bytes": 11532
+    },
+    "index.html": {
+      "sha256": "8851f45f2bdca3cfd18fcfaff5723073c4878db234a5ef3e25b9049ae2ca0c0d",
+      "bytes": 1080
+    },
+    "package.json": {
+      "sha256": "3f5577599f0fc5cbea2d5d618295d23342bc1b3be70c20861f47a4bc1d331ac2",
+      "bytes": 234
+    },
+    "requirements.txt": {
+      "sha256": "42d45f14647dfc680d1f968b4d731de31be672ac9d4076c9cd35c52e6c282544",
+      "bytes": 184
+    },
+    "sheetqms/__init__.py": {
+      "sha256": "f4f42db07a00e68e646a2cdfde7ce1e75cf7dbd9a082656f14541d4e71ac4430",
+      "bytes": 97
+    },
+    "sheetqms/ai.py": {
+      "sha256": "d4a5a35cddf87550534db65dbbe080c8613e398692694e5f2c63dad2708928c9",
+      "bytes": 9205
+    },
+    "sheetqms/blobs.py": {
+      "sha256": "34c414e11a6d838c856ac1706c39af506b7225f5b63ed8da07998d33a20986cf",
+      "bytes": 2713
+    },
+    "sheetqms/cloud_store.py": {
+      "sha256": "0a0688d931c39131ed0c01b8ca4bac4d1647d56c558754ea1fc651393c5f9204",
+      "bytes": 18766
+    },
+    "sheetqms/engine.py": {
+      "sha256": "e10dba2d2709e83a8727df4ce42081494bd9ff3c67b6c07ca2f238c239b7f2f6",
+      "bytes": 57685
+    },
+    "sheetqms/migrate.py": {
+      "sha256": "596a5030c7a61226e1629bced724b9344fd7d57bf2d660648eddfbac221da3c8",
+      "bytes": 526
+    },
+    "sheetqms/models.py": {
+      "sha256": "e4b10f7cc4a8aa686da7a3443f75953590aaa259651d410497987c716257a56e",
+      "bytes": 4169
+    },
+    "sheetqms/online.py": {
+      "sha256": "5dd812cac89cc04d87eec4a5371ea39524a1c127be100d2b01ef0356fe20a444",
+      "bytes": 73092
+    },
+    "sheetqms/online_models.py": {
+      "sha256": "2bf7fffe84be7af66c5ae66def039ca5387dec012c8acab6b589e640db314dcc",
+      "bytes": 1993
+    },
+    "sheetqms/samples.py": {
+      "sha256": "9eb4eaa118b90ef27a8f6c080c5d99c2fb02eb2773e4ba1d011bfd73454752b2",
+      "bytes": 7185
+    },
+    "sheetqms/security.py": {
+      "sha256": "28ce324daf2227df6c2b349dc663bb9b771b4b6d284fbc38d1a22d8853db8699",
+      "bytes": 1520
+    },
+    "sheetqms/store.py": {
+      "sha256": "bf5be7d91011e8b06466ff32869871f3c33ada44d841e1a76c856e9330b993ef",
+      "bytes": 9609
+    },
+    "sheetqms/workbooks.py": {
+      "sha256": "b2051960dac7fca3d6cd6e880c6bf2fa1e232cca17c3d7b21ffad7bdd22c0a9e",
+      "bytes": 21733
+    },
+    "tests/conftest.py": {
+      "sha256": "544b8c53100987b89fac07e3ccdb04c9252064c0cc5b99f4f2c660be6f579986",
+      "bytes": 1107
+    },
+    "tests/test_ai_and_store.py": {
+      "sha256": "79564d5b6f4249ab2b1e2c00eadf83ac1be6f688420a91ff3478f2f4b02b180a",
+      "bytes": 6738
+    },
+    "tests/test_cloud_boundaries.py": {
+      "sha256": "21a9ffc6a03a35bf425daacc3d86bc82f81c6b68ecc8e1e2cc1e7aa8029c4ec5",
+      "bytes": 3517
+    },
+    "tests/test_engine.py": {
+      "sha256": "cc3e4f2eddf8f24fe3aed101500a1e519e907ff76d6064c78586cd448cd07047",
+      "bytes": 7958
+    },
+    "tests/test_online.py": {
+      "sha256": "6150a9e525c1e075d580bc1cbe4c7e4e8c7e58e56ecbe983d2abb45e136fd71e",
+      "bytes": 21929
+    },
+    "verification/admin-1280.png": {
+      "sha256": "e6fb5d9bd515539d8b5b53ffd569688473b7e1427f30bf0fb752d889b71f4e04",
+      "bytes": 114419
+    },
+    "verification/admin-390.png": {
+      "sha256": "7bf011aedca121ec4710710ad9e920ea4f22be1d0af6e4f664e8c547b809e03a",
+      "bytes": 115797
+    },
+    "verification/automated-tests.txt": {
+      "sha256": "859f6e8d92e33678185c389572b123e7e16b92bbe88780c8ad77651eae1857b9",
+      "bytes": 586
+    },
+    "verification/browser-checks.json": {
+      "sha256": "57db4ed0e3e413ef768f79be080ab980705dfe7b920520db3c800784be567dd9",
+      "bytes": 2548
+    },
+    "verification/browser-summary.txt": {
+      "sha256": "4333c3f7a8367d5f57a1bd612a5e216d7f2743133ea0cdb9d3b9d732358e5748",
+      "bytes": 104
+    },
+    "verification/chat-verified-1280.xlsx": {
+      "sha256": "77f65ab7d1ee498a4af21b1afb0fe84f485f67eeb1ea8c930f422e05854fc166",
+      "bytes": 6613
+    },
+    "verification/chat-verified-390.xlsx": {
+      "sha256": "a0a58bbb6f2c64493136c805fcec8fe36fba9a02e331db83529a9fac69bd3720",
+      "bytes": 6614
+    },
+    "verification/held-chat-1280.png": {
+      "sha256": "c596c6a49a069333af310309dda9c3098040bf8538476a15af3d29e250bf226c",
+      "bytes": 116563
+    },
+    "verification/held-chat-390.png": {
+      "sha256": "bc354bf89a2c20e9d9db7a33ac56944c7ecb95359878af3ccce9b630be3c6eb8",
+      "bytes": 104273
+    },
+    "verification/live-pages-1280.png": {
+      "sha256": "77980dfdddd479fab8d374e1e58d7bdbe9067d69c647e1d949717a1c8d09016a",
+      "bytes": 85851
+    },
+    "verification/live-pages-390.png": {
+      "sha256": "92914e007aac3a5bf80d064a8223fec254dc2948fdfdbf2458bdad2209542748",
+      "bytes": 60151
+    },
+    "verification/login-1280.png": {
+      "sha256": "6addfe550e125fde6a8a6212203e529e56948856003d7c72a64c1bb392a14772",
+      "bytes": 328364
+    },
+    "verification/login-390.png": {
+      "sha256": "b3b35ad3788113df45a6116344a881914ac4446efa3281b2a14eef2ef123a1ce",
+      "bytes": 81585
+    },
+    "verification/studio-1280.png": {
+      "sha256": "65f2a537798b80ced002f665b49befe8e7cfdd92ec1ff015871318bb0eefb30e",
+      "bytes": 105280
+    },
+    "verification/studio-390.png": {
+      "sha256": "05fe1d6c2190603aedbbf8308a93af9a3ea8734c75954881155f1f54eb5e4efb",
+      "bytes": 148917
+    },
+    "web/app.js": {
+      "sha256": "0a7dbf9eb3e0d4c56f5f5225d8b7416983a73a73d9b0aa0211cd18de89ca787a",
+      "bytes": 103815
+    },
+    "web/app.ts": {
+      "sha256": "ca6f45b9a15a2b63c95fc09d895c1eb5147447b644cad9e9b2115b3593fafe02",
+      "bytes": 91791
+    },
+    "web/index.html": {
+      "sha256": "548d9163026a7bc1057e96435caaeda44c9f463b91a5072b5d54c241db8382d9",
+      "bytes": 1093
+    },
+    "web/styles.css": {
+      "sha256": "e01f096f5bd02d1f4c3dda73a95750d09a96851455e9aa17e68544ed4431f1e4",
+      "bytes": 16167
+    }
+  }
+}

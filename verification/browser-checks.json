@@ -1,0 +1,98 @@
+{
+  "checks": [
+    "1280: demo operator login and role-specific navigation",
+    "1280: held workbook explains its issue in job chat",
+    "1280: text reply produces explicit correction proposal, no silent release",
+    "1280: confirmed answer triggers real QMS rerun and release",
+    "1280: client spreadsheet edit requests (swap columns/rows) executed in chat",
+    "1280: released XLSX download",
+    "1280: customer-scoped QMS-passed knowledge shown",
+    "1280: operator non-secret preferences saved; no API-key field",
+    "1280: QMS chat help and keyboard modal",
+    "1280: admin budget creation, live key/AI preview refusal",
+    "1280: logout returns to private sign-in",
+    "390: demo operator login and role-specific navigation",
+    "390: held workbook explains its issue in job chat",
+    "390: text reply produces explicit correction proposal, no silent release",
+    "390: confirmed answer triggers real QMS rerun and release",
+    "390: client spreadsheet edit requests (swap columns/rows) executed in chat",
+    "390: released XLSX download",
+    "390: customer-scoped QMS-passed knowledge shown",
+    "390: operator non-secret preferences saved; no API-key field",
+    "390: QMS chat help and keyboard modal",
+    "390: admin budget creation, live key/AI preview refusal",
+    "390: logout returns to private sign-in"
+  ],
+  "accessibility": [
+    {
+      "name": "login-1280",
+      "violations": []
+    },
+    {
+      "name": "studio-empty-1280",
+      "violations": []
+    },
+    {
+      "name": "held-chat-1280",
+      "violations": []
+    },
+    {
+      "name": "released-chat-1280",
+      "violations": []
+    },
+    {
+      "name": "knowledge-1280",
+      "violations": []
+    },
+    {
+      "name": "preferences-1280",
+      "violations": []
+    },
+    {
+      "name": "preferences-light-1280",
+      "violations": []
+    },
+    {
+      "name": "admin-1280",
+      "violations": []
+    },
+    {
+      "name": "login-390",
+      "violations": []
+    },
+    {
+      "name": "studio-empty-390",
+      "violations": []
+    },
+    {
+      "name": "held-chat-390",
+      "violations": []
+    },
+    {
+      "name": "released-chat-390",
+      "violations": []
+    },
+    {
+      "name": "knowledge-390",
+      "violations": []
+    },
+    {
+      "name": "preferences-390",
+      "violations": []
+    },
+    {
+      "name": "preferences-light-390",
+      "violations": []
+    },
+    {
+      "name": "admin-390",
+      "violations": []
+    }
+  ],
+  "errors": [],
+  "external_requests": [],
+  "widths": [
+    1280,
+    390
+  ]
+}

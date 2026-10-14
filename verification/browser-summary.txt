@@ -1,0 +1,6 @@
+{
+  "workflow_checks": 20,
+  "accessibility_violations": 0,
+  "errors": [],
+  "external_requests": []
+}
