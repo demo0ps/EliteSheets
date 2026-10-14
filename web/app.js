@@ -26881,6 +26881,21 @@
       }
     }
   }
+  function bindMobileMenu() {
+    const shell2 = document.querySelector(".shell");
+    const btn = document.getElementById("mobile-menu");
+    if (!shell2 || !btn) return;
+    const setOpen = (open) => {
+      shell2.classList.toggle("menu-open", open);
+      btn.setAttribute("aria-expanded", String(open));
+      btn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    };
+    btn.addEventListener("click", () => setOpen(!shell2.classList.contains("menu-open")));
+    document.querySelector(".topbar")?.addEventListener("click", (e) => {
+      const t = e.target;
+      if (t.closest(".nav-btn,#help")) setOpen(false);
+    });
+  }
   function logo() {
     return `<div class="logo"><span class="logo-box">${icon("grid")}</span><span><b>Edu</b>SheetManager<small class="brand-by">by EduSCF</small></span></div>`;
   }
@@ -27152,7 +27167,8 @@
     }
     const vert = activeVertical();
     const vMeta = VERTICAL_META[vert] || VERTICAL_META.general;
-    $2("root").innerHTML = `<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${vMeta.tabs.map((t) => `<button class="nav-btn" data-page="${t.page}">${icon(t.iconName)}${escapeHTML(t.label)}</button>`).join("")}${user.role === "admin" ? `<button class="nav-btn" data-page="admin">${icon("shield")}Admin</button>` : ""}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k, v]) => `<option value="${k}" ${k === vert ? "selected" : ""}>${escapeHTML(v.label)}</option>`).join("")}</select>${user.role === "admin" && customers.length ? `<select id="workspace-picker" aria-label="Customer workspace">${customers.map((c) => `<option value="${c.id}" ${c.id === workspaceID ? "selected" : ""}>${escapeHTML(c.name)}</option>`).join("")}</select>` : ""}<button id="help" class="btn small">${icon("info")}Guide</button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon("logout")}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon("logout")}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>EduSheetManager</strong> <span style="opacity:0.75">by EduSCF</span> \xB7 Calm, everyday spreadsheet helper</div>${poweredByEduSCF()}</footer></div>`;
+    $2("root").innerHTML = `<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${vMeta.tabs.map((t) => `<button class="nav-btn" data-page="${t.page}">${icon(t.iconName)}${escapeHTML(t.label)}</button>`).join("")}${user.role === "admin" ? `<button class="nav-btn" data-page="admin">${icon("shield")}Admin</button>` : ""}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k, v]) => `<option value="${k}" ${k === vert ? "selected" : ""}>${escapeHTML(v.label)}</option>`).join("")}</select>${user.role === "admin" && customers.length ? `<select id="workspace-picker" aria-label="Customer workspace">${customers.map((c) => `<option value="${c.id}" ${c.id === workspaceID ? "selected" : ""}>${escapeHTML(c.name)}</option>`).join("")}</select>` : ""}<button id="help" class="btn small">${icon("info")}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon("logout")}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon("logout")}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>EduSheetManager</strong> <span style="opacity:0.75">by EduSCF</span> \xB7 Calm, everyday spreadsheet helper</div>${poweredByEduSCF()}</footer></div>`;
+    bindMobileMenu();
     document.querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => void showPage(b.dataset.page)));
     $2("logout").addEventListener("click", () => void (async () => {
       await api("/api/auth/logout", {});
