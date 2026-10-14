@@ -40,19 +40,19 @@
       "bytes": 8815
     },
     "docs/project/DECISIONS.md": {
-      "sha256": "9118f7db7e0bc0674646670c8265ff7f50cf0d9ccb76fd020efe0f5cf82bd73a",
-      "bytes": 58674
+      "sha256": "46ae91e693183f6fc8bbaa6146e6678d80bf57803c5830c63f896a81c9bdbd0b",
+      "bytes": 59805
     },
     "docs/project/STATUS.md": {
-      "sha256": "d1c2fccebd991b8162767ac7276add8e30de3eb4c4a326c551eafad4f12fa004",
-      "bytes": 5472
+      "sha256": "a5bb9c237bd84890f0a6836bd5e4a489e5fad39bcfda8e7c94d2ccbb34b7bd09",
+      "bytes": 5619
     },
     "docs/project/TEAM.md": {
       "sha256": "0105fc0e1f3447441d20bb6072e41648bb7ca8b0b23217c540192cf3349d3dee",
       "bytes": 11532
     },
     "index.html": {
-      "sha256": "3bbd0fae664a7494cda985666dbfd0c98d8d4527d9637486d2cb9d72c167ca31",
+      "sha256": "1150c33e63d7726d77fb7145baaa82e2756149968b55bc9aa9b2c667a6cebc60",
       "bytes": 1086
     },
     "requirements.txt": {
@@ -192,12 +192,12 @@
       "bytes": 148917
     },
     "web/app.js": {
-      "sha256": "fc1acf9711740fb69bcdfc47394b5c06dae32f774de73854905aafa07d493538",
-      "bytes": 1098018
+      "sha256": "6f3a3ce77b5b677a692d3358223a5263f1f0c80110747df2df81236d40ab5838",
+      "bytes": 1100561
     },
     "web/app.ts": {
-      "sha256": "fabe44e0261414258c51805c90cd0f1fc5c8a89bfcc24e59de4f1fac2a299b8d",
-      "bytes": 307835
+      "sha256": "bfd3c506884054c7f2b4ffc91275caef6715a1e2029a149ba47dd26d438e31ef",
+      "bytes": 310440
     },
     "web/eduscf-logo.png": {
       "sha256": "8f78adb6ad3254ef32c753c33c2e238d55fd8f9d0f3eef9c813ef70abf343d69",
@@ -208,12 +208,12 @@
       "bytes": 15389
     },
     "web/index.html": {
-      "sha256": "8b8e1d4c130542fea0a1bef3739416726f13cdbb9e5a6f16b98e0e9a87abac1b",
+      "sha256": "f65c573ff3115be66358ecc6ba1e5bf9033efe369938b6c7d56acaef736745c7",
       "bytes": 1129
     },
     "web/styles.css": {
-      "sha256": "d90f9ae0ba1a052ed64e02988db3f6230c3849c037b21c911c12bf160d92dfe9",
-      "bytes": 29531
+      "sha256": "40bc67aab39ba9e06bfb846c54f49ef5687fcbd12083b34ab83e65466f41a610",
+      "bytes": 32859
     }
   }
 }

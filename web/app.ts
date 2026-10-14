@@ -433,6 +433,7 @@ function studio(){
           <button class="btn small ${release?'primary':''}" id="download-output" ${release?'':'disabled'}>${icon(release?'download':'lock')}Download Excel (.XLSX)</button>
         </div>
       </div>
+      ${fileStatusHtml()}
       ${r?.rows.length?`<div class="clean-toolbar"><span>Quick Tools:</span>${toolbarButtonsHtml}</div>`:''}
       ${r?.rows.length?xlHtml(headers,r.rows,job?.plan?.destination?.sheet||'Output',(h:string)=>canMapCols?`<div class="th-col-wrap"><span>${escapeHTML(h)}</span><select class="col-map-select ${activeFieldMap[h]?'':'unmapped'}" data-map-target="${escapeHTML(h)}" aria-label="Source column for ${escapeHTML(h)}"><option value="">${activeFieldMap[h]?'— Unmap —':'Choose column…'}</option>${srcColHeaders.map((sh:string)=>`<option value="${escapeHTML(sh)}" ${activeFieldMap[h]===sh?'selected':''}>← ${escapeHTML(sh)}</option>`).join('')}</select></div>`:escapeHTML(h)):`<div class="table-scroll" tabindex="0" aria-label="Output preview"><table><thead><tr>${headers.map((h:string)=>`<th>${escapeHTML(h)}</th>`).join('')}</tr></thead><tbody><tr><td class="table-empty" colspan="${headers.length}">${job?'Click <b>Fill My Sheet</b> on the left to fill your spreadsheet.':'Click <b>Open / Upload File</b> on the left (or type what columns you want in the chat box) to start your spreadsheet.'}</td></tr></tbody></table></div>`}
       ${r?.rows&&r.rows.length>200?`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-top:8px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;font-size:12.5px;color:var(--muted)"><span>Showing <b>${showAllRows?r.rows.length:200}</b> of <b>${r.rows.length}</b> rows in live preview — all <b>${r.rows.length}</b> rows are included when you click <b>Download Excel (.XLSX)</b>.</span><button id="toggle-all-rows" class="btn small">${showAllRows?'Show First 200 Rows':`Show All ${r.rows.length} Rows`}</button></div>`:''}
@@ -493,9 +494,10 @@ function studio(){
     const fld=$<HTMLInputElement>('folder-files').files;
     const target=$<HTMLInputElement>('target-file').files;
     const validFolderFiles=Array.from(fld||[]).filter(f=>/\.(xlsx|xls|csv)$/i.test(f.name));
-    const srcChips=stagedSources.map((f,idx)=>`<span class="file-chip">${escapeHTML(f.name)} <button type="button" data-rm-src="${idx}" style="background:none;border:none;color:inherit;cursor:pointer;font-weight:700;padding:0 2px" aria-label="Remove ${escapeHTML(f.name)}">×</button></span>`).join('');
-    const otherChips=[...validFolderFiles,...Array.from(target||[])].map(f=>`<span class="file-chip">${escapeHTML((f as any).webkitRelativePath||f.name)}</span>`).join('');
-    $('file-list').innerHTML=srcChips+otherChips;
+    const stateChip=`<span class="file-state waiting">Ready to open</span>`;
+    const srcRows=stagedSources.map((f,idx)=>`<li class="file-status-row"><span class="file-status-name">${escapeHTML(f.name)}</span>${stateChip}<button type="button" class="file-remove" data-rm-src="${idx}" aria-label="Remove ${escapeHTML(f.name)}">Remove</button></li>`).join('');
+    const otherRows=[...validFolderFiles,...Array.from(target||[])].map(f=>`<li class="file-status-row"><span class="file-status-name">${escapeHTML((f as any).webkitRelativePath||f.name)}</span>${stateChip}</li>`).join('');
+    $('file-list').innerHTML=(srcRows+otherRows)?`<ul class="file-status-list" aria-label="Files ready to open">${srcRows}${otherRows}</ul>`:'';
     document.querySelectorAll<HTMLButtonElement>('[data-rm-src]').forEach(btn=>btn.addEventListener('click',()=>{
       stagedSources.splice(Number(btn.dataset.rmSrc),1);
       renderStagedFiles();
@@ -1867,6 +1869,34 @@ function xlCellTd(r:number,c:number,v:any):string{
   return `<td class="xl-cell${empty?' xl-empty':''}${f?' xl-warned':''}" data-r="${r}" data-c="${c}"${f?' title="Formula warning: saved as text"':''}>${empty?'':escapeHTML(String(v))}</td>`;
 }
 
+// Batch 2: read-only review cards for phones and tablets.
+function xlCardsHtml(headers:string[],rows:Record<string,any>[]):string{
+  if(!headers.length||!rows.length)return '';
+  const nameH=headers.find(h=>/name|learner|surname|site|item|employee|customer|description/i.test(h))||headers[0];
+  const others=headers.filter(h=>h!==nameH);
+  const val=(row:Record<string,any>,h:string)=>xlIsEmpty(row[h])?'<em class="xl-miss">missing</em>':escapeHTML(xlDisplay(row[h]));
+  const cards=rows.slice(0,200).map((row,ri)=>{
+    const empties=headers.filter(h=>xlIsEmpty(row[h])).length;
+    const title=xlDisplay(row[nameH])||`Row ${ri+2}`;
+    const brief=others.slice(0,3).map(h=>`<span><b>${escapeHTML(h)}:</b> ${val(row,h)}</span>`).join('');
+    const all=others.map(h=>`<div class="xl-card-row"><span>${escapeHTML(h)}</span><strong>${val(row,h)}</strong></div>`).join('');
+    return `<details class="xl-card"><summary><span class="xl-card-title">${escapeHTML(title)}</span><span class="xl-card-brief">${brief}</span>${empties?`<span class="xl-card-flag">${empties} empty</span>`:'<span class="xl-card-ok">Complete</span>'}</summary><div class="xl-card-body">${all}<div class="xl-card-row"><span>Row</span><strong>${ri+2}</strong></div></div></details>`;
+  }).join('');
+  return `<div class="xl-cards" aria-label="Review cards, read-only"><p class="xl-cards-note">Review each row below. To change values, open this page on a computer.</p>${cards}${rows.length>200?`<p class="xl-cards-note">Showing the first 200 of ${rows.length} rows. Open on a PC to see all of them.</p>`:''}</div>`;
+}
+// Batch 2: one clear status line per uploaded file, after the file has been opened.
+function fileStatusHtml():string{
+  const srcs:any[]=(job as any)?.profiles?.sources||[];
+  if(!srcs.length)return '';
+  const items=srcs.map(p=>{
+    const sheets=(p.sheets||[]).length;
+    const issues:string[]=p.unsupported_features||[];
+    const ok=!issues.length;
+    return `<li class="file-status-row"><span class="file-status-name">${escapeHTML(p.name)}</span><span class="file-state ${ok?'ok':'bad'}">${ok?`Read ✓ · ${sheets} sheet${sheets===1?'':'s'}`:'Needs attention'}</span>${ok?'':`<small class="file-state-note">${escapeHTML(issues[0])}</small>`}</li>`;
+  }).join('');
+  return `<ul class="file-status-list" aria-label="File status">${items}</ul>`;
+}
+
 function xlHtml(headers:string[],rows:Record<string,any>[],sheetName:string,headCell:(h:string)=>string):string{
   const shown=showAllRows?rows:rows.slice(0,200);
   return `<div class="xl-mobile-note" role="note">
@@ -1874,6 +1904,7 @@ function xlHtml(headers:string[],rows:Record<string,any>[],sheetName:string,head
       <p>Open this page on your PC to edit cells the way you would in Excel. You can still download the finished file from here.</p>
       <button id="copy-pc-link" class="btn small" type="button">Copy link to open on PC</button>
     </div>
+    ${xlCardsHtml(headers,rows)}
     <div class="xl-wrap" id="xl-wrap" tabindex="-1" aria-label="Spreadsheet grid. Use the arrow keys to move and type to edit.">
       <div class="xl-formula-bar">
         <div class="xl-namebox" id="xl-namebox" aria-label="Selected cell">A2</div>

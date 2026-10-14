@@ -489,3 +489,12 @@ Status: Implemented, verified (`71 passed`), and deployed to `https://demo0ps.gi
 
 
 
+
+## D-044 — EduSheetManager UX batch 1 (Excel-style grid, file naming, scroll containment, mobile)
+- Desktop preview is an Excel-style editable grid (column letters, row numbers, arrow/Enter/Tab, type-to-edit, Ctrl+C/V/Z/Y, range select, formula bar, autosave). Values only: a typed `=` shows a warning and is saved as text (server writes it as a string cell).
+- Header "File name" box plus a save pop-up pre-filled with that name; `.xlsx` appended.
+- Scroll containment (`overscroll-behavior: contain`) on the grid and preview boxes.
+- Phones and tablets (≤1024px): bottom tab bar (Helper, Sheet, Templates, Files), no grid, open-on-PC prompt with copy-link. Top nav scrolls horizontally on these widths.
+- Server: `PUT /api/jobs/{id}/rows` (values saved, workbook rebuilt, release gate re-run). Static mode mirrors it.
+- Limits: header names are read-only in batch 1; sum-rule columns are recalculated on save; the output is one sheet, so sheet tabs show one tab until multi-sheet output is built.
+- Verified: pytest 72 passed; Chromium checks for grid editing, formula warning, save pop-up, download name, and phone layout.

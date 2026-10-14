@@ -1165,3 +1165,45 @@ body.compact td, body.compact th { padding: 8px 12px; }
   #logout { display: none; }
   .picker-row { flex-direction: column; align-items: stretch; }
 }
+
+/* Batch 2: per-file status labels (all screens) */
+.file-status-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.file-status-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 13.5px; }
+.file-status-name { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; font-weight: 600; color: var(--ink); }
+.file-state { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.file-state.ok { background: var(--good-soft); color: var(--good); }
+.file-state.bad { background: var(--bad-soft); color: var(--bad); }
+.file-state.waiting { background: var(--accent-soft); color: var(--accent); }
+.file-state-note { flex-basis: 100%; color: var(--muted); font-size: 12.5px; }
+.file-remove { border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+
+/* Batch 2: read-only review cards (phones and tablets only) */
+.xl-cards { display: none; }
+.xl-miss { color: var(--warn); font-style: italic; font-weight: 600; }
+.xl-cards-note { font-size: 13px; color: var(--muted); margin: 4px 2px; }
+.xl-card { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.xl-card > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: grid; gap: 4px; min-height: 44px; }
+.xl-card > summary::-webkit-details-marker { display: none; }
+.xl-card-title { font-weight: 700; font-size: 15px; color: var(--ink); overflow-wrap: anywhere; }
+.xl-card-brief { display: grid; gap: 2px; font-size: 13px; color: var(--muted); }
+.xl-card-brief b { color: var(--ink); font-weight: 600; }
+.xl-card-flag { justify-self: start; font-size: 12px; font-weight: 700; color: var(--warn); background: var(--warn-soft); border-radius: 999px; padding: 2px 9px; }
+.xl-card-ok { justify-self: start; font-size: 12px; font-weight: 700; color: var(--good); background: var(--good-soft); border-radius: 999px; padding: 2px 9px; }
+.xl-card-body { border-top: 1px solid var(--line); padding: 6px 14px 12px; display: grid; gap: 6px; }
+.xl-card-row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.xl-card-row span { color: var(--muted); }
+.xl-card-row strong { text-align: right; overflow-wrap: anywhere; color: var(--ink); font-weight: 600; }
+
+/* Batch 2: phones and tablets: big actions and 44px touch targets */
+@media (max-width: 1024px) {
+  .xl-cards { display: grid; gap: 10px; margin: 0 12px 12px; }
+  #tour-open-btn, #inspect-files, #load-example, #send-chat { min-height: 52px; font-size: 16px; }
+  #download-output { min-height: 56px; font-size: 16px; padding: 12px 18px; }
+  #download-output, #inspect-files { width: 100%; }
+  .upload-box { min-height: 96px; font-size: 15px; }
+  .btn, .nav-btn, .icon-button, .m-tab, .file-remove, .xl-tab { min-height: 44px; }
+  .btn.small { min-height: 44px; padding-top: 10px; padding-bottom: 10px; }
+  .icon-button { min-width: 44px; }
+  .file-chip button { min-width: 44px; min-height: 44px; }
+  select, input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; }
+}

@@ -46,3 +46,5 @@ Implemented in `sheetqms-cloud/`:
 ## Next / handoff
 
 Owner: review `SheetQMS online workspace` on port 3001 and `SheetQMS-online.zip`. When ready to publish online, provision PostgreSQL + private R2 + Cloud Run (or provide your target cloud account workflow out of band), set secrets in the cloud secret manager, run `python -m sheetqms.migrate`, and run the live-URL verification checklist in `docs/DEPLOY.md`.
+
+**Batch 1 (EduSheetManager UX) — built, verified locally (D-044).** Pending: commit and Pages push (not yet done); batches 2 and 3 not started.
