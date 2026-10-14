@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import copy
 import csv
+from datetime import datetime, timedelta, timezone
+import smtplib
+from email.message import EmailMessage
 from io import BytesIO, StringIO
 import hashlib
 import hmac
@@ -1147,10 +1150,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             detail = str(exc) if isinstance(exc, ValueError) and 'validation error' not in str(exc).lower() else 'AI analysis failed or returned an unsupported proposal. No output was released.'
             raise HTTPException(422, detail) from exc
 
-    @app.get('/api/jobs/{identifier}/output')
-    def output(identifier: str, identity=Depends(workspace)):
-        _, tenant = identity
-        job = get_job(tenant, identifier)
+    def released_output_bytes(job):
         if not job.get('report') or job['report']['status'] != 'RELEASED':
             raise HTTPException(409, 'QMS has not released this output.')
         for file, inspected in zip([job['files']['template']] + job['files']['sources'], [job['profiles']['template']] + job['profiles']['sources']):
@@ -1159,7 +1159,104 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         data = blobs.get(job['output_object'])
         if hashlib.sha256(data).hexdigest() != job['report']['output_sha256']:
             raise HTTPException(409, 'Final artifact hash changed; download blocked.')
-        return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="EduSheetManager-verified.xlsx"'})
+        return data
+
+    XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+    @app.get('/api/jobs/{identifier}/output')
+    def output(identifier: str, identity=Depends(workspace)):
+        _, tenant = identity
+        job = get_job(tenant, identifier)
+        data = released_output_bytes(job)
+        return Response(data, media_type=XLSX_TYPE, headers={'Content-Disposition': 'attachment; filename="EduSheetManager-verified.xlsx"'})
+
+    SHARE_DAYS = {1, 7, 30}
+
+    def create_share_link(tenant, job, days):
+        secret = secrets.token_urlsafe(32)
+        share_id = uuid.uuid4().hex[:12]
+        expires = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+        job.setdefault('shares', []).append({'id': share_id, 'hash': hashlib.sha256(secret.encode()).hexdigest(), 'expires': expires, 'created': now(), 'days': days})
+        store.save_job(tenant, job, 'share_link_created', {'share_id': share_id, 'days': days})
+        return {'share_id': share_id, 'url': f'/api/shared/{tenant}~{job["id"]}~{secret}', 'expires': expires, 'days': days}
+
+    def share_email_settings():
+        host = os.getenv('SHEETQMS_SMTP_HOST')
+        sender = os.getenv('SHEETQMS_SMTP_FROM')
+        if not host or not sender:
+            return None
+        return {'host': host, 'port': int(os.getenv('SHEETQMS_SMTP_PORT', '587')), 'user': os.getenv('SHEETQMS_SMTP_USER', ''), 'password': os.getenv('SHEETQMS_SMTP_PASSWORD', ''), 'sender': sender}
+
+    @app.post('/api/jobs/{identifier}/share')
+    @job_lease
+    def create_share(identifier: str, body: dict, identity=Depends(workspace)):
+        _, tenant = identity
+        job = get_job(tenant, identifier)
+        if not job.get('report') or job['report'].get('status') != 'RELEASED':
+            raise HTTPException(409, 'Finish the sheet before sharing it.')
+        days = body.get('days', 7)
+        if not isinstance(days, int) or days not in SHARE_DAYS:
+            raise HTTPException(422, 'Choose 1, 7 or 30 days.')
+        return create_share_link(tenant, job, days)
+
+    @app.delete('/api/jobs/{identifier}/shares/{share_id}')
+    @job_lease
+    def revoke_share(identifier: str, share_id: str, identity=Depends(workspace)):
+        _, tenant = identity
+        job = get_job(tenant, identifier)
+        before = len(job.get('shares', []))
+        job['shares'] = [x for x in job.get('shares', []) if x['id'] != share_id]
+        if len(job['shares']) == before:
+            raise HTTPException(404, 'That link was not found.')
+        store.save_job(tenant, job, 'share_link_revoked', {'share_id': share_id})
+        return {'ok': True}
+
+    @app.post('/api/jobs/{identifier}/share/email')
+    @job_lease
+    def email_share(identifier: str, body: dict, identity=Depends(workspace)):
+        _, tenant = identity
+        to = str(body.get('to') or '').strip()
+        if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', to):
+            raise HTTPException(422, 'Enter a valid email address.')
+        settings = share_email_settings()
+        if settings is None:
+            raise HTTPException(503, 'Email sending is not set up yet. Copy the link and send it yourself.')
+        job = get_job(tenant, identifier)
+        if not job.get('report') or job['report'].get('status') != 'RELEASED':
+            raise HTTPException(409, 'Finish the sheet before sharing it.')
+        days = body.get('days', 7)
+        if not isinstance(days, int) or days not in SHARE_DAYS:
+            raise HTTPException(422, 'Choose 1, 7 or 30 days.')
+        link = create_share_link(tenant, job, days)
+        msg = EmailMessage()
+        msg['Subject'] = 'A spreadsheet has been shared with you'
+        msg['From'] = settings['sender']
+        msg['To'] = to
+        msg.set_content(f'A verified spreadsheet has been shared with you from EduSheetManager.\n\nDownload it here (the link works until {link["expires"][:10]}):\n{link["url"]}\n\nIf you were not expecting this, you can ignore this email.')
+        try:
+            with smtplib.SMTP(settings['host'], settings['port'], timeout=20) as smtp:
+                smtp.starttls()
+                if settings['user']:
+                    smtp.login(settings['user'], settings['password'])
+                smtp.send_message(msg)
+        except Exception:
+            LOG.exception('share email failed')
+            raise HTTPException(502, 'The email could not be sent. Copy the link and send it yourself.')
+        return {'share_id': link['share_id'], 'expires': link['expires'], 'sent_to': to}
+
+    @app.get('/api/shared/{token}')
+    def shared_download(token: str):
+        parts = token.split('~')
+        if len(parts) != 3 or not all(re.fullmatch(r'[A-Za-z0-9_-]{1,120}', x) for x in parts):
+            raise HTTPException(404, 'This link is not valid.')
+        tenant, identifier, secret = parts
+        job = store.job(tenant, identifier)
+        digest_value = hashlib.sha256(secret.encode()).hexdigest()
+        match = next((x for x in (job or {}).get('shares', []) if hmac.compare_digest(x['hash'], digest_value)), None)
+        if not match or datetime.fromisoformat(match['expires']) <= datetime.fromisoformat(now()):
+            raise HTTPException(404, 'This link has expired or was removed.')
+        data = released_output_bytes(job)
+        return Response(data, media_type=XLSX_TYPE, headers={'Content-Disposition': 'attachment; filename="EduSheetManager-shared.xlsx"', 'Cache-Control': 'no-store'})
 
     @app.get('/api/jobs/{identifier}/evidence')
     def evidence(identifier: str, identity=Depends(workspace)):

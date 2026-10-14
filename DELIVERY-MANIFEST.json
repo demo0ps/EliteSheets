@@ -40,19 +40,19 @@
       "bytes": 8815
     },
     "docs/project/DECISIONS.md": {
-      "sha256": "46ae91e693183f6fc8bbaa6146e6678d80bf57803c5830c63f896a81c9bdbd0b",
-      "bytes": 59805
+      "sha256": "80b66127d60248e4c5d2fe3c8781749e9690883db8d3fd9048f07c48d8ddc065",
+      "bytes": 60501
     },
     "docs/project/STATUS.md": {
-      "sha256": "a5bb9c237bd84890f0a6836bd5e4a489e5fad39bcfda8e7c94d2ccbb34b7bd09",
-      "bytes": 5619
+      "sha256": "33a444f9b41814199bc3ea5bd340fdc69d087184b015f9bb26cfa34c2f6e590b",
+      "bytes": 5781
     },
     "docs/project/TEAM.md": {
       "sha256": "0105fc0e1f3447441d20bb6072e41648bb7ca8b0b23217c540192cf3349d3dee",
       "bytes": 11532
     },
     "index.html": {
-      "sha256": "1150c33e63d7726d77fb7145baaa82e2756149968b55bc9aa9b2c667a6cebc60",
+      "sha256": "6a924b566556d6bb38688aa8ba0b0ca8f44f631a409cf867a27533401a1e0d98",
       "bytes": 1086
     },
     "requirements.txt": {
@@ -88,8 +88,8 @@
       "bytes": 4169
     },
     "sheetqms/online.py": {
-      "sha256": "1d20414a0e602e920cfa52cf83506a12f5515403c9c0692423608f5fbc6b6641",
-      "bytes": 102737
+      "sha256": "8228fac03ca22c615226c31f1569f04a60a612673ba91cc349387edf022b050a",
+      "bytes": 107961
     },
     "sheetqms/online_models.py": {
       "sha256": "e5a1a4b43ba47f63d2703faddc09bf2b7aa1fe2d969599102b059139616cfa15",
@@ -128,8 +128,8 @@
       "bytes": 7958
     },
     "tests/test_online.py": {
-      "sha256": "59da2c5ccd7d563ecf32c169ae126768cef522e8f0aafcf8dd66f8918a38b2f5",
-      "bytes": 57678
+      "sha256": "04bd73944f9a54d77404237261735bc3fb9ada6bd5e678d21d0960d4659527cd",
+      "bytes": 59761
     },
     "verification/admin-1280.png": {
       "sha256": "e6fb5d9bd515539d8b5b53ffd569688473b7e1427f30bf0fb752d889b71f4e04",
@@ -140,7 +140,7 @@
       "bytes": 115797
     },
     "verification/automated-tests.txt": {
-      "sha256": "72ceea094ee31a8183be91866b57c60d3e7af82ae738dd8a64cd7f8f4d05ad85",
+      "sha256": "d13bbab3a848ffad98345deba1f8dcd29b65f773d49d35385f720f7e4f5c9c3e",
       "bytes": 31
     },
     "verification/browser-checks.json": {
@@ -192,12 +192,12 @@
       "bytes": 148917
     },
     "web/app.js": {
-      "sha256": "6f3a3ce77b5b677a692d3358223a5263f1f0c80110747df2df81236d40ab5838",
-      "bytes": 1100561
+      "sha256": "4702c4d36d7108c198ac8971845ca17222fc531781a312ea9343634159ca2e3f",
+      "bytes": 1108607
     },
     "web/app.ts": {
-      "sha256": "bfd3c506884054c7f2b4ffc91275caef6715a1e2029a149ba47dd26d438e31ef",
-      "bytes": 310440
+      "sha256": "94f9da2ac0ddf4398ac5f0920367fe0bce7324a84184d4db1e67a85c9e86f8dc",
+      "bytes": 317800
     },
     "web/eduscf-logo.png": {
       "sha256": "8f78adb6ad3254ef32c753c33c2e238d55fd8f9d0f3eef9c813ef70abf343d69",
@@ -208,12 +208,12 @@
       "bytes": 15389
     },
     "web/index.html": {
-      "sha256": "f65c573ff3115be66358ecc6ba1e5bf9033efe369938b6c7d56acaef736745c7",
+      "sha256": "d5f7e8d221c5a67b70a98a55e487dddbdd39c770fafb932f731cac88e208ee9b",
       "bytes": 1129
     },
     "web/styles.css": {
-      "sha256": "40bc67aab39ba9e06bfb846c54f49ef5687fcbd12083b34ab83e65466f41a610",
-      "bytes": 32859
+      "sha256": "526c21ed5946653fc38a8c420e638bf7f1a9c8e7edfcad6dd5266b90b5bc3ae7",
+      "bytes": 33878
     }
   }
 }

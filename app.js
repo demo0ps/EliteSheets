@@ -27107,6 +27107,19 @@
     const r = await api("/api/auth/demo", vertical ? { role, vertical } : { role });
     await signedIn(r);
   }
+  async function xlOfferPending() {
+    const pend = xlReadPending();
+    if (!pend?.jobId || !user || job?.id === pend.jobId) return;
+    try {
+      const j = await api(`/api/jobs/${pend.jobId}`, void 0, "GET");
+      if (j?.report?.rows) {
+        job = j;
+        xlRestoreCheckedFor = "";
+      }
+    } catch {
+      xlClearPending();
+    }
+  }
   async function signedIn(r) {
     user = r.user;
     csrf = r.csrf;
@@ -27115,6 +27128,7 @@
     await refresh();
     currentPage = user.role === "admin" ? "admin" : "workspace";
     job = null;
+    await xlOfferPending();
     shell();
     await showPage(currentPage);
   }
@@ -27312,6 +27326,7 @@
         <label class="xl-namefield"><span>File name</span><input id="file-name" value="${escapeHTML(defaultFileName())}" maxlength="120" autocomplete="off" aria-label="File name used when you save"></label>
         <div class="result-actions">
           <span id="output-state" class="badge ${release ? "good" : r ? "warn" : ""}">${release ? "\u2713 Ready to Download" : r ? "Needs 1 Quick Answer" : "Ready"}</span>
+          <button class="btn small" id="share-output" ${release && !staticMode ? "" : "disabled"} title="${staticMode ? "Sharing needs the online version" : "Create a share link or email it"}">\u{1F517} Share</button>
           <button class="btn small ${release ? "primary" : ""}" id="download-output" ${release ? "" : "disabled"}>${icon(release ? "download" : "lock")}Download Excel (.XLSX)</button>
         </div>
       </div>
@@ -27446,6 +27461,7 @@
       if ($2("run-job")) $2("run-job").addEventListener("click", () => void doRun());
       if ($2("confirm-correction")) $2("confirm-correction").addEventListener("click", () => void confirmCorrection());
       if ($2("download-output")) $2("download-output").addEventListener("click", () => openSaveDialog());
+      if ($2("share-output")) $2("share-output").addEventListener("click", () => openShareDialog());
       xlBindAfterRender();
       document.querySelectorAll(".col-map-select").forEach((sel) => sel.addEventListener("change", () => void busy(sel, async () => {
         const tgt = sel.dataset.mapTarget;
@@ -28876,6 +28892,7 @@
     </div>
     ${xlCardsHtml(headers, rows)}
     <div class="xl-wrap" id="xl-wrap" tabindex="-1" aria-label="Spreadsheet grid. Use the arrow keys to move and type to edit.">
+      <div id="xl-net" class="xl-net" role="status" hidden></div>
       <div class="xl-formula-bar">
         <div class="xl-namebox" id="xl-namebox" aria-label="Selected cell">A2</div>
         <span class="xl-fx" aria-hidden="true">fx</span>
@@ -29209,6 +29226,34 @@
     document.addEventListener("mouseup", () => {
       xlDrag = false;
     });
+    document.addEventListener("click", (e) => {
+      const t = e.target;
+      if (t.closest?.("#xl-retry")) {
+        clearTimeout(xlRetryTimer);
+        xlRetryCount = 0;
+        void xlSave();
+      } else if (t.closest?.("#xl-restore")) {
+        const pend = xlReadPending();
+        if (pend && job?.report && pend.jobId === job.id) {
+          job.report.rows = pend.rows;
+          xlRestoreCheckedFor = job.id;
+          xlHasUnsaved = true;
+          xlNetBanner(null);
+          studio();
+          xlSaveSoon();
+        }
+      } else if (t.closest?.("#xl-discard")) {
+        xlClearPending();
+        xlNetBanner(null);
+      }
+    });
+    window.addEventListener("online", () => {
+      if (xlHasUnsaved && job?.report?.rows) {
+        xlRetryCount = 0;
+        clearTimeout(xlRetryTimer);
+        void xlSave();
+      }
+    });
     document.addEventListener("dblclick", (e) => {
       const td = cellOf(e.target);
       if (td && !xlEditing) xlStartEdit(Number(td.dataset.r), Number(td.dataset.c));
@@ -29239,7 +29284,47 @@
       xlPasteBlock(text);
     });
   }
+  var XL_PENDING_KEY = "sheetqms_pending_grid_v1";
+  var xlEditSeq = 0;
+  var xlRetryCount = 0;
+  var xlRetryTimer = null;
+  var xlHasUnsaved = false;
+  var xlRestoreCheckedFor = "";
+  function xlStashPending() {
+    if (!job?.report?.rows) return;
+    try {
+      localStorage.setItem(XL_PENDING_KEY, JSON.stringify({ jobId: job.id, savedAt: (/* @__PURE__ */ new Date()).toISOString(), headers: job.report.headers, rows: job.report.rows }));
+    } catch {
+    }
+  }
+  function xlClearPending() {
+    try {
+      localStorage.removeItem(XL_PENDING_KEY);
+    } catch {
+    }
+  }
+  function xlReadPending() {
+    try {
+      const v = localStorage.getItem(XL_PENDING_KEY);
+      return v ? JSON.parse(v) : null;
+    } catch {
+      return null;
+    }
+  }
+  function xlNetBanner(msg, actions = "") {
+    const el = $2("xl-net");
+    if (!el) return;
+    if (!msg) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    el.hidden = false;
+    el.innerHTML = `<span>${escapeHTML(msg)}</span><span class="xl-net-actions">${actions}</span>`;
+  }
   function xlSaveSoon() {
+    xlEditSeq++;
+    xlStashPending();
     xlSaveText = "Saving\u2026";
     xlSetSaveText();
     clearTimeout(xlSaveTimer);
@@ -29248,20 +29333,37 @@
   async function xlSave() {
     if (!job?.report?.rows) return;
     const jobId = job.id;
+    const seq = xlEditSeq;
     const payload = { headers: job.report.headers, rows: job.report.rows };
     const before = job.report.status;
     try {
       const updated = staticMode ? await localApi(`/api/jobs/${jobId}/rows`, payload, "PUT") : await api(`/api/jobs/${jobId}/rows`, payload, "PUT");
       if (!job || job.id !== jobId) return;
+      if (seq === xlEditSeq) xlClearPending();
+      xlHasUnsaved = false;
+      xlRetryCount = 0;
+      clearTimeout(xlRetryTimer);
+      xlNetBanner(null);
       const latestRows = job.report.rows;
       job = { ...job, ...updated, report: { ...updated.report, rows: latestRows } };
       xlSaveText = job.report?.status === "RELEASED" ? "All changes saved \xB7 file ready to download" : "Changes saved \xB7 some cells are still empty";
       xlSetSaveText();
       if (before !== job.report?.status) studio();
     } catch (e) {
-      xlSaveText = "Not saved yet \u2014 try again";
-      xlSetSaveText();
-      toast(e instanceof Error ? e.message : "The grid could not be saved.", true);
+      xlHasUnsaved = true;
+      xlRetryCount++;
+      if (xlRetryCount <= 6) {
+        const wait = Math.min(3e4, 2e3 * 2 ** (xlRetryCount - 1));
+        xlSaveText = "Connection lost \u2014 edits kept in this browser";
+        xlSetSaveText();
+        xlNetBanner("Connection lost. Your edits are kept in this browser and will save automatically when the connection is back.", '<button id="xl-retry" class="btn small" type="button">Retry now</button>');
+        clearTimeout(xlRetryTimer);
+        xlRetryTimer = setTimeout(() => void xlSave(), wait);
+      } else {
+        xlSaveText = "Not saved yet";
+        xlSetSaveText();
+        xlNetBanner("Your latest edits are still only in this browser. Press Retry when you are back online.", '<button id="xl-retry" class="btn small primary" type="button">Retry save</button>');
+      }
     }
   }
   function xlBindAfterRender() {
@@ -29274,6 +29376,85 @@
       else fail();
     });
     if ($2("xl-wrap")) xlPaint();
+    if (job?.id && xlRestoreCheckedFor !== job.id && !xlHasUnsaved) {
+      xlRestoreCheckedFor = job.id;
+      const pend = xlReadPending();
+      if (pend && pend.jobId === job.id && job.report?.rows) {
+        if (JSON.stringify(pend.rows) !== JSON.stringify(job.report.rows)) {
+          xlNetBanner(`We found edits from an unfinished save on this computer (${new Date(pend.savedAt).toLocaleString()}). Restore them?`, '<button id="xl-restore" class="btn small primary" type="button">Restore edits</button><button id="xl-discard" class="btn small" type="button">Discard</button>');
+        } else xlClearPending();
+      }
+    }
+  }
+  function openShareDialog() {
+    if (!job?.id || !job.report) return;
+    const jobId = job.id;
+    if (staticMode) {
+      openModal("Share your spreadsheet", '<p class="muted">Sharing needs the online version of EduSheetManager. Download the file and send it yourself.</p>');
+      return;
+    }
+    openModal("Share your spreadsheet", `
+    <p class="muted">Anyone with the link can download this file until it expires. The file contains learner data, so share it only with people who should see it.</p>
+    <fieldset class="share-days"><legend><strong>Link works for</strong></legend>
+      <label><input type="radio" name="share-days" value="1"> 1 day</label>
+      <label><input type="radio" name="share-days" value="7" checked> 7 days</label>
+      <label><input type="radio" name="share-days" value="30"> 30 days</label>
+    </fieldset>
+    <div class="settings-actions"><button id="share-create" class="btn primary" type="button">Create link</button></div>
+    <div id="share-result" hidden>
+      <label for="share-url"><strong>Share link</strong></label>
+      <div class="share-row"><input id="share-url" readonly><button id="share-copy" class="btn small" type="button">Copy link</button></div>
+      <p class="muted" id="share-expiry"></p>
+      <button id="share-revoke" class="btn small" type="button">Turn off this link</button>
+    </div>
+    <hr>
+    <label for="share-email"><strong>Email the link</strong></label>
+    <div class="share-row"><input id="share-email" type="email" placeholder="name@school.co.za" autocomplete="off"><button id="share-send" class="btn small" type="button">Send email</button></div>
+    <p class="muted">The email contains a link only, never the file itself.</p>`);
+    let shareId = null;
+    const days2 = () => Number(document.querySelector('input[name="share-days"]:checked').value);
+    $2("share-create").addEventListener("click", async () => {
+      try {
+        const created = await api(`/api/jobs/${jobId}/share`, { days: days2() });
+        shareId = created.share_id;
+        $2("share-url").value = location.origin + created.url;
+        $2("share-expiry").textContent = `Works until ${new Date(created.expires).toLocaleDateString()}.`;
+        $2("share-result").hidden = false;
+      } catch (e) {
+        toast(e instanceof Error ? e.message : String(e), true);
+      }
+    });
+    $2("share-copy").addEventListener("click", () => {
+      const input = $2("share-url");
+      if (navigator.clipboard) navigator.clipboard.writeText(input.value).then(() => toast("Link copied.")).catch(() => {
+        input.select();
+        toast("Press Ctrl+C to copy the link.");
+      });
+      else {
+        input.select();
+        toast("Press Ctrl+C to copy the link.");
+      }
+    });
+    $2("share-revoke").addEventListener("click", async () => {
+      if (!shareId) return;
+      try {
+        await api(`/api/jobs/${jobId}/shares/${shareId}`, {}, "DELETE");
+        shareId = null;
+        $2("share-result").hidden = true;
+        toast("That link is now turned off.");
+      } catch (e) {
+        toast(e instanceof Error ? e.message : String(e), true);
+      }
+    });
+    $2("share-send").addEventListener("click", async () => {
+      const to = $2("share-email").value.trim();
+      try {
+        await api(`/api/jobs/${jobId}/share/email`, { to, days: days2() });
+        toast(`Link sent to ${to}.`);
+      } catch (e) {
+        toast(e instanceof Error ? e.message : String(e), true);
+      }
+    });
   }
   function safeBaseName(s) {
     const n = String(s ?? "").replace(/\.xlsx$/i, "").replace(/[\\/:*?"<>|\x00-\x1f]/g, "").replace(/\s+/g, " ").trim().slice(0, 100).trim();
@@ -29369,7 +29550,16 @@
       } else {
         const headers = { "X-Workspace-ID": workspaceID };
         if (demoToken) headers["X-Demo-Session"] = demoToken;
-        const r = await fetch(`/api/jobs/${job.id}/${kind}`, { headers, credentials: "same-origin" });
+        let r;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            r = await fetch(`/api/jobs/${job.id}/${kind}`, { headers, credentials: "same-origin" });
+            break;
+          } catch (netErr) {
+            if (attempt === 3) throw new Error("The connection dropped while downloading. Check your connection and press Download again.");
+            await new Promise((res) => setTimeout(res, 1500 * attempt));
+          }
+        }
         if (!r.ok) {
           const d = await r.json();
           throw new Error(d.detail);

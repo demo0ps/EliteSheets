@@ -259,7 +259,16 @@ function loginPage(){
 }
 
 async function demoLogin(role:string,vertical?:string){const r=await api('/api/auth/demo',vertical?{role,vertical}:{role});await signedIn(r)}
-async function signedIn(r:any){user=r.user;csrf=r.csrf;demoToken=r.demo_token||'';workspaceID=user!.role==='admin'&&boot.demo_mode?'demo-a':user!.tenant_id;await refresh();currentPage=user!.role==='admin'?'admin':'workspace';job=null;shell();await showPage(currentPage)}
+// Batch 3: if this browser holds unsaved grid edits, reopen that sheet so they can be restored.
+async function xlOfferPending(){
+  const pend=xlReadPending();
+  if(!pend?.jobId||!user||job?.id===pend.jobId)return;
+  try{
+    const j=await api<Job>(`/api/jobs/${pend.jobId}`,undefined,'GET');
+    if(j?.report?.rows){job=j;xlRestoreCheckedFor='';}
+  }catch{xlClearPending()}
+}
+async function signedIn(r:any){user=r.user;csrf=r.csrf;demoToken=r.demo_token||'';workspaceID=user!.role==='admin'&&boot.demo_mode?'demo-a':user!.tenant_id;await refresh();currentPage=user!.role==='admin'?'admin':'workspace';job=null;await xlOfferPending();shell();await showPage(currentPage)}
 async function refresh(){if(!user)return;if(user.role==='admin'){customers=(await api('/api/admin/customers')).items;if(!workspaceID||workspaceID==='platform')workspaceID=customers[0]?.id||''}if(workspaceID&&workspaceID!=='platform')overview=await api('/api/overview');else overview={workspace:{name:'Platform administration'},jobs:[],stats:{jobs:0,released:0,held:0,knowledge:0},ai:{enabled:false},preferences:{theme:'light',density:'comfortable',vertical:'general'}};applyPreferences()}
 function applyPreferences(){document.body.className=((overview.preferences?.theme==='dark'?'dark':'light')+(overview.preferences?.density==='compact'?' compact':'')).trim()}
 
@@ -430,6 +439,7 @@ function studio(){
         <label class="xl-namefield"><span>File name</span><input id="file-name" value="${escapeHTML(defaultFileName())}" maxlength="120" autocomplete="off" aria-label="File name used when you save"></label>
         <div class="result-actions">
           <span id="output-state" class="badge ${release?'good':r?'warn':''}">${release?'✓ Ready to Download':r?'Needs 1 Quick Answer':'Ready'}</span>
+          <button class="btn small" id="share-output" ${release&&!staticMode?'':'disabled'} title="${staticMode?'Sharing needs the online version':'Create a share link or email it'}">🔗 Share</button>
           <button class="btn small ${release?'primary':''}" id="download-output" ${release?'':'disabled'}>${icon(release?'download':'lock')}Download Excel (.XLSX)</button>
         </div>
       </div>
@@ -553,6 +563,7 @@ function studio(){
     if($('run-job'))$('run-job').addEventListener('click',()=>void doRun());
     if($('confirm-correction'))$('confirm-correction').addEventListener('click',()=>void confirmCorrection());
     if($('download-output'))$('download-output').addEventListener('click',()=>openSaveDialog());
+    if($('share-output'))$('share-output').addEventListener('click',()=>openShareDialog());
     xlBindAfterRender();
     document.querySelectorAll<HTMLSelectElement>('.col-map-select').forEach(sel=>sel.addEventListener('change',()=>void busy(sel,async()=>{
       const tgt=sel.dataset.mapTarget!;
@@ -1906,6 +1917,7 @@ function xlHtml(headers:string[],rows:Record<string,any>[],sheetName:string,head
     </div>
     ${xlCardsHtml(headers,rows)}
     <div class="xl-wrap" id="xl-wrap" tabindex="-1" aria-label="Spreadsheet grid. Use the arrow keys to move and type to edit.">
+      <div id="xl-net" class="xl-net" role="status" hidden></div>
       <div class="xl-formula-bar">
         <div class="xl-namebox" id="xl-namebox" aria-label="Selected cell">A2</div>
         <span class="xl-fx" aria-hidden="true">fx</span>
@@ -2110,6 +2122,16 @@ function installGridListeners(){
     xlSel.fr=Number(td.dataset.r);xlSel.fc=Number(td.dataset.c);xlPaint();
   });
   document.addEventListener('mouseup',()=>{xlDrag=false});
+  document.addEventListener('click',e=>{
+    const t=e.target as HTMLElement;
+    if(t.closest?.('#xl-retry')){clearTimeout(xlRetryTimer);xlRetryCount=0;void xlSave()}
+    else if(t.closest?.('#xl-restore')){
+      const pend=xlReadPending();
+      if(pend&&job?.report&&pend.jobId===job.id){job.report.rows=pend.rows;xlRestoreCheckedFor=job.id;xlHasUnsaved=true;xlNetBanner(null);studio();xlSaveSoon()}
+    }
+    else if(t.closest?.('#xl-discard')){xlClearPending();xlNetBanner(null)}
+  });
+  window.addEventListener('online',()=>{if(xlHasUnsaved&&job?.report?.rows){xlRetryCount=0;clearTimeout(xlRetryTimer);void xlSave()}});
   document.addEventListener('dblclick',e=>{const td=cellOf(e.target);if(td&&!xlEditing)xlStartEdit(Number(td.dataset.r),Number(td.dataset.c))});
   document.addEventListener('keydown',e=>{if((e.target as HTMLElement)?.closest?.('#xl-wrap'))xlKey(e)});
   document.addEventListener('focusout',e=>{
@@ -2130,8 +2152,23 @@ function installGridListeners(){
   });
 }
 
-// Autosave: edits are sent to the server a moment after the last change.
+// Autosave with a safety net (batch 3): every edit is kept in this browser until the server confirms it.
+const XL_PENDING_KEY='sheetqms_pending_grid_v1';
+let xlEditSeq=0,xlRetryCount=0,xlRetryTimer:any=null,xlHasUnsaved=false,xlRestoreCheckedFor='';
+function xlStashPending(){
+  if(!job?.report?.rows)return;
+  try{localStorage.setItem(XL_PENDING_KEY,JSON.stringify({jobId:job.id,savedAt:new Date().toISOString(),headers:job.report.headers,rows:job.report.rows}))}catch{}
+}
+function xlClearPending(){try{localStorage.removeItem(XL_PENDING_KEY)}catch{}}
+function xlReadPending():any{try{const v=localStorage.getItem(XL_PENDING_KEY);return v?JSON.parse(v):null}catch{return null}}
+function xlNetBanner(msg:string|null,actions=''){
+  const el=$('xl-net');if(!el)return;
+  if(!msg){el.hidden=true;el.innerHTML='';return}
+  el.hidden=false;el.innerHTML=`<span>${escapeHTML(msg)}</span><span class="xl-net-actions">${actions}</span>`;
+}
 function xlSaveSoon(){
+  xlEditSeq++;
+  xlStashPending();
   xlSaveText='Saving…';xlSetSaveText();
   clearTimeout(xlSaveTimer);
   xlSaveTimer=setTimeout(()=>void xlSave(),900);
@@ -2139,11 +2176,14 @@ function xlSaveSoon(){
 async function xlSave(){
   if(!job?.report?.rows)return;
   const jobId=job.id;
+  const seq=xlEditSeq;
   const payload={headers:job.report.headers,rows:job.report.rows};
   const before=job.report.status;
   try{
     const updated:any=staticMode?await localApi(`/api/jobs/${jobId}/rows`,payload,'PUT'):await api(`/api/jobs/${jobId}/rows`,payload,'PUT');
     if(!job||job.id!==jobId)return;
+    if(seq===xlEditSeq)xlClearPending();
+    xlHasUnsaved=false;xlRetryCount=0;clearTimeout(xlRetryTimer);xlNetBanner(null);
     // Keep the rows the user may have typed while the save was in flight.
     const latestRows=job.report!.rows;
     job={...job,...updated,report:{...updated.report,rows:latestRows}} as any;
@@ -2151,8 +2191,16 @@ async function xlSave(){
     xlSetSaveText();
     if(before!==job!.report?.status)studio();
   }catch(e){
-    xlSaveText='Not saved yet — try again';xlSetSaveText();
-    toast(e instanceof Error?e.message:'The grid could not be saved.',true);
+    xlHasUnsaved=true;xlRetryCount++;
+    if(xlRetryCount<=6){
+      const wait=Math.min(30000,2000*2**(xlRetryCount-1));
+      xlSaveText='Connection lost — edits kept in this browser';xlSetSaveText();
+      xlNetBanner('Connection lost. Your edits are kept in this browser and will save automatically when the connection is back.','<button id="xl-retry" class="btn small" type="button">Retry now</button>');
+      clearTimeout(xlRetryTimer);xlRetryTimer=setTimeout(()=>void xlSave(),wait);
+    }else{
+      xlSaveText='Not saved yet';xlSetSaveText();
+      xlNetBanner('Your latest edits are still only in this browser. Press Retry when you are back online.','<button id="xl-retry" class="btn small primary" type="button">Retry save</button>');
+    }
   }
 }
 
@@ -2164,6 +2212,67 @@ function xlBindAfterRender(){
     else fail();
   });
   if($('xl-wrap'))xlPaint();
+  // Offer to restore edits left unsaved by a dropped connection or a closed tab (asked once per sheet).
+  if(job?.id&&xlRestoreCheckedFor!==job.id&&!xlHasUnsaved){
+    xlRestoreCheckedFor=job.id;
+    const pend=xlReadPending();
+    if(pend&&pend.jobId===job.id&&job.report?.rows){
+      if(JSON.stringify(pend.rows)!==JSON.stringify(job.report.rows)){
+        xlNetBanner(`We found edits from an unfinished save on this computer (${new Date(pend.savedAt).toLocaleString()}). Restore them?`,'<button id="xl-restore" class="btn small primary" type="button">Restore edits</button><button id="xl-discard" class="btn small" type="button">Discard</button>');
+      }else xlClearPending();
+    }
+  }
+}
+
+// Share (batch 3): a private link that works without sign-in until it expires, or an emailed link.
+function openShareDialog(){
+  if(!job?.id||!job.report)return;
+  const jobId=job.id;
+  if(staticMode){openModal('Share your spreadsheet','<p class="muted">Sharing needs the online version of EduSheetManager. Download the file and send it yourself.</p>');return}
+  openModal('Share your spreadsheet',`
+    <p class="muted">Anyone with the link can download this file until it expires. The file contains learner data, so share it only with people who should see it.</p>
+    <fieldset class="share-days"><legend><strong>Link works for</strong></legend>
+      <label><input type="radio" name="share-days" value="1"> 1 day</label>
+      <label><input type="radio" name="share-days" value="7" checked> 7 days</label>
+      <label><input type="radio" name="share-days" value="30"> 30 days</label>
+    </fieldset>
+    <div class="settings-actions"><button id="share-create" class="btn primary" type="button">Create link</button></div>
+    <div id="share-result" hidden>
+      <label for="share-url"><strong>Share link</strong></label>
+      <div class="share-row"><input id="share-url" readonly><button id="share-copy" class="btn small" type="button">Copy link</button></div>
+      <p class="muted" id="share-expiry"></p>
+      <button id="share-revoke" class="btn small" type="button">Turn off this link</button>
+    </div>
+    <hr>
+    <label for="share-email"><strong>Email the link</strong></label>
+    <div class="share-row"><input id="share-email" type="email" placeholder="name@school.co.za" autocomplete="off"><button id="share-send" class="btn small" type="button">Send email</button></div>
+    <p class="muted">The email contains a link only, never the file itself.</p>`);
+  let shareId:string|null=null;
+  const days=()=>Number((document.querySelector('input[name="share-days"]:checked') as HTMLInputElement).value);
+  $('share-create').addEventListener('click',async()=>{
+    try{
+      const created=await api<any>(`/api/jobs/${jobId}/share`,{days:days()});
+      shareId=created.share_id;
+      ($('share-url') as HTMLInputElement).value=location.origin+created.url;
+      $('share-expiry').textContent=`Works until ${new Date(created.expires).toLocaleDateString()}.`;
+      $('share-result').hidden=false;
+    }catch(e){toast(e instanceof Error?e.message:String(e),true)}
+  });
+  $('share-copy').addEventListener('click',()=>{
+    const input=$('share-url') as HTMLInputElement;
+    if(navigator.clipboard)navigator.clipboard.writeText(input.value).then(()=>toast('Link copied.')).catch(()=>{input.select();toast('Press Ctrl+C to copy the link.')});
+    else{input.select();toast('Press Ctrl+C to copy the link.')}
+  });
+  $('share-revoke').addEventListener('click',async()=>{
+    if(!shareId)return;
+    try{await api(`/api/jobs/${jobId}/shares/${shareId}`,{},'DELETE');shareId=null;$('share-result').hidden=true;toast('That link is now turned off.')}
+    catch(e){toast(e instanceof Error?e.message:String(e),true)}
+  });
+  $('share-send').addEventListener('click',async()=>{
+    const to=($('share-email') as HTMLInputElement).value.trim();
+    try{await api(`/api/jobs/${jobId}/share/email`,{to,days:days()});toast(`Link sent to ${to}.`)}
+    catch(e){toast(e instanceof Error?e.message:String(e),true)}
+  });
 }
 
 // File naming: one box in the workspace header, reused by the save pop-up.
@@ -2245,9 +2354,13 @@ async function download(kind:string,baseName?:string){
     }else{
       const headers:Record<string,string>={'X-Workspace-ID':workspaceID};
       if(demoToken)headers['X-Demo-Session']=demoToken;
-      const r=await fetch(`/api/jobs/${job.id}/${kind}`,{headers,credentials:'same-origin'});
-      if(!r.ok){const d=await r.json();throw new Error(d.detail)}
-      blob=await r.blob();
+      let r:Response|undefined;
+      for(let attempt=1;attempt<=3;attempt++){
+        try{r=await fetch(`/api/jobs/${job.id}/${kind}`,{headers,credentials:'same-origin'});break}
+        catch(netErr){if(attempt===3)throw new Error('The connection dropped while downloading. Check your connection and press Download again.');await new Promise(res=>setTimeout(res,1500*attempt))}
+      }
+      if(!r!.ok){const d=await r!.json();throw new Error(d.detail)}
+      blob=await r!.blob();
     }
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');

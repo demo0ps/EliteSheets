@@ -498,3 +498,9 @@ Status: Implemented, verified (`71 passed`), and deployed to `https://demo0ps.gi
 - Server: `PUT /api/jobs/{id}/rows` (values saved, workbook rebuilt, release gate re-run). Static mode mirrors it.
 - Limits: header names are read-only in batch 1; sum-rule columns are recalculated on save; the output is one sheet, so sheet tabs show one tab until multi-sheet output is built.
 - Verified: pytest 72 passed; Chromium checks for grid editing, formula warning, save pop-up, download name, and phone layout.
+
+## D-045 — EduSheetManager UX batch 2 (review cards, file status, big actions, touch targets)
+- Phones and tablets (≤1024px): read-only review cards for each row (title, key fields, empty-field flags); editing stays on a PC.
+- Every uploaded or opened file shows a status label: "Ready to open" before opening, "Read ✓ · N sheets" or "Needs attention" (with the first reason) after opening. Remove buttons are labelled.
+- Big Upload, Download and Open buttons on phones; 44px minimum touch targets for buttons, tabs, selects and inputs.
+- Verified in Chromium at 390px and 1440px: cards expand, status labels show, button heights ≥44px, no page errors. No server changes in this batch.

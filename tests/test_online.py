@@ -1020,3 +1020,39 @@ def test_grid_edits_are_saved_as_values_and_rebuild_the_workbook(client):
     # Rows that are not a list of objects are refused.
     bad = c.put(f'/api/jobs/{job["id"]}/rows', json={'headers': headers, 'rows': 'nope'})
     assert bad.status_code == 422
+
+
+def test_share_links_download_expire_revoke_and_email_is_honest(client, monkeypatch):
+    # EduSheetManager batch 3 (D-046): share links work without sign-in, expire, and can be revoked.
+    import sheetqms.online as online_module
+    c, _ = client
+    sign(client)
+    job = example(client, request='share-test-001')
+    assert c.post(f'/api/jobs/{job["id"]}/run', json={}).status_code == 200
+    assert c.post(f'/api/jobs/{job["id"]}/share', json={'days': 2}).status_code == 422
+    made = c.post(f'/api/jobs/{job["id"]}/share', json={'days': 7})
+    assert made.status_code == 200, made.text
+    share = made.json()
+    assert share['url'].startswith('/api/shared/') and share['days'] == 7
+    # Recipients need no sign-in; the link returns the verified workbook.
+    anonymous = TestClient(client[1])
+    ok = anonymous.get(share['url'])
+    assert ok.status_code == 200 and ok.content[:2] == b'PK'
+    assert 'attachment' in ok.headers['content-disposition']
+    # A forged or altered token is refused.
+    assert anonymous.get(share['url'][:-3] + 'zzz').status_code == 404
+    assert anonymous.get('/api/shared/not-a-token').status_code == 404
+    # Expiry: move the clock past the link's expiry date.
+    monkeypatch.setattr(online_module, 'now', lambda: '2999-01-01T00:00:00+00:00')
+    assert anonymous.get(share['url']).status_code == 404
+    monkeypatch.undo()
+    # Revoke: the link stops working straight away.
+    assert c.delete(f'/api/jobs/{job["id"]}/shares/{share["share_id"]}').status_code == 200
+    assert anonymous.get(share['url']).status_code == 404
+    # The job view never exposes share secrets.
+    assert 'shares' not in c.get(f'/api/jobs/{job["id"]}').json()
+    # Email is refused honestly while no email service is configured.
+    monkeypatch.delenv('SHEETQMS_SMTP_HOST', raising=False)
+    no_mail = c.post(f'/api/jobs/{job["id"]}/share/email', json={'to': 'principal@example.co.za', 'days': 7})
+    assert no_mail.status_code == 503
+    assert c.post(f'/api/jobs/{job["id"]}/share/email', json={'to': 'not-an-email', 'days': 7}).status_code == 422
