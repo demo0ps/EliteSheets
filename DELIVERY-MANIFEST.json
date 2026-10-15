@@ -40,19 +40,19 @@
       "bytes": 8815
     },
     "docs/project/DECISIONS.md": {
-      "sha256": "80b66127d60248e4c5d2fe3c8781749e9690883db8d3fd9048f07c48d8ddc065",
-      "bytes": 60501
+      "sha256": "dbdd35cd25f0951f2c3670786b666b827dfe0b49afa4e838aece26d5bcdf4cb5",
+      "bytes": 61683
     },
     "docs/project/STATUS.md": {
-      "sha256": "33a444f9b41814199bc3ea5bd340fdc69d087184b015f9bb26cfa34c2f6e590b",
-      "bytes": 5781
+      "sha256": "983f3c0e2f96596e609e8bf9ba87a72e672be5d73abbe8a1441d76fd84d96318",
+      "bytes": 7735
     },
     "docs/project/TEAM.md": {
       "sha256": "0105fc0e1f3447441d20bb6072e41648bb7ca8b0b23217c540192cf3349d3dee",
       "bytes": 11532
     },
     "index.html": {
-      "sha256": "6a924b566556d6bb38688aa8ba0b0ca8f44f631a409cf867a27533401a1e0d98",
+      "sha256": "dd15fdd9ffdf34af7252219d207e297188f5c28d6e0a2a3bea293debccd3be08",
       "bytes": 1086
     },
     "requirements.txt": {
@@ -192,12 +192,12 @@
       "bytes": 148917
     },
     "web/app.js": {
-      "sha256": "4702c4d36d7108c198ac8971845ca17222fc531781a312ea9343634159ca2e3f",
-      "bytes": 1108607
+      "sha256": "59230deeb950ad2f382d9c1ce27d43747ef38a09cb5bfbecaf6c2069292071e1",
+      "bytes": 1112563
     },
     "web/app.ts": {
-      "sha256": "94f9da2ac0ddf4398ac5f0920367fe0bce7324a84184d4db1e67a85c9e86f8dc",
-      "bytes": 317800
+      "sha256": "2e237158f051267a16728f1790de180c6569d7b42437d067e65c420b716ee1a6",
+      "bytes": 321796
     },
     "web/eduscf-logo.png": {
       "sha256": "8f78adb6ad3254ef32c753c33c2e238d55fd8f9d0f3eef9c813ef70abf343d69",
@@ -208,12 +208,12 @@
       "bytes": 15389
     },
     "web/index.html": {
-      "sha256": "d5f7e8d221c5a67b70a98a55e487dddbdd39c770fafb932f731cac88e208ee9b",
-      "bytes": 1129
+      "sha256": "6b4b48ad88697fea6ef417187fdbd785cffe14671cf9cce4aa818c52884404fe",
+      "bytes": 1090
     },
     "web/styles.css": {
-      "sha256": "526c21ed5946653fc38a8c420e638bf7f1a9c8e7edfcad6dd5266b90b5bc3ae7",
-      "bytes": 33878
+      "sha256": "caecc21855e801981fda9466eb77cb9601b293b32c762c67de791966afdfc925",
+      "bytes": 35654
     }
   }
 }

@@ -38,8 +38,8 @@ def test_margin_is_admin_only(client):
 def test_bulk_grant_to_selected_users_only(client):
     c, _ = client
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
-    other = id_for(client, 'other@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
+    other = id_for(client, 'other@demo.elitesheets')
     assert c.post('/api/admin/credits/grant-bulk', json={'user_ids': [], 'amount': 5, 'reason': 'Term bonus'}).status_code == 422
     assert c.post('/api/admin/credits/grant-bulk', json={'user_ids': [op], 'amount': 0, 'reason': 'Term bonus'}).status_code == 422
     assert c.post('/api/admin/credits/grant-bulk', json={'user_ids': [op], 'amount': 5, 'reason': 'x'}).status_code == 422
@@ -62,7 +62,7 @@ def test_balances_export_has_headers_and_rows(client):
     text = body['csv'].lstrip('\ufeff')
     rows = list(csv.reader(io.StringIO(text)))
     assert rows[0] == ['Name', 'Email', 'Workspace', 'Allowance', 'Spending cap', 'Used', 'Left', 'Status']
-    assert any(r[1] == 'operator@demo.sheetqms' for r in rows[1:])
+    assert any(r[1] == 'operator@demo.elitesheets' for r in rows[1:])
 
 
 def test_ledger_export_lists_charges_and_validates_month(client):

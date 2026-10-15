@@ -307,17 +307,17 @@ Status: Confirmed by owner via `ask_user` (`default_regular_user_mode`, `warm_cr
 3. **Spacious & Calm Layout (`spacious_calm_layout`):**
    - Increased breathing room, card padding, and readable typography (`15.5px`), and streamlined the quick-tools bar to 3 calm buttons at a time.
 
-## D-032 — Rebrand to EduSheetManager, by EduSCF with Powered by EduSCF Logo Badge
+## D-032 — Rebrand to Elite Sheets with Powered by Elite Way Holdings Logo Badge
 
 Status: Confirmed by owner via `ask_user` (`edusheetmanager_with_by_eduscf_tag`, `signin_and_page_footer`, `update_exports_and_printables`), implemented, verified, and deployed to `https://demo0ps.github.io/SheetQMS/` at commit `86b3921` (2026-10-14).
 
 1. **Brand Name & Header (`edusheetmanager_with_by_eduscf_tag`):**
-   - Preserved the platform's teal grid icon (`.logo-box`) and updated the brand title beside it to **`EduSheetManager`** with a subtle **`by EduSCF`** pill tag (`.brand-by`), plus updated `<title>EduSheetManager — by EduSCF</title>` in both HTML entry points.
-2. **"Powered by EduSCF" Badge on Welcome Card & Page Footer (`signin_and_page_footer`):**
-   - Cropped and optimized the attached EduSCF logo (`/home/user/uploads/5942776253129625469.jpg` $\rightarrow$ `web/eduscf-logo.png` & embedded data URI `web/eduscf_logo.ts`) so it renders reliably across FastAPI, GitHub Pages, and print dialogs.
-   - Added a clean **`Powered by [EduSCF Logo]`** badge (`.powered-by-eduscf`) at the bottom of the Welcome/Sign-In card and inside a calm page footer (`<footer class="app-footer">`) across every workspace screen while keeping the top navigation bar minimal.
+   - Preserved the platform's teal grid icon (`.logo-box`) and updated the brand title beside it to **`Elite Sheets`** with a subtle **`by Elite Way Holdings`** pill tag (`.brand-by`), plus updated `<title>Elite Sheets — by Elite Way Holdings</title>` in both HTML entry points.
+2. **"Powered by Elite Way Holdings" Badge on Welcome Card & Page Footer (`signin_and_page_footer`):**
+   - Cropped and optimized the attached Elite Way Holdings logo (`/home/user/uploads/5942776253129625469.jpg` $\rightarrow$ `web/eduscf-logo.png` & embedded data URI `web/eduscf_logo.ts`) so it renders reliably across FastAPI, GitHub Pages, and print dialogs.
+   - Added a clean **`Powered by [Elite Way Holdings Logo]`** badge (`.powered-by-eduscf`) at the bottom of the Welcome/Sign-In card and inside a calm page footer (`<footer class="app-footer">`) across every workspace screen while keeping the top navigation bar minimal.
 3. **Exported Filenames & Printable Reports (`update_exports_and_printables`):**
-   - Updated default downloaded filenames to `EduSheetManager-verified.xlsx` and `EduSheetManager-evidence.json`, and added the `Powered by [EduSCF Logo]` credit to printable PDF Quotes/Tax Invoices and the Data Quality Summary Report modal.
+   - Updated default downloaded filenames to `Elite Sheets-verified.xlsx` and `Elite Sheets-evidence.json`, and added the `Powered by [Elite Way Holdings Logo]` credit to printable PDF Quotes/Tax Invoices and the Data Quality Summary Report modal.
 
 ## D-033 — Unified 1-Screen "My Spreadsheet" Workspace, Step 1-2-3 Visual Guide, and 1-Click Sales Demos
 
@@ -490,7 +490,7 @@ Status: Implemented, verified (`71 passed`), and deployed to `https://demo0ps.gi
 
 
 
-## D-044 — EduSheetManager UX batch 1 (Excel-style grid, file naming, scroll containment, mobile)
+## D-044 — Elite Sheets UX batch 1 (Excel-style grid, file naming, scroll containment, mobile)
 - Desktop preview is an Excel-style editable grid (column letters, row numbers, arrow/Enter/Tab, type-to-edit, Ctrl+C/V/Z/Y, range select, formula bar, autosave). Values only: a typed `=` shows a warning and is saved as text (server writes it as a string cell).
 - Header "File name" box plus a save pop-up pre-filled with that name; `.xlsx` appended.
 - Scroll containment (`overscroll-behavior: contain`) on the grid and preview boxes.
@@ -499,8 +499,16 @@ Status: Implemented, verified (`71 passed`), and deployed to `https://demo0ps.gi
 - Limits: header names are read-only in batch 1; sum-rule columns are recalculated on save; the output is one sheet, so sheet tabs show one tab until multi-sheet output is built.
 - Verified: pytest 72 passed; Chromium checks for grid editing, formula warning, save pop-up, download name, and phone layout.
 
-## D-045 — EduSheetManager UX batch 2 (review cards, file status, big actions, touch targets)
+## D-045 — Elite Sheets UX batch 2 (review cards, file status, big actions, touch targets)
 - Phones and tablets (≤1024px): read-only review cards for each row (title, key fields, empty-field flags); editing stays on a PC.
 - Every uploaded or opened file shows a status label: "Ready to open" before opening, "Read ✓ · N sheets" or "Needs attention" (with the first reason) after opening. Remove buttons are labelled.
 - Big Upload, Download and Open buttons on phones; 44px minimum touch targets for buttons, tabs, selects and inputs.
 - Verified in Chromium at 390px and 1440px: cards expand, status labels show, button heights ≥44px, no page errors. No server changes in this batch.
+
+## D-046 — Elite Sheets UX batch 3 (share links, email, dropped-connection safety)
+- Share: a finished sheet can be shared by a private link (1, 7 or 30 days, chosen by the sender) that works without sign-in. Links are stored as hashes, return the same verified workbook (same input and output checks), and can be turned off straight away. Job views never include share secrets.
+- Email: sends the link only, never the file. It is refused with a clear message until SMTP is configured (SHEETQMS_SMTP_HOST, SHEETQMS_SMTP_FROM, optional SHEETQMS_SMTP_PORT/USER/PASSWORD). No email service is configured yet.
+- Dropped connection: each grid edit is kept in this browser until the server confirms it. Failed saves retry automatically (2s, 4s, up to 6 tries), with a "Connection lost" banner and a Retry button; saves resume when the browser comes back online.
+- After sign-in, if this browser holds unsaved edits, the app reopens that sheet and offers Restore or Discard.
+- Downloads retry once or twice on a dropped connection.
+- Verified: pytest (new share test), Chromium checks for share create/open/revoke, the offline banner and recovery, and restore after closing the tab.

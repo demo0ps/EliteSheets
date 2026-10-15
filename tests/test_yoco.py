@@ -145,7 +145,7 @@ def test_full_subscription_payment_is_recorded_once(ycl, fake_yoco):
     sign(ycl, role='admin')
     pid = yoco_provider(c)
     assert save_keys(c, pid).status_code == 200
-    op = id_for(ycl, 'operator@demo.sheetqms')
+    op = id_for(ycl, 'operator@demo.elitesheets')
     sign(ycl)
     me = c.get('/api/billing/me').json()
     assert me['can_pay'] is True and me['provider'] == 'Yoco' and me['fee'] == 79
@@ -171,7 +171,7 @@ def test_unsigned_or_unconfirmed_events_record_nothing(ycl, fake_yoco):
     sign(ycl, role='admin')
     pid = yoco_provider(c)
     save_keys(c, pid)
-    op = id_for(ycl, 'operator@demo.sheetqms')
+    op = id_for(ycl, 'operator@demo.elitesheets')
     sign(ycl)
     checkout = c.post('/api/billing/checkout').json()
     cid = fake_yoco['created'][-1]['idem']
@@ -205,7 +205,7 @@ def test_failed_checkout_is_marked_and_not_payable(ycl, fake_yoco):
     sign(ycl, role='admin')
     pid = yoco_provider(c)
     save_keys(c, pid)
-    op = id_for(ycl, 'operator@demo.sheetqms')
+    op = id_for(ycl, 'operator@demo.elitesheets')
     sign(ycl)
     fake_yoco['fail_create'] = True
     r = c.post('/api/billing/checkout')

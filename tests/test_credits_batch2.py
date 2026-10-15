@@ -19,8 +19,8 @@ def chat(client, job, request_id):
 def test_paused_user_is_blocked_until_restored(client):
     c, _ = client
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
-    admin = id_for(client, 'admin@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
+    admin = id_for(client, 'admin@demo.elitesheets')
     assert c.put(f'/api/admin/credits/{op}/pause', json={'paused': True, 'reason': 'x'}).status_code == 422
     assert c.put(f'/api/admin/credits/{admin}/pause', json={'paused': True, 'reason': 'Test pause'}).status_code == 422
     paused = c.put(f'/api/admin/credits/{op}/pause', json={'paused': True, 'reason': 'Billing dispute'})
@@ -41,7 +41,7 @@ def test_spending_cap_stops_charges_and_can_be_lifted(client):
     sign(client)
     job = example(client, request='cap-job-001')
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     assert c.put(f'/api/admin/credits/{op}/cap', json={'spend_cap': 2, 'reason': 'Trial budget'}).status_code == 200
     sign(client)
     assert chat(client, job, 'cap-req-1').status_code == 200
@@ -57,7 +57,7 @@ def test_spending_cap_stops_charges_and_can_be_lifted(client):
 def test_cap_validation(client):
     c, _ = client
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     assert c.put(f'/api/admin/credits/{op}/cap', json={'spend_cap': -1, 'reason': 'Bad value'}).status_code == 422
     assert c.put(f'/api/admin/credits/{op}/cap', json={'spend_cap': 10, 'reason': 'ok'}).status_code == 422
 
@@ -68,7 +68,7 @@ def test_admin_undo_reverses_one_charge_once(client):
     job = example(client, request='undo-job-001')
     assert chat(client, job, 'undo-req-1').status_code == 200
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     history = c.get(f'/api/admin/credits/{op}/history').json()
     before = history['view']['left']
     charge = next(r for r in history['ledger'] if r['delta'] < 0)
@@ -86,7 +86,7 @@ def test_admin_undo_reverses_one_charge_once(client):
 def test_undo_only_applies_to_charges_and_needs_a_reason(client):
     c, _ = client
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     c.post(f'/api/admin/credits/{op}/grant', json={'amount': 5, 'reason': 'Top-up pack'})
     grant = next(r for r in c.get(f'/api/admin/credits/{op}/history').json()['ledger'] if r['delta'] > 0)
     assert c.post(f'/api/admin/credits/{op}/undo/{grant["id"]}', json={'reason': 'Wrong sign'}).status_code == 404
@@ -131,7 +131,7 @@ def test_low_balance_email_is_sent_once(client, monkeypatch):
     monkeypatch.setenv('SHEETQMS_SMTP_HOST', 'smtp.test.invalid')
     monkeypatch.setenv('SHEETQMS_SMTP_FROM', 'noreply@test.invalid')
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     assert c.put(f'/api/admin/credits/{op}/allowance', json={'included': 3, 'reason': 'Small trial'}).status_code == 200
     sign(client)
     job = example(client, request='email-job-001')
@@ -139,6 +139,6 @@ def test_low_balance_email_is_sent_once(client, monkeypatch):
     assert chat(client, job, 'email-req-2').status_code == 200
     assert sent == []
     assert chat(client, job, 'email-req-3').status_code == 200  # 0 left: alert goes out
-    assert sent == [('operator@demo.sheetqms', 'Your EduSheetManager credits are running low')]
+    assert sent == [('operator@demo.elitesheets', 'Your Elite Sheets credits are running low')]
     assert chat(client, job, 'email-req-4').status_code == 402
     assert len(sent) == 1

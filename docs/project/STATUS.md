@@ -31,8 +31,8 @@ Implemented in `sheetqms-cloud/`:
 
 ## Running development preview & published GitHub Pages preview
 
-- **Arena Sandbox FastAPI Preview:** `EduSheetManager — by EduSCF` is running on port **3001**, managed process `edusheetmanager-by-eduscf-c7d52fd8` (`SHEETQMS_DEMO=1`).
-- **GitHub Repository & Pages:** `https://github.com/demo0ps/SheetQMS` and `https://demo0ps.github.io/SheetQMS/` updated at commit `b9d4216` (`b9d42166a73915f19a57e000c3ff86b01b7a0a22`), serving `<title>EduSheetManager — by EduSCF</title>`, `styles.css?v=b331f82728e9`, and `app.js?v=456e1ca3d8da` (`0` token occurrences in `/home/user` or `/tmp`).
+- **Arena Sandbox FastAPI Preview:** `Elite Sheets — by Elite Way Holdings` is running on port **3001**, managed process `edusheetmanager-by-eduscf-c7d52fd8` (`SHEETQMS_DEMO=1`).
+- **GitHub Repository & Pages:** `https://github.com/demo0ps/SheetQMS` and `https://demo0ps.github.io/SheetQMS/` updated at commit `b9d4216` (`b9d42166a73915f19a57e000c3ff86b01b7a0a22`), serving `<title>Elite Sheets — by Elite Way Holdings</title>`, `styles.css?v=b331f82728e9`, and `app.js?v=456e1ca3d8da` (`0` token occurrences in `/home/user` or `/tmp`).
 
 ## Known gaps / blockers before production
 
@@ -47,6 +47,19 @@ Implemented in `sheetqms-cloud/`:
 
 Owner: review `SheetQMS online workspace` on port 3001 and `SheetQMS-online.zip`. When ready to publish online, provision PostgreSQL + private R2 + Cloud Run (or provide your target cloud account workflow out of band), set secrets in the cloud secret manager, run `python -m sheetqms.migrate`, and run the live-URL verification checklist in `docs/DEPLOY.md`.
 
-**Batch 1 (EduSheetManager UX) — built, verified locally (D-044).** Pending: commit and Pages push (not yet done); batches 2 and 3 not started.
+**Batch 1 (Elite Sheets UX) — built, verified locally (D-044).** Pending: commit and Pages push (not yet done); batches 2 and 3 not started.
 
 **Batch 2 (D-045) — built and verified locally.** Pending: commit and Pages push. Batch 3 (share/email download, resume after dropped connection) not started.
+
+**Batch 3 (D-046) — built and verified locally.** Pending: email needs an SMTP service to be configured; commit and Pages push pending. Batches 1–3 complete once pushed.
+
+**Hotfix (after batch 3): phone Helper did not scroll.** On phones and tablets (≤1024px) the Helper card grew to fit every message, so the page scrolled instead of the message list. The card now has a height cap under the header and tab bar, and the message list scrolls inside it. Verified in Chromium at 390×844 and 375×667 with a long conversation: wheel scroll moves the messages and the page stays still. Not yet committed or pushed.
+
+**Helper: what is missing (not yet committed or pushed).** The Helper has a "What's missing?" chip, and typed questions such as "what is still missing?" get the same answer. It lists empty cells by column and row, formula cells, open questions, and failed checks, then gives the status. Answers come from the current sheet and stay in the Helper panel for the session. Verified in Chromium on the sample sheet, with a blanked cell as the test case.
+
+## Mobile Helper layout fix (local, not pushed)
+- Phones/tablets (<=1024px): Helper header shortened, upload label shortened, suggestion chips in one scrolling row, typing box 16px with 44px height, shorter placeholder on phones.
+- Verified at 390x844: Helper welcome visible, typing bar visible above the tab bar, no page errors. Message list still scrolls internally (wheel test: scrollTop 600, page scrollY 0 at 390x844 and 375x667).
+- Cache hashes updated (styles.css bc25b01fc486, app.js 59230deeb950); SheetQMS-online.zip rebuilt; pytest 73 passed.
+- PUSHED as 2c9be7d on demo0ps/SheetQMS main (on top of c871c42, which already held batch 3 and the first phone-scroll fix). Token used transiently in /tmp and deleted; grep found no copies.
+- Open: phone full-screen Helper (user said yes; needs a decision on which top bar rows to hide). Upload drawer already starts collapsed.

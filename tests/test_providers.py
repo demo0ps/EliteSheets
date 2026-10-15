@@ -32,7 +32,7 @@ def test_making_another_provider_default_moves_the_default(client):
 def test_payments_go_to_the_chosen_or_default_provider(client):
     c, _ = client
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     default = add(client, name='Paystack', ref='MERCH-001').json()
     other = add(client, name='Yoco', ref='MERCH-003').json()
     r1 = c.post(f'/api/admin/billing/{op}/payments', json={'kind': 'subscription', 'amount_rand': 79, 'reference': 'PROV-REF-1'})
@@ -50,7 +50,7 @@ def test_payments_go_to_the_chosen_or_default_provider(client):
 def test_no_provider_means_payments_are_refused(client):
     c, _ = client
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     r = c.post(f'/api/admin/billing/{op}/payments', json={'kind': 'subscription', 'amount_rand': 79, 'reference': 'NO-PROV-1'})
     assert r.status_code == 422 and 'payment provider' in r.json()['detail']
 

@@ -1,4 +1,4 @@
-import { EDUSCF_LOGO_URI } from './eduscf_logo';
+import { ELITE_LOGO_URI } from './elite_logo';
 import * as XLSX from 'xlsx';
 interface User{id:string;name:string;email:string;role:string;tenant_id:string}
 interface Q{ id:string;text:string;evidence:string;kind:string }
@@ -11,7 +11,11 @@ const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(
 const escapeHTML=(x:any)=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const uid=()=>crypto.randomUUID();
 const paths:Record<string,string>={grid:'M3 3h18v18H3zM3 9h18M9 3v18M3 15h18M15 3v18',spark:'m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3',shield:'m12 3 8 4v6c0 5-8 8-8 8s-8-3-8-8V7l8-4m-4 9 3 3 5-6',file:'M6 3h8l4 4v14H6V3m8 0v5h4M9 12h6m-6 4h6',upload:'M12 16V4m-4 4 4-4 4 4M4 16v4h16v-4',arrow:'M4 12h16m-6-6 6 6-6 6',check:'m5 12 4 4L19 6',book:'M3 5h6c2 0 3 2 3 3 0-1 1-3 3-3h6v15h-6c-2 0-3 1-3 1s-1-1-3-1H3V5m9 3v13',settings:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8m-8 4 2-3-1-3 3-1 2-2 2 1 3 1 1 3 2 2-1 3-1 3-3 1-2 2-3-1-3-1-1-3-2-2z',chat:'M4 4h16v13H9l-5 4V4m4 5h8m-8 4h5',clock:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18m0 4v5l4 2',folder:'M3 6h7l2 3h9v11H3V6',download:'M12 3v13m-4-4 4 4 4-4M4 18v3h16v-3',lock:'M6 11h12v10H6V11m2 0V7a4 4 0 0 1 8 0v4',warning:'m12 3 10 18H2L12 3m0 5v6m0 3v1',users:'M8 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8m9 1a3 3 0 1 1 0 6M2 21v-4c0-4 12-4 12 0v4m3-7c3 0 5 1 5 3v4',logout:'M9 4H3v16h6m4-8h9m-4-4 4 4-4 4',layers:'m12 3 10 5-10 5L2 8l10-5m-10 9 10 5 10-5m-20 5 10 5 10-5',edit:'m15 4 5 5-10 10-6 1 1-6L15 4m-3 3 5 5',plus:'M12 4v16M4 12h16',send:'m3 3 18 9-18 9 3-9-3-9m3 9h15',link:'m9 15 6-6m-7 3-3 3c-4 4 2 10 6 6l3-3m-2-6 3-3c4-4 10 2 6 6l-3 3',trash:'M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14m-8 4v6m4-6v6',info:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18m0 7v7m0-10v1',dollar:'M12 2v20m5-16H9a4 4 0 0 0 0 8h6a4 4 0 0 1 0 8H6'};
-const icon=(name:string)=>`<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.grid}"/></svg>`;
+const svgIcon=(name:string)=>`<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.grid}"/></svg>`;
+// 3D icons: a generated PNG per name, with the SVG kept as a fallback for any name without one.
+const PNG_ICONS=new Set(['grid','spark','shield','file','upload','arrow','check','book','settings','chat','clock','folder','download','lock','warning','users','logout','layers','edit','plus','send','link','trash','info','dollar']);
+const iconBase=((document.querySelector('script[src*="app.js"]') as HTMLScriptElement|null)?.getAttribute('src')||'').replace(/app\.js.*$/,'')||'/static/';
+const icon=(name:string)=>PNG_ICONS.has(name)?`<img class="icon-3d" src="${iconBase}icons/${name}.png" alt="" aria-hidden="true">`:svgIcon(name);
 let user:User|null=null,csrf='',demoToken='',workspaceID='',boot:any={},overview:any={},job:Job|null=null,currentPage='workspace',adminSettings:any={},customers:any[]=[],previousFocus:HTMLElement|null=null,staticMode=false,showAllRows=false;
 async function api<T=any>(path:string,body?:any,method='POST'):Promise<T>{
   if(staticMode)return localApi<T>(path,body,method);
@@ -58,8 +62,8 @@ function bindMobileMenu(){
     if(t.closest('.nav-btn,#help'))setOpen(false);
   });
 }
-function logo(){return `<div class="logo"><span class="logo-box">${icon('grid')}</span><span><b>Edu</b>SheetManager<small class="brand-by">by EduSCF</small></span></div>`}
-function poweredByEduSCF(){return `<div class="powered-by-eduscf" aria-label="Powered by EduSCF — Edu School Communicator Foundation (NPC)"><span>Powered by</span><img src="${EDUSCF_LOGO_URI}" alt="EduSCF — Edu School Communicator Foundation (NPC)" class="eduscf-logo-img"></div>`}
+function logo(){return `<div class="logo"><span class="logo-box"><img class="brand-logo-img" src="${ELITE_LOGO_URI}" alt="" width="34" height="34"></span><span><b>Elite</b> Sheets</span></div>`}
+function productCredit(){return `<footer class="product-credit"><p>&copy; 2026 &middot; Product of <a href="https://eliteway.co.za" target="_blank" rel="noopener">Elite Way Holdings</a></p></footer>`}
 function openModal(title:string,body:string){previousFocus=document.activeElement as HTMLElement;$('modal-title').textContent=title;$('modal-content').innerHTML=body;$('modal').hidden=false;$('close-modal').focus()}
 function closeModal(){$('modal').hidden=true;previousFocus?.focus()}
 
@@ -260,7 +264,7 @@ function loginPage(){
     </form>
   </details>
   <details class="divider-details" ${boot.demo_mode?'':'open'}><summary>Sign in to an existing account</summary><form id="login-form"><label for="login-email">Email</label><input id="login-email" type="email" autocomplete="username" required placeholder="you@example.com"><label for="login-password">Password</label><input id="login-password" type="password" autocomplete="current-password" required placeholder="Password"><button class="btn primary" style="width:100%;margin-top:16px" id="sign-in">Sign in${icon('arrow')}</button></form></details>
-  <div class="signin-powered-wrap">${poweredByEduSCF()}</div></section></main>`;
+  <div class="signin-powered-wrap">${productCredit()}</div></section></main>`;
 
   $('login-form').addEventListener('submit',e=>{e.preventDefault();void busy($('sign-in'),async()=>{const r=await api('/api/auth/login',{email:$<HTMLInputElement>('login-email').value,password:$<HTMLInputElement>('login-password').value});$<HTMLInputElement>('login-password').value='';await signedIn(r)})});
   $('signup-form').addEventListener('submit',e=>{e.preventDefault();void busy($('sign-up-btn'),async()=>{
@@ -300,7 +304,7 @@ function shell(){
   if(!user){updateTabbar();return}
   const vert=activeVertical();
   const vMeta=VERTICAL_META[vert]||VERTICAL_META.general;
-  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${vMeta.tabs.map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)}</option>`).join('')}</select>${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}<button id="help" class="btn small">${icon('info')}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>EduSheetManager</strong> <span style="opacity:0.75">by EduSCF</span> · Calm, everyday spreadsheet helper</div>${poweredByEduSCF()}</footer></div>`;
+  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${vMeta.tabs.map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)}</option>`).join('')}</select>${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}<button id="help" class="btn small">${icon('info')}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Elite Sheets</strong> · Calm, everyday spreadsheet helper</div>${productCredit()}</footer></div>`;
   bindMobileMenu();
   document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach(b=>b.addEventListener('click',()=>void showPage(b.dataset.page!)));
   $('logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
@@ -806,7 +810,7 @@ function showBatchAuditModal(){
   }
   const filesMerged=ba.files_merged||(job?.profiles?.sources?.length||1);
   const totalRows=ba.total_rows||rows.length;
-  openModal('EduSheetManager — Data Quality Summary Report',`
+  openModal('Elite Sheets — Data Quality Summary Report',`
     <div style="display:grid;gap:12px">
       <p style="margin:0;color:var(--muted)">Before-vs-After Data Quality Summary for schools, district offices, consultants, and business compliance:</p>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
@@ -822,8 +826,8 @@ function showBatchAuditModal(){
         <small>All rows are preserved in your Master Sheet with <b>Source File</b>, <b>Duplicate Status</b>, and <b>SA ID Status</b> columns so no data is silently lost.</small>
       </div>
       <div style="margin-top:6px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <small style="color:var(--muted)">Generated by <b>EduSheetManager</b></small>
-        ${poweredByEduSCF()}
+        <small style="color:var(--muted)">Generated by <b>Elite Sheets</b></small>
+        ${productCredit()}
       </div>
     </div>
   `);
@@ -1397,7 +1401,7 @@ function builderPage(){
     const cur=currentBuilderTab();
     openModal('Split Sheet into Multiple Tabs by Column',`
       <form id="split-modal-form">
-        <p>Pick which column to group by — EduSheetManager will create a separate tab for each unique value (e.g. Grade 7, Grade 8, Grade 9) inside your workbook:</p>
+        <p>Pick which column to group by — Elite Sheets will create a separate tab for each unique value (e.g. Grade 7, Grade 8, Grade 9) inside your workbook:</p>
         <label for="split-col">Split by Column</label>
         <select id="split-col">${cur.headers.map(h=>`<option value="${escapeHTML(h)}" ${/grade|site|branch|category|status/i.test(h)?'selected':''}>${escapeHTML(h)}</option>`).join('')}</select>
         <button type="submit" class="btn primary" style="margin-top:14px">Split into Tabs</button>
@@ -1419,7 +1423,7 @@ function builderPage(){
     const cur=currentBuilderTab();
     openModal('Generate Summary Breakdown Tab',`
       <form id="sum-modal-form">
-        <p>Choose a column to group by — EduSheetManager will create a new <b>Summary</b> tab with Row Counts, Totals, and Averages:</p>
+        <p>Choose a column to group by — Elite Sheets will create a new <b>Summary</b> tab with Row Counts, Totals, and Averages:</p>
         <label for="sum-col">Summarize by Column</label>
         <select id="sum-col">${cur.headers.map(h=>`<option value="${escapeHTML(h)}" ${/grade|site|branch|category|subjects/i.test(h)?'selected':''}>${escapeHTML(h)}</option>`).join('')}</select>
         <button type="submit" class="btn primary" style="margin-top:14px">Create Summary Tab</button>
@@ -1686,7 +1690,7 @@ function quotesPage(){
         </div>
         <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
           <button id="print-modal-btn" class="btn primary small">Print / Save as PDF</button>
-          ${poweredByEduSCF()}
+          ${productCredit()}
         </div>
       </div>
     `);
@@ -2116,7 +2120,7 @@ function approveAI(){
   $('confirm-ai').addEventListener('click',()=>void busy($('confirm-ai'),async()=>{job=await api<Job>(`/api/jobs/${job!.id}/analyse`,{consent_to_external_processing:true,request_id:uid()});closeModal();await refresh();shell();await showPage('workspace')}));
 }
 
-// ===== Excel-style editable grid (EduSheetManager batch 1) =====
+// ===== Excel-style editable grid (Elite Sheets batch 1) =====
 type XlCell={r:number;c:number;from:any;to:any};
 let xlSel={ar:0,ac:0,fr:0,fc:0};
 let xlEditing:{r:number;c:number;orig:any}|null=null;
@@ -2501,7 +2505,7 @@ function xlBindAfterRender(){
 function openShareDialog(){
   if(!job?.id||!job.report)return;
   const jobId=job.id;
-  if(staticMode){openModal('Share your spreadsheet','<p class="muted">Sharing needs the online version of EduSheetManager. Download the file and send it yourself.</p>');return}
+  if(staticMode){openModal('Share your spreadsheet','<p class="muted">Sharing needs the online version of Elite Sheets. Download the file and send it yourself.</p>');return}
   openModal('Share your spreadsheet',`
     <p class="muted">Anyone with the link can download this file until it expires. The file contains learner data, so share it only with people who should see it.</p>
     <fieldset class="share-days"><legend><strong>Link works for</strong></legend>
@@ -2551,7 +2555,7 @@ function openShareDialog(){
 // File naming: one box in the workspace header, reused by the save pop-up.
 function safeBaseName(s:any):string{
   const n=String(s??'').replace(/\.xlsx$/i,'').replace(/[\\/:*?"<>|\x00-\x1f]/g,'').replace(/\s+/g,' ').trim().slice(0,100).trim();
-  return n||'EduSheetManager-verified';
+  return n||'EliteSheets-verified';
 }
 function defaultFileName():string{
   if(fileNameJobId!==(job?.id||'')){fileNameJobId=job?.id||'';fileNameState=''}
@@ -2638,7 +2642,7 @@ async function download(kind:string,baseName?:string){
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url;
-    a.download=kind==='output'?`${safeBaseName(baseName||defaultFileName())}.xlsx`:'EduSheetManager-evidence.json';
+    a.download=kind==='output'?`${safeBaseName(baseName||defaultFileName())}.xlsx`:'EliteSheets-evidence.json';
     a.click();
     URL.revokeObjectURL(url);
   }catch(e){toast(e instanceof Error?e.message:String(e),true)}
@@ -4322,7 +4326,7 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
       s.preferences={...(s.preferences||{}),vertical:body.vertical};
       saveStaticState(s);
     }
-    const u=role==='admin'?{id:'admin-1',name:'Platform Admin',email:'admin@sheetqms.local',role:'admin',tenant_id:'platform'}:{id:'op-1',name:'Demo Operator',email:'operator@demo.local',role:'operator',tenant_id:'demo-a'};
+    const u=role==='admin'?{id:'admin-1',name:'Platform Admin',email:'admin@elitesheets.local',role:'admin',tenant_id:'platform'}:{id:'op-1',name:'Demo Operator',email:'operator@demo.local',role:'operator',tenant_id:'demo-a'};
     return {user:u,csrf:'static-csrf',demo_token:'static-demo'} as any;
   }
   if(path==='/api/auth/logout')return {ok:true} as any;

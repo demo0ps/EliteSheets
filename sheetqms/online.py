@@ -124,7 +124,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         else:
             blobs = LocalBlobs(root / 'objects')
     vault = Vault(encryption_key or os.getenv('SHEETQMS_ENCRYPTION_KEY'), demo=demo or not production)
-    app = FastAPI(title='SheetQMS online', version='0.2.0', docs_url=None, redoc_url=None)
+    app = FastAPI(title='Elite Sheets online', version='0.2.0', docs_url=None, redoc_url=None)
     app.state.store, app.state.blobs, app.state.demo = store, blobs, demo
     allowed = ['*'] if demo else ['localhost', '127.0.0.1', 'testserver'] + [x.strip() for x in os.getenv('SHEETQMS_APP_HOSTS', '').split(',') if x.strip()]
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed)
@@ -133,9 +133,9 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         samples_dir = root / 'samples'
         create_samples(samples_dir)
         for tenant, name, email, display, role in [
-            ('platform', 'Platform administration', 'admin@demo.sheetqms', 'Platform admin', 'admin'),
-            ('demo-a', 'Demo customer A', 'operator@demo.sheetqms', 'Demo operator', 'operator'),
-            ('demo-b', 'Demo customer B', 'other@demo.sheetqms', 'Other customer', 'operator')]:
+            ('platform', 'Platform administration', 'admin@demo.elitesheets', 'Platform admin', 'admin'),
+            ('demo-a', 'Demo customer A', 'operator@demo.elitesheets', 'Demo operator', 'operator'),
+            ('demo-b', 'Demo customer B', 'other@demo.elitesheets', 'Other customer', 'operator')]:
             store.bootstrap_user(tenant, name, email, display, role, password_hash(secrets.token_urlsafe(20)))
     else:
         email, password = os.getenv('SHEETQMS_ADMIN_EMAIL'), os.getenv('SHEETQMS_ADMIN_PASSWORD')
@@ -457,7 +457,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
     def demo_login(body: DemoLogin, response: Response):
         if not demo:
             raise HTTPException(404, 'Demo sign-in is disabled.')
-        email = {'operator': 'operator@demo.sheetqms', 'admin': 'admin@demo.sheetqms', 'other_customer': 'other@demo.sheetqms'}[body.role]
+        email = {'operator': 'operator@demo.elitesheets', 'admin': 'admin@demo.elitesheets', 'other_customer': 'other@demo.elitesheets'}[body.role]
         user = store.user_email(email)
         if body.vertical:
             prefs = Preferences.model_validate(store.preferences(user['id'])).model_dump()
@@ -523,9 +523,9 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         if not settings:
             return  # no email service configured yet; the meter still shows the warning
         try:
-            send_plain_email(settings, user['email'], 'Your EduSheetManager credits are running low',
+            send_plain_email(settings, user['email'], 'Your Elite Sheets credits are running low',
                              f"You have {view['left']} of {view['included']} credits left this month. Credits reset on {credit_resets()}. "
-                             "Buy a top-up in EduSheetManager or ask your administrator to add credits.\n\n"
+                             "Buy a top-up in Elite Sheets or ask your administrator to add credits.\n\n"
                              "If you were not expecting this, you can ignore this email.")
         except Exception:
             LOG.exception('low-balance email failed')
@@ -1732,7 +1732,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         _, tenant = identity
         job = get_job(tenant, identifier)
         data = released_output_bytes(job)
-        return Response(data, media_type=XLSX_TYPE, headers={'Content-Disposition': 'attachment; filename="EduSheetManager-verified.xlsx"'})
+        return Response(data, media_type=XLSX_TYPE, headers={'Content-Disposition': 'attachment; filename="EliteSheets-verified.xlsx"'})
 
     SHARE_DAYS = {1, 7, 30}
 
@@ -1796,7 +1796,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         msg['Subject'] = 'A spreadsheet has been shared with you'
         msg['From'] = settings['sender']
         msg['To'] = to
-        msg.set_content(f'A verified spreadsheet has been shared with you from EduSheetManager.\n\nDownload it here (the link works until {link["expires"][:10]}):\n{link["url"]}\n\nIf you were not expecting this, you can ignore this email.')
+        msg.set_content(f'A verified spreadsheet has been shared with you from Elite Sheets.\n\nDownload it here (the link works until {link["expires"][:10]}):\n{link["url"]}\n\nIf you were not expecting this, you can ignore this email.')
         try:
             with smtplib.SMTP(settings['host'], settings['port'], timeout=20) as smtp:
                 smtp.starttls()
@@ -1821,14 +1821,14 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         if not match or datetime.fromisoformat(match['expires']) <= datetime.fromisoformat(now()):
             raise HTTPException(404, 'This link has expired or was removed.')
         data = released_output_bytes(job)
-        return Response(data, media_type=XLSX_TYPE, headers={'Content-Disposition': 'attachment; filename="EduSheetManager-shared.xlsx"', 'Cache-Control': 'no-store'})
+        return Response(data, media_type=XLSX_TYPE, headers={'Content-Disposition': 'attachment; filename="EliteSheets-shared.xlsx"', 'Cache-Control': 'no-store'})
 
     @app.get('/api/jobs/{identifier}/evidence')
     def evidence(identifier: str, identity=Depends(workspace)):
         _, tenant = identity
         job = get_job(tenant, identifier)
         result = public(job) | {'audit_events': store.events(tenant, identifier)}
-        return JSONResponse(result, headers={'Content-Disposition': 'attachment; filename="EduSheetManager-evidence.json"'})
+        return JSONResponse(result, headers={'Content-Disposition': 'attachment; filename="EliteSheets-evidence.json"'})
 
     @app.delete('/api/jobs/{identifier}')
     @job_lease

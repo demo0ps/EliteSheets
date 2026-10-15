@@ -32,7 +32,7 @@ def test_cancelled_is_read_only_and_blocks_changes(client):
     sign(client)
     job = example(client, request='billing-job-001')
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     assert set_sub(client, op, 'cancelled').status_code == 200
     sign(client)
     assert c.get('/api/credits').status_code == 200
@@ -44,7 +44,7 @@ def test_cancelled_is_read_only_and_blocks_changes(client):
 def test_past_due_keeps_access_during_grace_then_goes_read_only(client):
     c, _ = client
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     assert set_sub(client, op, 'past_due', grace='2999-01-01').status_code == 200
     sign(client)
     assert c.get('/api/credits').json()['access'] == 'full'
@@ -57,7 +57,7 @@ def test_past_due_keeps_access_during_grace_then_goes_read_only(client):
 def test_paused_subscription_blocks_everything_until_active(client):
     c, _ = client
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     set_sub(client, op, 'paused')
     sign(client)
     assert c.get('/api/credits').status_code == 403
@@ -70,8 +70,8 @@ def test_paused_subscription_blocks_everything_until_active(client):
 def test_subscription_validation(client):
     c, _ = client
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
-    admin = id_for(client, 'admin@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
+    admin = id_for(client, 'admin@demo.elitesheets')
     assert set_sub(client, op, 'nonsense').status_code == 422
     assert set_sub(client, op, 'past_due').status_code == 422  # grace date required
     assert set_sub(client, op, 'active', period='2026-13-40').status_code == 422
@@ -83,7 +83,7 @@ def test_subscription_payment_splits_vat_and_is_not_repeatable(client):
     c, _ = client
     sign(client, role='admin')
     add_provider(client)
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     body = {'kind': 'subscription', 'amount_rand': 79, 'reference': 'PAY-OCT-001'}
     recorded = c.post(f'/api/admin/billing/{op}/payments', json=body)
     assert recorded.status_code == 200, recorded.text
@@ -98,7 +98,7 @@ def test_topup_payment_grants_credits(client):
     c, _ = client
     sign(client, role='admin')
     add_provider(client)
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     before = c.get(f'/api/admin/billing/{op}').json()['included']
     r = c.post(f'/api/admin/billing/{op}/payments', json={'kind': 'topup', 'amount_rand': 20, 'credits': 200, 'reference': 'TOP-OCT-001'})
     assert r.status_code == 200 and r.json()['credits_added'] == 200
@@ -110,7 +110,7 @@ def test_topup_payment_grants_credits(client):
 def test_payment_validation(client):
     c, _ = client
     sign(client, role='admin')
-    op = id_for(client, 'operator@demo.sheetqms')
+    op = id_for(client, 'operator@demo.elitesheets')
     assert c.post(f'/api/admin/billing/{op}/payments', json={'kind': 'subscription', 'amount_rand': 0, 'reference': 'PAY-1'}).status_code == 422
     assert c.post(f'/api/admin/billing/{op}/payments', json={'kind': 'subscription', 'amount_rand': 79, 'reference': 'ab'}).status_code == 422
     assert c.post(f'/api/admin/billing/{op}/payments', json={'kind': 'topup', 'amount_rand': 20, 'reference': 'TOP-NO-CREDITS'}).status_code == 422
