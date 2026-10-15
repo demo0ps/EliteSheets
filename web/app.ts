@@ -5173,7 +5173,7 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
   }
   if(path==='/api/knowledge')return {items:s.knowledge} as any;
   if(path==='/api/admin/credit-settings'){if(method==='PUT')return {included:Number(body?.included)||200,monthly_fee:Number(body?.monthly_fee)||79} as any;return {included:200,monthly_fee:79} as any;}
-  if(path==='/api/admin/credits')return {month:'Demo month',resets:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth()+1,1).toISOString().slice(0,10)})(),settings:{included:200,monthly_fee:79},total:3,flagged:2,items:[
+  if(path.split('?')[0]==='/api/admin/credits')return {month:'Demo month',resets:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth()+1,1).toISOString().slice(0,10)})(),settings:{included:200,monthly_fee:79},total:3,flagged:2,items:[
     {id:'demo-op',name:'Demo Operator',email:'operator@demo.local',workspace:'Demo workspace',included:200,granted:0,used:0,left:200,status:'ok'},
     {id:'demo-low',name:'Thandi Mokoena',email:'thandi@school.example',workspace:'Sample School',included:200,granted:0,used:188,left:12,status:'low'},
     {id:'demo-zero',name:'Pieter van Wyk',email:'pieter@example.co.za',workspace:'Sample Business',included:200,granted:0,used:200,left:0,status:'zero'}]} as any;
