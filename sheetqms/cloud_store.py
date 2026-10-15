@@ -27,6 +27,10 @@ heads = sa.Table('knowledge_heads', M, sa.Column('tenant_id', sa.String, primary
 spend = sa.Table('spend', M, sa.Column('id', sa.String, primary_key=True), sa.Column('month', sa.String, nullable=False), sa.Column('reserved', sa.BigInteger, nullable=False), sa.Column('actual', sa.BigInteger), sa.Column('created', sa.String, nullable=False))
 credit_ledger = sa.Table('credit_ledger', M, sa.Column('id', sa.String, primary_key=True), sa.Column('user_id', sa.String, nullable=False), sa.Column('month', sa.String, nullable=False), sa.Column('delta', sa.Integer, nullable=False), sa.Column('reason', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False))
 sa.Index('credit_user_month', credit_ledger.c.user_id, credit_ledger.c.month)
+credit_settings = sa.Table('credit_settings', M, sa.Column('id', sa.Integer, primary_key=True), sa.Column('included', sa.Integer, nullable=False), sa.Column('monthly_fee', sa.Integer, nullable=False))
+credit_allowances = sa.Table('credit_allowances', M, sa.Column('user_id', sa.String, primary_key=True), sa.Column('included', sa.Integer, nullable=False), sa.Column('updated', sa.String, nullable=False))
+admin_audit = sa.Table('admin_audit', M, sa.Column('id', sa.String, primary_key=True), sa.Column('actor_id', sa.String, nullable=False), sa.Column('action', sa.String, nullable=False), sa.Column('target_id', sa.String, nullable=False), sa.Column('detail', sa.Text, nullable=False), sa.Column('created', sa.String, nullable=False))
+sa.Index('admin_audit_target', admin_audit.c.target_id)
 rate_limits = sa.Table('rate_limits', M, sa.Column('id', sa.String, primary_key=True), sa.Column('count', sa.Integer, nullable=False), sa.Column('expires', sa.String, nullable=False))
 sa.Index('job_workspace_created', jobs.c.tenant_id, jobs.c.created)
 sa.Index('event_workspace_job', events.c.tenant_id, events.c.job_id, events.c.id)
@@ -284,6 +288,59 @@ class CloudStore:
     def user_in_tenant(self, tenant, user_id):
         with self.engine.connect() as c:
             return c.execute(sa.select(users.c.id).where(users.c.id == user_id, users.c.tenant_id == tenant)).first() is not None
+
+    def credit_config(self):
+        with self.engine.connect() as c:
+            row = c.execute(sa.select(credit_settings).where(credit_settings.c.id == 1)).mappings().first()
+        if row is None:
+            return {'included': 200, 'monthly_fee': 79}
+        return {'included': int(row['included']), 'monthly_fee': int(row['monthly_fee'])}
+
+    def save_credit_config(self, included, monthly_fee):
+        with self.tx(serial=True) as c:
+            self.upsert(c, credit_settings, {'id': 1, 'included': int(included), 'monthly_fee': int(monthly_fee)}, ['id'])
+
+    def credit_allowances_map(self):
+        with self.engine.connect() as c:
+            return {r[0]: int(r[1]) for r in c.execute(sa.select(credit_allowances.c.user_id, credit_allowances.c.included)).all()}
+
+    def credit_allowance(self, user_id):
+        return self.credit_allowances_map().get(user_id)
+
+    def save_credit_allowance(self, user_id, included):
+        with self.tx(serial=True) as c:
+            self.upsert(c, credit_allowances, {'user_id': user_id, 'included': int(included), 'updated': now()}, ['user_id'])
+
+    def audit(self, actor_id, action, target_id, detail):
+        with self.tx(serial=True) as c:
+            c.execute(admin_audit.insert().values(id=str(uuid.uuid4()), actor_id=actor_id, action=action, target_id=target_id, detail=json.dumps(detail, sort_keys=True), created=now()))
+
+    def audit_list(self, target_id, limit=100):
+        with self.engine.connect() as c:
+            rows = c.execute(sa.select(admin_audit).where(admin_audit.c.target_id == target_id).order_by(admin_audit.c.created.desc()).limit(limit)).mappings().all()
+        return [{'action': r['action'], 'actor_id': r['actor_id'], 'detail': json.loads(r['detail']), 'created': r['created']} for r in rows]
+
+    def user_by_id(self, user_id):
+        with self.engine.connect() as c:
+            row = c.execute(sa.select(users.c.id, users.c.name, users.c.email, users.c.role, users.c.tenant_id, tenants.c.name.label('tenant_name')).select_from(users.join(tenants, tenants.c.id == users.c.tenant_id)).where(users.c.id == user_id)).mappings().first()
+        return dict(row) if row else None
+
+    def credit_directory(self, month):
+        with self.engine.connect() as c:
+            rows = c.execute(sa.select(users.c.id, users.c.name, users.c.email, users.c.role, users.c.tenant_id, tenants.c.name.label('tenant_name')).select_from(users.join(tenants, tenants.c.id == users.c.tenant_id)).where(users.c.active == True).order_by(users.c.name)).mappings().all()
+            deltas = c.execute(sa.select(credit_ledger.c.user_id, credit_ledger.c.delta).where(credit_ledger.c.month == month)).all()
+        granted, used = {}, {}
+        for uid, delta in deltas:
+            if delta > 0:
+                granted[uid] = granted.get(uid, 0) + int(delta)
+            else:
+                used[uid] = used.get(uid, 0) - int(delta)
+        return [dict(r) | {'granted': granted.get(r['id'], 0), 'used': used.get(r['id'], 0)} for r in rows]
+
+    def credit_history(self, user_id, limit=200):
+        with self.engine.connect() as c:
+            rows = c.execute(sa.select(credit_ledger).where(credit_ledger.c.user_id == user_id).order_by(credit_ledger.c.created.desc()).limit(limit)).mappings().all()
+        return [{'month': r['month'], 'delta': int(r['delta']), 'reason': r['reason'], 'created': r['created']} for r in rows]
 
     @contextmanager
     def lease(self, tenant, identifier):

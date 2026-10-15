@@ -426,28 +426,101 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         response.delete_cookie('sqm_session')
         return {'ok': True}
 
+    def credit_limit(user_id):
+        allowance = store.credit_allowance(user_id)
+        return allowance if allowance is not None else store.credit_config()['included']
+
+    def credit_view(user_id):
+        granted, used = store.credit_summary(user_id, credit_month())
+        included = credit_limit(user_id)
+        return {'included': included, 'granted': granted, 'used': used, 'left': max(included + granted - used, 0)}
+
+    def whole_number(value, low, high):
+        return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
     def charge_credits(user, action):
         try:
-            store.credit_adjust(user['id'], credit_month(), -CREDIT_COSTS[action], action, included=INCLUDED_CREDITS)
+            store.credit_adjust(user['id'], credit_month(), -CREDIT_COSTS[action], action, included=credit_limit(user['id']))
         except ValueError:
             raise HTTPException(402, "You have used this month's credits. Buy a top-up or wait for the monthly reset.")
 
     @app.get('/api/credits')
     def credits(identity=Depends(workspace)):
         user, _ = identity
-        granted, used = store.credit_summary(user['id'], credit_month())
-        return {'month': credit_month(), 'included': INCLUDED_CREDITS, 'granted': granted, 'used': used, 'left': max(INCLUDED_CREDITS + granted - used, 0), 'resets': credit_resets(), 'costs': CREDIT_COSTS}
+        return {'month': credit_month(), **credit_view(user['id']), 'resets': credit_resets(), 'costs': CREDIT_COSTS}
 
-    @app.post('/api/admin/users/{user_id}/credits')
-    def grant_credits(user_id: str, body: dict, user=Depends(administrator)):
+    @app.get('/api/admin/credit-settings')
+    def admin_credit_settings(user=Depends(administrator)):
+        return store.credit_config()
+
+    @app.put('/api/admin/credit-settings')
+    def save_admin_credit_settings(body: dict, user=Depends(administrator)):
+        included, fee = body.get('included'), body.get('monthly_fee')
+        if not whole_number(included, 0, 5000) or not whole_number(fee, 0, 10000):
+            raise HTTPException(422, 'Included credits must be 0 to 5000 and the monthly fee 0 to 10000 rand.')
+        before = store.credit_config()
+        store.save_credit_config(included, fee)
+        store.audit(user['id'], 'settings', 'platform', {'from': before, 'to': {'included': included, 'monthly_fee': fee}})
+        return store.credit_config()
+
+    @app.get('/api/admin/credits')
+    def admin_credits(q: str = '', flag: str = '', user=Depends(administrator)):
+        month = credit_month()
+        cfg = store.credit_config()
+        allowances = store.credit_allowances_map()
+        everyone = []
+        for row in store.credit_directory(month):
+            included = allowances.get(row['id'], cfg['included'])
+            left_raw = included + row['granted'] - row['used']
+            status = 'zero' if left_raw <= 0 else ('low' if left_raw <= 0.2 * included else 'ok')
+            everyone.append({'id': row['id'], 'name': row['name'], 'email': row['email'], 'role': row['role'], 'workspace': row['tenant_name'], 'included': included, 'granted': row['granted'], 'used': row['used'], 'left': max(left_raw, 0), 'status': status})
+        needle = q.strip().lower()
+        items = []
+        for item in everyone:
+            if needle and needle not in f"{item['name']} {item['email']} {item['workspace']}".lower():
+                continue
+            if flag == 'flagged' and item['status'] == 'ok':
+                continue
+            if flag == 'zero' and item['status'] != 'zero':
+                continue
+            items.append(item)
+        return {'month': month, 'resets': credit_resets(), 'settings': cfg, 'items': items, 'total': len(everyone), 'flagged': sum(1 for i in everyone if i['status'] != 'ok')}
+
+    @app.get('/api/admin/credits/{user_id}/history')
+    def admin_credit_history(user_id: str, user=Depends(administrator)):
+        target = store.user_by_id(user_id)
+        if not target:
+            raise HTTPException(404, 'That user was not found.')
+        return {'user': {'name': target['name'], 'email': target['email'], 'workspace': target['tenant_name']}, 'view': credit_view(user_id), 'ledger': store.credit_history(user_id), 'audit': store.audit_list(user_id)}
+
+    @app.post('/api/admin/credits/{user_id}/grant')
+    def admin_grant_credits(user_id: str, body: dict, user=Depends(administrator)):
         amount = body.get('amount')
-        if not isinstance(amount, int) or isinstance(amount, bool) or not 1 <= amount <= 10000:
+        reason = str(body.get('reason') or '').strip()
+        if not whole_number(amount, 1, 10000):
             raise HTTPException(422, 'Enter a whole number of credits from 1 to 10000.')
-        if not store.user_in_tenant(user['tenant_id'], user_id):
-            raise HTTPException(404, 'That user is not in this workspace.')
-        store.credit_adjust(user_id, credit_month(), amount, str(body.get('reason') or 'Top-up')[:80])
-        granted, used = store.credit_summary(user_id, credit_month())
-        return {'granted': granted, 'used': used, 'left': max(INCLUDED_CREDITS + granted - used, 0)}
+        if len(reason) < 3:
+            raise HTTPException(422, 'Give a reason of at least 3 characters.')
+        if not store.user_by_id(user_id):
+            raise HTTPException(404, 'That user was not found.')
+        store.credit_adjust(user_id, credit_month(), amount, 'Admin grant: ' + reason)
+        store.audit(user['id'], 'grant', user_id, {'amount': amount, 'reason': reason})
+        return credit_view(user_id)
+
+    @app.put('/api/admin/credits/{user_id}/allowance')
+    def admin_set_allowance(user_id: str, body: dict, user=Depends(administrator)):
+        included = body.get('included')
+        reason = str(body.get('reason') or '').strip()
+        if not whole_number(included, 0, 5000):
+            raise HTTPException(422, 'Monthly credits must be a whole number from 0 to 5000.')
+        if len(reason) < 3:
+            raise HTTPException(422, 'Give a reason of at least 3 characters.')
+        if not store.user_by_id(user_id):
+            raise HTTPException(404, 'That user was not found.')
+        before = credit_limit(user_id)
+        store.save_credit_allowance(user_id, included)
+        store.audit(user['id'], 'allowance', user_id, {'from': before, 'to': included, 'reason': reason})
+        return credit_view(user_id)
 
     @app.get('/api/overview')
     def overview(identity=Depends(workspace)):

@@ -1326,3 +1326,22 @@ body.compact td, body.compact th { padding: 8px 12px; }
 .credit-meter.cm-warn .cm-left { color: var(--warn); }
 .credit-meter.cm-warn .cm-bar span { background: var(--warn); }
 .cm-note { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+
+/* Admin credits (Batch 1) */
+.credit-admin{margin-bottom:18px}
+.credit-admin-panel{display:grid;gap:12px}
+.credit-admin-tools{display:flex;gap:10px;flex-wrap:wrap}
+.credit-admin-tools input{flex:1 1 240px;min-height:44px}
+.credit-admin-tools select{min-height:44px}
+.credit-table{width:100%;border-collapse:collapse;font-size:14px}
+.credit-table th,.credit-table td{text-align:left;padding:10px 8px;border-bottom:1px solid rgba(0,0,0,.08);vertical-align:top}
+.credit-table th{font-weight:600;white-space:nowrap}
+.credit-actions{display:flex;gap:6px;flex-wrap:wrap}
+.cr-pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.cr-ok{background:#e6f4ea;color:#17602b}
+.cr-low{background:#fff4d6;color:#7a5200}
+.cr-zero{background:#fde2e1;color:#8a1c17}
+.credit-settings{display:grid;gap:8px;max-width:360px;border-top:1px solid rgba(0,0,0,.08);padding-top:14px}
+.credit-settings h3{margin:0}
+.credit-audit{padding-left:18px;font-size:14px}
+@media (max-width:1024px){.credit-table thead{display:none}.credit-table tr{display:block;border-bottom:1px solid rgba(0,0,0,.1);padding:8px 0}.credit-table td{display:block;border:0;padding:4px 0}}
