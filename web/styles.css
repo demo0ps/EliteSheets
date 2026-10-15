@@ -1345,3 +1345,4 @@ body.compact td, body.compact th { padding: 8px 12px; }
 .credit-settings h3{margin:0}
 .credit-audit{padding-left:18px;font-size:14px}
 @media (max-width:1024px){.credit-table thead{display:none}.credit-table tr{display:block;border-bottom:1px solid rgba(0,0,0,.1);padding:8px 0}.credit-table td{display:block;border:0;padding:4px 0}}
+.cr-paused{background:#ebe9fb;color:#3b2f9a}

@@ -27,7 +27,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import ai
 from .blobs import LocalBlobs, R2Blobs, materialise
-from .cloud_store import CloudStore
+from .cloud_store import CloudStore, CreditCapReached
 from .engine import infer_plan, finalise_cell_profiles, input_signature, rebind_knowledge, transform, decimal_value, validate_and_repair_sa_id, percentage_to_caps_level, MAX_OUTPUT_ROWS
 from .models import MappingPlan, SourcePlan, AISettings
 from .online_models import Login, Signup, DemoLogin, Preferences, PlatformSettings, CustomerCreate, ChatInput, ProposalConfirm, Run, Analyse, PlanConfirm
@@ -125,6 +125,8 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         user = store.session(token_for(request))
         if not user:
             raise HTTPException(401, 'Sign in to access your customer workspace.')
+        if user['role'] != 'admin' and store.get_user_limits(user['id'])['paused']:
+            raise HTTPException(403, 'Your account is paused. Contact your administrator to restore access.')
         if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
             supplied = request.headers.get('X-CSRF-Token', '')
             if not hmac.compare_digest(supplied, user['csrf']):
@@ -438,11 +440,50 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
     def whole_number(value, low, high):
         return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
 
-    def charge_credits(user, action):
+    def send_plain_email(settings, to, subject, body):
+        msg = EmailMessage()
+        msg['Subject'] = subject
+        msg['From'] = settings['sender']
+        msg['To'] = to
+        msg.set_content(body)
+        with smtplib.SMTP(settings['host'], settings['port'], timeout=20) as smtp:
+            smtp.starttls()
+            if settings['user']:
+                smtp.login(settings['user'], settings['password'])
+            smtp.send_message(msg)
+
+    def check_low_balance(user):
+        month = credit_month()
+        view = credit_view(user['id'])
+        if view['included'] <= 0 or view['left'] > 0.2 * view['included']:
+            return
+        if store.credit_alert_sent(user['id'], month, 'low'):
+            return
+        settings = share_email_settings()
+        if not settings:
+            return  # no email service configured yet; the meter still shows the warning
         try:
-            store.credit_adjust(user['id'], credit_month(), -CREDIT_COSTS[action], action, included=credit_limit(user['id']))
+            send_plain_email(settings, user['email'], 'Your EduSheetManager credits are running low',
+                             f"You have {view['left']} of {view['included']} credits left this month. Credits reset on {credit_resets()}. "
+                             "Buy a top-up in EduSheetManager or ask your administrator to add credits.\n\n"
+                             "If you were not expecting this, you can ignore this email.")
+        except Exception:
+            LOG.exception('low-balance email failed')
+            return
+        store.record_credit_alert(user['id'], month, 'low')
+
+    def charge_credits(user, action):
+        limits = store.get_user_limits(user['id'])
+        try:
+            store.credit_adjust(user['id'], credit_month(), -CREDIT_COSTS[action], action, included=credit_limit(user['id']), cap=limits['spend_cap'])
+        except CreditCapReached:
+            raise HTTPException(402, "You have reached this month's spending cap set by your administrator.")
         except ValueError:
             raise HTTPException(402, "You have used this month's credits. Buy a top-up or wait for the monthly reset.")
+        check_low_balance(user)
+
+    def refund_credits(user, action, reason):
+        store.credit_adjust(user['id'], credit_month(), CREDIT_COSTS[action], reason)
 
     @app.get('/api/credits')
     def credits(identity=Depends(workspace)):
@@ -473,7 +514,8 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             included = allowances.get(row['id'], cfg['included'])
             left_raw = included + row['granted'] - row['used']
             status = 'zero' if left_raw <= 0 else ('low' if left_raw <= 0.2 * included else 'ok')
-            everyone.append({'id': row['id'], 'name': row['name'], 'email': row['email'], 'role': row['role'], 'workspace': row['tenant_name'], 'included': included, 'granted': row['granted'], 'used': row['used'], 'left': max(left_raw, 0), 'status': status})
+            lim = store.get_user_limits(row['id'])
+            everyone.append({'paused': lim['paused'], 'spend_cap': lim['spend_cap'], 'id': row['id'], 'name': row['name'], 'email': row['email'], 'role': row['role'], 'workspace': row['tenant_name'], 'included': included, 'granted': row['granted'], 'used': row['used'], 'left': max(left_raw, 0), 'status': status})
         needle = q.strip().lower()
         items = []
         for item in everyone:
@@ -492,6 +534,55 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         if not target:
             raise HTTPException(404, 'That user was not found.')
         return {'user': {'name': target['name'], 'email': target['email'], 'workspace': target['tenant_name']}, 'view': credit_view(user_id), 'ledger': store.credit_history(user_id), 'audit': store.audit_list(user_id)}
+
+    @app.put('/api/admin/credits/{user_id}/cap')
+    def admin_set_cap(user_id: str, body: dict, user=Depends(administrator)):
+        cap = body.get('spend_cap')
+        reason = str(body.get('reason') or '').strip()
+        if cap is not None and not whole_number(cap, 0, 5000):
+            raise HTTPException(422, 'The spending cap must be blank (no cap) or a whole number from 0 to 5000.')
+        if len(reason) < 3:
+            raise HTTPException(422, 'Give a reason of at least 3 characters.')
+        if not store.user_by_id(user_id):
+            raise HTTPException(404, 'That user was not found.')
+        before = store.get_user_limits(user_id)
+        store.save_user_limits(user_id, before['paused'], before['pause_reason'], cap)
+        store.audit(user['id'], 'cap', user_id, {'from': before['spend_cap'], 'to': cap, 'reason': reason})
+        return {**credit_view(user_id), 'spend_cap': cap}
+
+    @app.put('/api/admin/credits/{user_id}/pause')
+    def admin_pause_user(user_id: str, body: dict, user=Depends(administrator)):
+        paused = body.get('paused')
+        reason = str(body.get('reason') or '').strip()
+        if not isinstance(paused, bool):
+            raise HTTPException(422, 'Say whether to pause or restore the account.')
+        if paused and len(reason) < 3:
+            raise HTTPException(422, 'Give a reason of at least 3 characters.')
+        target = store.user_by_id(user_id)
+        if not target:
+            raise HTTPException(404, 'That user was not found.')
+        if target['role'] == 'admin':
+            raise HTTPException(422, 'Admin accounts cannot be paused.')
+        before = store.get_user_limits(user_id)
+        store.save_user_limits(user_id, paused, reason if paused else '', before['spend_cap'])
+        store.audit(user['id'], 'pause' if paused else 'restore', user_id, {'reason': reason})
+        return {**credit_view(user_id), 'paused': paused}
+
+    @app.post('/api/admin/credits/{user_id}/undo/{ledger_id}')
+    def admin_undo_charge(user_id: str, ledger_id: str, body: dict, user=Depends(administrator)):
+        reason = str(body.get('reason') or '').strip()
+        if len(reason) < 3:
+            raise HTTPException(422, 'Give a reason of at least 3 characters.')
+        if not store.user_by_id(user_id):
+            raise HTTPException(404, 'That user was not found.')
+        try:
+            credits = store.undo_credit(user_id, ledger_id, user['id'], reason)
+        except LookupError:
+            raise HTTPException(404, 'That charge was not found for this user.')
+        except ValueError:
+            raise HTTPException(409, 'That charge has already been undone.')
+        store.audit(user['id'], 'undo', user_id, {'ledger_id': ledger_id, 'credits': credits, 'reason': reason})
+        return credit_view(user_id)
 
     @app.post('/api/admin/credits/{user_id}/grant')
     def admin_grant_credits(user_id: str, body: dict, user=Depends(administrator)):
@@ -1251,8 +1342,8 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         if job.get('ai_identity') == identity_key:
             return public(job)
         charge_credits(user, 'sheet_job')
-        key = vault.open(store.encrypted_key())
         try:
+            key = vault.open(store.encrypted_key())
             with materialise(job, blobs) as (work, _):
                 plan, usage = ai.analyse(work, settings, key, store, digest([tenant, identifier, body.request_id]))
             job.update(plan=plan.model_dump(), report=None, proposal=None, state='MAPPED', mapping_origin='AI-proposed mapping; QMS pending', ai_identity=identity_key)
@@ -1262,8 +1353,9 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             store.save_job(tenant, job, 'ai_mapping_proposed', usage)
             return public(run_job(tenant, job))
         except Exception as exc:
+            refund_credits(user, 'sheet_job', 'Refund: sheet job failed')
             detail = str(exc) if isinstance(exc, ValueError) and 'validation error' not in str(exc).lower() else 'AI analysis failed or returned an unsupported proposal. No output was released.'
-            raise HTTPException(422, detail) from exc
+            raise HTTPException(422, detail + ' The credits for this job have been returned.') from exc
 
     def released_output_bytes(job):
         if not job.get('report') or job['report']['status'] != 'RELEASED':

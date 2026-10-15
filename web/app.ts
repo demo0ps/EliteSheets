@@ -1906,16 +1906,21 @@ async function preferencesPage(){
   $('preferences-form').addEventListener('submit',e=>{e.preventDefault();void busy($('save-preferences'),async()=>{await api('/api/preferences',{theme:$<HTMLSelectElement>('theme').value,density:$<HTMLSelectElement>('density').value,explanations:$<HTMLSelectElement>('explanations').value,auto_checks:$<HTMLInputElement>('auto-checks').checked,vertical:$<HTMLSelectElement>('pref-vertical').value},'PUT');await refresh();applyPreferences();shell();await showPage('preferences');toast('Your settings were saved!')})});
 }
 
-// Admin credits: all users, balances, flags, grants, allowances, history, plan settings.
+// Admin credits: all users, balances, flags, grants, allowances, spending caps, pauses, undo, history, plan settings.
 let creditAdminState:{q:string;flag:string}={q:'',flag:''};
 function creditDate(s:string){return new Date(s+'T00:00:00').toLocaleDateString('en-ZA',{day:'numeric',month:'long'});}
+function creditWhen(s:any){return escapeHTML(String(s??'').slice(0,16).replace('T',' '));}
 const CREDIT_STATUS:Record<string,string>={ok:'OK',low:'Low',zero:'Out'};
 function creditAdminHtml(d:any){
   const s=d.settings;const f=creditAdminState.flag;
   const rows=d.items.map((i:any)=>{
     const pct=Math.min(100,Math.round((i.used/Math.max(i.included,1))*100));
     const name=escapeHTML(i.name);
-    return `<tr><td><strong>${name}</strong><div class="cm-note">${escapeHTML(i.email)}</div></td><td>${escapeHTML(i.workspace||'')}</td><td>${i.used} used · <strong>${i.left} left</strong><div class="cm-bar"><span style="width:${pct}%"></span></div></td><td>${i.included}${i.granted?`<div class="cm-note">+${i.granted} added</div>`:''}</td><td><span class="cr-pill cr-${i.status}">${CREDIT_STATUS[i.status]}</span></td><td class="credit-actions"><button class="btn small" data-credit-action="grant" data-id="${escapeHTML(i.id)}" data-name="${name}">Add credits</button><button class="btn small" data-credit-action="allowance" data-id="${escapeHTML(i.id)}" data-name="${name}" data-included="${i.included}">Allowance</button><button class="btn small" data-credit-action="history" data-id="${escapeHTML(i.id)}" data-name="${name}">History</button></td></tr>`;
+    const id=escapeHTML(i.id);
+    const cap=i.spend_cap==null?'':String(i.spend_cap);
+    const pill=(i.paused?'<span class="cr-pill cr-paused">Paused</span> ':'')+`<span class="cr-pill cr-${i.status}">${CREDIT_STATUS[i.status]}</span>`;
+    const pause=i.role!=='admin'?`<button class="btn small" data-credit-action="pause" data-id="${id}" data-name="${name}" data-paused="${i.paused?'1':'0'}">${i.paused?'Restore':'Pause'}</button>`:'';
+    return `<tr><td><strong>${name}</strong><div class="cm-note">${escapeHTML(i.email)}</div></td><td>${escapeHTML(i.workspace||'')}</td><td>${i.used} used · <strong>${i.left} left</strong><div class="cm-bar"><span style="width:${pct}%"></span></div></td><td>${i.included}${i.granted?`<div class="cm-note">+${i.granted} added</div>`:''}<div class="cm-note">${cap?`Cap ${escapeHTML(cap)}`:'No cap'}</div></td><td>${pill}</td><td class="credit-actions"><button class="btn small" data-credit-action="grant" data-id="${id}" data-name="${name}">Add credits</button><button class="btn small" data-credit-action="allowance" data-id="${id}" data-name="${name}" data-included="${i.included}" data-cap="${escapeHTML(cap)}">Limits</button><button class="btn small" data-credit-action="history" data-id="${id}" data-name="${name}">History</button>${pause}</td></tr>`;
   }).join('');
   return `<section class="settings-panel credit-admin-panel" aria-label="Credits"><div class="cm-head"><h2>Credits</h2><span class="cm-note">${escapeHTML(d.month)} · resets ${creditDate(d.resets)}</span></div><p class="cm-note">${d.flagged} of ${d.total} users need attention (20% or less left, or none left).</p><div class="credit-admin-tools"><input id="credit-search" type="search" placeholder="Search name, email or workspace" value="${escapeHTML(creditAdminState.q)}" aria-label="Search users"><select id="credit-flag" aria-label="Show users"><option value="" ${!f?'selected':''}>All users</option><option value="flagged" ${f==='flagged'?'selected':''}>Needs attention</option><option value="zero" ${f==='zero'?'selected':''}>Out of credits</option></select></div><div class="table-scroll"><table class="credit-table"><thead><tr><th>User</th><th>Workspace</th><th>Used / left</th><th>Allowance</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows||'<tr><td colspan="6">No users match.</td></tr>'}</tbody></table></div><form id="credit-settings-form" class="credit-settings"><h3>Plan settings</h3><p class="cm-note">New users and users without their own allowance get these values.</p><label for="cs-fee">Monthly fee (R)</label><input id="cs-fee" type="number" min="0" max="10000" step="1" value="${s.monthly_fee}"><label for="cs-included">Included credits per month</label><input id="cs-included" type="number" min="0" max="5000" step="1" value="${s.included}"><button class="btn primary small" type="submit">Save plan settings</button></form></section>`;
 }
@@ -1930,8 +1935,9 @@ async function loadCreditAdmin(){
     box.addEventListener('click',(e)=>{const b=(e.target as HTMLElement).closest('[data-credit-action]') as HTMLElement|null;if(!b)return;
       const id=b.dataset.id||'', name=b.dataset.name||'';
       if(b.dataset.creditAction==='grant')openGrantCredits(id,name);
-      if(b.dataset.creditAction==='allowance')openAllowance(id,name,Number(b.dataset.included||0));
+      if(b.dataset.creditAction==='allowance')openLimits(id,name,Number(b.dataset.included||0),b.dataset.cap||'');
       if(b.dataset.creditAction==='history')void openCreditHistory(id,name);
+      if(b.dataset.creditAction==='pause')openPause(id,name,b.dataset.paused==='1');
     });
     box.addEventListener('submit',(e)=>{const f=e.target as HTMLElement;if(f.id!=='credit-settings-form')return;e.preventDefault();
       const btn=document.querySelector('#credit-settings-form button[type=submit]') as HTMLElement;
@@ -1949,16 +1955,44 @@ function openGrantCredits(id:string,name:string){
   openModal('Add credits · '+name,`<form id="credit-grant-form"><label for="credit-amount">Credits to add</label><input id="credit-amount" type="number" min="1" max="10000" step="1" required><label for="credit-reason">Reason (shown in the history)</label><input id="credit-reason" required minlength="3" maxlength="80" placeholder="e.g. Top-up pack paid by EFT"><div class="modal-actions"><button class="btn primary" type="submit" id="credit-grant-save">Add credits</button></div></form>`);
   $('credit-grant-form').addEventListener('submit',e=>{e.preventDefault();void busy($('credit-grant-save'),async()=>{await api(`/api/admin/credits/${id}/grant`,{amount:Number($<HTMLInputElement>('credit-amount').value),reason:$<HTMLInputElement>('credit-reason').value});closeModal();toast('Credits added.');await loadCreditAdmin();});});
 }
-function openAllowance(id:string,name:string,included:number){
-  openModal('Monthly allowance · '+name,`<form id="credit-allowance-form"><label for="allowance-amount">Monthly credits for this user</label><input id="allowance-amount" type="number" min="0" max="5000" step="1" value="${included}" required><label for="allowance-reason">Reason</label><input id="allowance-reason" required minlength="3" maxlength="80" placeholder="e.g. Heavy school account"><div class="modal-actions"><button class="btn primary" type="submit" id="allowance-save">Save allowance</button></div></form>`);
-  $('credit-allowance-form').addEventListener('submit',e=>{e.preventDefault();void busy($('allowance-save'),async()=>{await api(`/api/admin/credits/${id}/allowance`,{included:Number($<HTMLInputElement>('allowance-amount').value),reason:$<HTMLInputElement>('allowance-reason').value},'PUT');closeModal();toast('Allowance saved.');await loadCreditAdmin();});});
+function openLimits(id:string,name:string,included:number,cap:string){
+  openModal('Limits · '+name,`<form id="credit-limits-form"><label for="allowance-amount">Monthly allowance (credits)</label><input id="allowance-amount" type="number" min="0" max="5000" step="1" value="${included}" required><label for="cap-amount">Monthly spending cap (blank = no cap)</label><input id="cap-amount" type="number" min="0" max="5000" step="1" value="${escapeHTML(cap)}" placeholder="No cap"><label for="allowance-reason">Reason</label><input id="allowance-reason" required minlength="3" maxlength="80" placeholder="e.g. Heavy school account"><div class="modal-actions"><button class="btn primary" type="submit" id="allowance-save">Save limits</button></div></form>`);
+  $('credit-limits-form').addEventListener('submit',e=>{e.preventDefault();void busy($('allowance-save'),async()=>{
+    const reason=$<HTMLInputElement>('allowance-reason').value;
+    const newIncluded=Number($<HTMLInputElement>('allowance-amount').value);
+    const capRaw=$<HTMLInputElement>('cap-amount').value.trim();
+    const newCap=capRaw===''?null:Number(capRaw);
+    if(newIncluded!==included)await api(`/api/admin/credits/${id}/allowance`,{included:newIncluded,reason},'PUT');
+    if(String(newCap??'')!==cap)await api(`/api/admin/credits/${id}/cap`,{spend_cap:newCap,reason},'PUT');
+    closeModal();toast('Limits saved.');await loadCreditAdmin();});});
+}
+function openPause(id:string,name:string,paused:boolean){
+  if(paused){
+    openModal('Restore account · '+name,`<form id="credit-pause-form"><p class="cm-note">${escapeHTML(name)} will be able to sign in and use the app again.</p><div class="modal-actions"><button class="btn primary" type="submit" id="pause-save">Restore account</button></div></form>`);
+  }else{
+    openModal('Pause account · '+name,`<form id="credit-pause-form"><p class="cm-note">A paused user cannot use the app until you restore the account. Admin accounts cannot be paused.</p><label for="pause-reason">Reason</label><input id="pause-reason" required minlength="3" maxlength="200" placeholder="e.g. Billing dispute"><div class="modal-actions"><button class="btn primary" type="submit" id="pause-save">Pause account</button></div></form>`);
+  }
+  $('credit-pause-form').addEventListener('submit',e=>{e.preventDefault();void busy($('pause-save'),async()=>{
+    const body=paused?{paused:false}:{paused:true,reason:$<HTMLInputElement>('pause-reason').value};
+    await api(`/api/admin/credits/${id}/pause`,body,'PUT');
+    closeModal();toast(paused?'Account restored.':'Account paused.');await loadCreditAdmin();});});
+}
+function openUndoCharge(id:string,name:string,ledgerId:string,amount:number){
+  openModal('Undo charge · '+name,`<form id="credit-undo-form"><p class="cm-note">This returns ${amount} credit${amount===1?'':'s'} to the balance and keeps the original charge in the history.</p><label for="undo-reason">Reason</label><input id="undo-reason" required minlength="3" maxlength="80" placeholder="e.g. Duplicate Helper message"><div class="modal-actions"><button class="btn primary" type="submit" id="undo-save">Undo charge</button></div></form>`);
+  $('credit-undo-form').addEventListener('submit',e=>{e.preventDefault();void busy($('undo-save'),async()=>{
+    await api(`/api/admin/credits/${id}/undo/${ledgerId}`,{reason:$<HTMLInputElement>('undo-reason').value});
+    closeModal();toast('Charge undone.');await loadCreditAdmin();});});
 }
 async function openCreditHistory(id:string,name:string){
   const h:any=await api(`/api/admin/credits/${id}/history`,undefined,'GET');
-  const when=(x:any)=>escapeHTML(String(x??'').slice(0,16).replace('T',' '));
-  const ledger=h.ledger.length?h.ledger.map((r:any)=>`<tr><td>${when(r.created)}</td><td>${r.delta>0?'+':''}${escapeHTML(r.delta)}</td><td>${escapeHTML(r.reason)}</td></tr>`).join(''):'<tr><td colspan="3">No credit charges or top-ups yet this period.</td></tr>';
-  const audit=h.audit.length?h.audit.map((a:any)=>`<li>${when(a.created)} · ${escapeHTML(a.action)} · ${escapeHTML(JSON.stringify(a.detail))}</li>`).join(''):'<li>No admin changes recorded.</li>';
-  openModal('Credit history · '+name,`<p class="cm-note">${escapeHTML(h.user?.workspace||'')} · ${escapeHTML(h.view.used)} used · ${escapeHTML(h.view.left)} left this month</p><div class="table-scroll"><table class="credit-table"><thead><tr><th>When</th><th>Credits</th><th>Reason</th></tr></thead><tbody>${ledger}</tbody></table></div><h3>Admin changes</h3><ul class="credit-audit">${audit}</ul>`);
+  const ledger=h.ledger.length?h.ledger.map((r:any)=>{
+    const action=r.undone?'<span class="cm-note">Undone</span>':(r.delta<0?`<button class="btn small" data-undo-id="${escapeHTML(r.id)}" data-amount="${-r.delta}">Undo</button>`:'');
+    return `<tr><td>${creditWhen(r.created)}</td><td>${r.delta>0?'+':''}${escapeHTML(r.delta)}</td><td>${escapeHTML(r.reason)}</td><td>${action}</td></tr>`;
+  }).join(''):'<tr><td colspan="4">No credit charges or top-ups yet this period.</td></tr>';
+  const audit=h.audit.length?h.audit.map((a:any)=>`<li>${creditWhen(a.created)} · ${escapeHTML(a.action)} · ${escapeHTML(JSON.stringify(a.detail))}</li>`).join(''):'<li>No admin changes recorded.</li>';
+  const status=h.view.left<=0?'Out of credits':'';
+  openModal('Credit history · '+name,`<p class="cm-note">${escapeHTML(h.user?.workspace||'')} · ${escapeHTML(h.view.used)} used · ${escapeHTML(h.view.left)} left this month${status?' · '+status:''}</p><div class="table-scroll"><table class="credit-table"><thead><tr><th>When</th><th>Credits</th><th>Reason</th><th></th></tr></thead><tbody>${ledger}</tbody></table></div><h3>Admin changes</h3><ul class="credit-audit">${audit}</ul>`);
+  $('modal-content').onclick=(e)=>{const b=(e.target as HTMLElement).closest('[data-undo-id]') as HTMLElement|null;if(!b)return;openUndoCharge(id,name,b.dataset.undoId||'',Number(b.dataset.amount||0));};
 }
 async function adminPage(){
   if(user?.role!=='admin')return;
@@ -5174,11 +5208,11 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
   if(path==='/api/knowledge')return {items:s.knowledge} as any;
   if(path==='/api/admin/credit-settings'){if(method==='PUT')return {included:Number(body?.included)||200,monthly_fee:Number(body?.monthly_fee)||79} as any;return {included:200,monthly_fee:79} as any;}
   if(path.split('?')[0]==='/api/admin/credits')return {month:'Demo month',resets:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth()+1,1).toISOString().slice(0,10)})(),settings:{included:200,monthly_fee:79},total:3,flagged:2,items:[
-    {id:'demo-op',name:'Demo Operator',email:'operator@demo.local',workspace:'Demo workspace',included:200,granted:0,used:0,left:200,status:'ok'},
-    {id:'demo-low',name:'Thandi Mokoena',email:'thandi@school.example',workspace:'Sample School',included:200,granted:0,used:188,left:12,status:'low'},
-    {id:'demo-zero',name:'Pieter van Wyk',email:'pieter@example.co.za',workspace:'Sample Business',included:200,granted:0,used:200,left:0,status:'zero'}]} as any;
-  if(/^\/api\/admin\/credits\/[^/]+\/history$/.test(path))return {user:{name:'Demo user',workspace:'Demo workspace'},view:{used:0,left:200},ledger:[],audit:[]} as any;
-  if(/^\/api\/admin\/credits\/[^/]+\/(grant|allowance)$/.test(path))return {included:200,granted:Number(body?.amount)||0,used:0,left:200} as any;
+    {id:'demo-op',name:'Demo Operator',email:'operator@demo.local',role:'operator',workspace:'Demo workspace',included:200,granted:0,used:0,left:200,status:'ok',paused:false,spend_cap:null},
+    {id:'demo-low',name:'Thandi Mokoena',email:'thandi@school.example',role:'operator',workspace:'Sample School',included:200,granted:0,used:188,left:12,status:'low',paused:false,spend_cap:250},
+    {id:'demo-zero',name:'Pieter van Wyk',email:'pieter@example.co.za',role:'operator',workspace:'Sample Business',included:200,granted:0,used:200,left:0,status:'zero',paused:true,spend_cap:null}]} as any;
+  if(/^\/api\/admin\/credits\/[^/]+\/history$/.test(path))return {user:{name:'Demo user',workspace:'Demo workspace'},view:{used:1,left:199},ledger:[{id:'demo-charge',month:'demo',delta:-1,reason:'helper_message',created:'2026-10-14T10:00:00',undone:false}],audit:[]} as any;
+  if(/^\/api\/admin\/credits\/[^/]+\/(grant|allowance|cap|pause|undo\/[^/]+)$/.test(path))return {included:200,granted:Number(body?.amount)||0,used:0,left:200,paused:!!body?.paused,spend_cap:body?.spend_cap??null} as any;
   if(path==='/api/credits')return {month:'demo',included:200,granted:0,used:0,left:200,resets:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth()+1,1).toISOString().slice(0,10)})(),costs:{sheet_job:3,helper_message:1,share_email:1}} as any;
   if(path==='/api/preferences'){s.preferences={...s.preferences,...body};saveStaticState(s);return s.preferences as any}
   if(path==='/api/admin/settings'){

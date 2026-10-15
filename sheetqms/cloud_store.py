@@ -31,9 +31,16 @@ credit_settings = sa.Table('credit_settings', M, sa.Column('id', sa.Integer, pri
 credit_allowances = sa.Table('credit_allowances', M, sa.Column('user_id', sa.String, primary_key=True), sa.Column('included', sa.Integer, nullable=False), sa.Column('updated', sa.String, nullable=False))
 admin_audit = sa.Table('admin_audit', M, sa.Column('id', sa.String, primary_key=True), sa.Column('actor_id', sa.String, nullable=False), sa.Column('action', sa.String, nullable=False), sa.Column('target_id', sa.String, nullable=False), sa.Column('detail', sa.Text, nullable=False), sa.Column('created', sa.String, nullable=False))
 sa.Index('admin_audit_target', admin_audit.c.target_id)
+user_limits = sa.Table('user_limits', M, sa.Column('user_id', sa.String, primary_key=True), sa.Column('paused', sa.Boolean, nullable=False), sa.Column('pause_reason', sa.String, nullable=False), sa.Column('spend_cap', sa.Integer, nullable=True), sa.Column('updated', sa.String, nullable=False))
+credit_undos = sa.Table('credit_undos', M, sa.Column('ledger_id', sa.String, primary_key=True), sa.Column('user_id', sa.String, nullable=False), sa.Column('reversal_id', sa.String, nullable=False), sa.Column('actor_id', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False))
+credit_alerts = sa.Table('credit_alerts', M, sa.Column('user_id', sa.String, primary_key=True), sa.Column('month', sa.String, primary_key=True), sa.Column('kind', sa.String, primary_key=True), sa.Column('created', sa.String, nullable=False))
 rate_limits = sa.Table('rate_limits', M, sa.Column('id', sa.String, primary_key=True), sa.Column('count', sa.Integer, nullable=False), sa.Column('expires', sa.String, nullable=False))
 sa.Index('job_workspace_created', jobs.c.tenant_id, jobs.c.created)
 sa.Index('event_workspace_job', events.c.tenant_id, events.c.job_id, events.c.id)
+
+
+class CreditCapReached(ValueError):
+    pass
 
 
 class CloudStore:
@@ -270,11 +277,15 @@ class CloudStore:
             count, used = c.execute(sa.select(sa.func.count(), sa.func.coalesce(sa.func.sum(jobs.c.stored_bytes),0)).where(jobs.c.tenant_id == tenant)).one()
             return int(count), int(used)
 
-    def credit_adjust(self, user_id, month, delta, reason, included=None):
+    def credit_adjust(self, user_id, month, delta, reason, included=None, cap=None):
         with self.tx(serial=True) as c:
             net = int(c.execute(sa.select(sa.func.coalesce(sa.func.sum(credit_ledger.c.delta), 0)).where(credit_ledger.c.user_id == user_id, credit_ledger.c.month == month)).scalar())
             if delta < 0 and included is not None and included + net + delta < 0:
                 raise ValueError('out of credits')
+            if delta < 0 and cap is not None:
+                used = -int(c.execute(sa.select(sa.func.coalesce(sa.func.sum(credit_ledger.c.delta), 0)).where(credit_ledger.c.user_id == user_id, credit_ledger.c.month == month, credit_ledger.c.delta < 0)).scalar())
+                if used - delta > cap:
+                    raise CreditCapReached('spending cap reached')
             c.execute(credit_ledger.insert().values(id=str(uuid.uuid4()), user_id=user_id, month=month, delta=int(delta), reason=str(reason)[:80], created=now()))
             return net + int(delta)
 
@@ -340,7 +351,39 @@ class CloudStore:
     def credit_history(self, user_id, limit=200):
         with self.engine.connect() as c:
             rows = c.execute(sa.select(credit_ledger).where(credit_ledger.c.user_id == user_id).order_by(credit_ledger.c.created.desc()).limit(limit)).mappings().all()
-        return [{'month': r['month'], 'delta': int(r['delta']), 'reason': r['reason'], 'created': r['created']} for r in rows]
+            undone = {r[0] for r in c.execute(sa.select(credit_undos.c.ledger_id).where(credit_undos.c.user_id == user_id)).all()}
+        return [{'id': r['id'], 'month': r['month'], 'delta': int(r['delta']), 'reason': r['reason'], 'created': r['created'], 'undone': r['id'] in undone} for r in rows]
+
+    def get_user_limits(self, user_id):
+        with self.engine.connect() as c:
+            r = c.execute(sa.select(user_limits).where(user_limits.c.user_id == user_id)).mappings().first()
+        if not r:
+            return {'paused': False, 'pause_reason': '', 'spend_cap': None}
+        return {'paused': bool(r['paused']), 'pause_reason': r['pause_reason'] or '', 'spend_cap': r['spend_cap']}
+
+    def save_user_limits(self, user_id, paused, pause_reason, spend_cap):
+        with self.tx() as c:
+            self.upsert(c, user_limits, {'user_id': user_id, 'paused': bool(paused), 'pause_reason': str(pause_reason or '')[:200], 'spend_cap': spend_cap, 'updated': now()}, ['user_id'])
+
+    def undo_credit(self, user_id, ledger_id, actor_id, reason):
+        with self.tx(serial=True) as c:
+            r = c.execute(sa.select(credit_ledger).where(credit_ledger.c.id == ledger_id, credit_ledger.c.user_id == user_id)).mappings().first()
+            if not r or int(r['delta']) >= 0:
+                raise LookupError('not a charge')
+            if c.execute(sa.select(credit_undos.c.ledger_id).where(credit_undos.c.ledger_id == ledger_id)).first():
+                raise ValueError('already undone')
+            reversal = str(uuid.uuid4())
+            c.execute(credit_ledger.insert().values(id=reversal, user_id=user_id, month=r['month'], delta=-int(r['delta']), reason=('Undo: ' + str(reason))[:80], created=now()))
+            c.execute(credit_undos.insert().values(ledger_id=ledger_id, user_id=user_id, reversal_id=reversal, actor_id=actor_id, created=now()))
+            return -int(r['delta'])
+
+    def credit_alert_sent(self, user_id, month, kind):
+        with self.engine.connect() as c:
+            return c.execute(sa.select(credit_alerts.c.kind).where(credit_alerts.c.user_id == user_id, credit_alerts.c.month == month, credit_alerts.c.kind == kind)).first() is not None
+
+    def record_credit_alert(self, user_id, month, kind):
+        with self.tx() as c:
+            self.upsert(c, credit_alerts, {'user_id': user_id, 'month': month, 'kind': kind, 'created': now()}, ['user_id', 'month', 'kind'], nothing=True)
 
     @contextmanager
     def lease(self, tenant, identifier):
