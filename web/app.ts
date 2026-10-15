@@ -1,4 +1,4 @@
-import { ELITE_LOGO_URI } from './elite_logo';
+import { ELITE_LOGO_URI, AI_ORB_URI } from './elite_logo';
 import { landingHtml } from './landing';
 import * as XLSX from 'xlsx';
 import { renderGradebook } from './gradebook';
@@ -2073,7 +2073,7 @@ function ensureKiaatOrb(){
   const orb=document.createElement('button');
   orb.id='kiaat-orb';orb.className='kiaat-orb';orb.type='button';orb.hidden=true;
   orb.setAttribute('aria-label','Ask Kiaat');orb.title='Ask Kiaat';
-  orb.innerHTML=`<img src="${ELITE_LOGO_URI}" alt="" width="64" height="64">`;
+  orb.innerHTML=`<img src="${AI_ORB_URI}" alt="" width="64" height="64">`;
   orb.addEventListener('click',()=>void showPage('helper'));
   document.body.appendChild(orb);
 }
