@@ -1,4 +1,4 @@
-"""Sheet Helper: lesson plans, class tests with memos, and assignments with rubrics.
+"""Kiaat: lesson plans, class tests with memos, and assignments with rubrics.
 
 Privacy rule: the prompt to Gemini is built only from grade, subject, topic and mark totals.
 Learner names, IDs and marks never reach this module. `guard_outgoing` refuses any request
@@ -82,11 +82,11 @@ def check_identifiers(text: str, known: tuple[str, ...] = ()) -> None:
     """Raises HelperError when text contains identifier-shaped values or known learner strings."""
     for pattern in _ID_PATTERNS:
         if pattern.search(text):
-            raise HelperError('Remove numbers, emails or phone numbers from the topic. Sheet Helper never needs personal details.')
+            raise HelperError('Remove numbers, emails or phone numbers from the topic. Kiaat never needs personal details.')
     lowered = text.lower()
     for item in known:
         if item and item.lower() in lowered:
-            raise HelperError('Learner details cannot be sent to Sheet Helper.')
+            raise HelperError('Learner details cannot be sent to Kiaat.')
 
 
 def validate(req: HelperRequest) -> None:
@@ -239,7 +239,7 @@ def build_chat_body(req: ChatRequest) -> dict:
     total = req.minutes if req.kind == 'lesson' else req.total_marks
     unit = 'minutes' if req.kind == 'lesson' else 'marks'
     system = (
-        'You are Sheet Helper, a planning assistant for South African teachers. Answer in English, aligned to CAPS. '
+        'You are Kiaat, a planning assistant for South African teachers. Answer in English, aligned to CAPS. '
         'Explain CAPS content, learning outcomes and how to pitch a topic for the grade. Never use or ask for learner names, IDs or marks. '
         'If the teacher asks for changes to the current draft, return the complete updated draft in "draft", using the schema. '
         'Otherwise return "draft": null. The draft totals must stay exactly as set: ' + f'{total} {unit}. Return JSON only.'
@@ -265,7 +265,7 @@ def build_chat_body(req: ChatRequest) -> dict:
 
 
 def chat(req: ChatRequest, api_key: str, transport=None, model: str | None = None) -> dict:
-    base = HelperRequest(kind=req.kind, grade=req.grade, subject=req.subject, topic='Sheet Helper conversation',
+    base = HelperRequest(kind=req.kind, grade=req.grade, subject=req.subject, topic='Kiaat conversation',
                          minutes=req.minutes, total_marks=req.total_marks)
     validate(base)
     if req.messages[-1].role != 'user' or req.messages[0].role != 'user':
@@ -279,7 +279,7 @@ def chat(req: ChatRequest, api_key: str, transport=None, model: str | None = Non
     with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False, trust_env=False, transport=transport) as client:
         response = client.post(GEMINI_URL.format(model=model_name), headers=headers, json=body)
     if response.status_code >= 300:
-        raise HelperError('Sheet Helper could not answer this message. No allowance was used. Try again shortly.')
+        raise HelperError('Kiaat could not answer this message. No allowance was used. Try again shortly.')
     try:
         out = json.loads(response.json()['candidates'][0]['content']['parts'][0]['text'])
     except (KeyError, IndexError, TypeError, json.JSONDecodeError):

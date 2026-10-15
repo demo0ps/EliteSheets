@@ -541,10 +541,10 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         month = credit_month()
         bucket_name = helper.bucket(body.kind)
         if store.helper_count(user['id'], month, bucket_name) >= helper.HELPER_LIMITS[bucket_name]:
-            raise HTTPException(402, "You have used this month's Sheet Helper allowance for this kind of draft. It resets next month.")
+            raise HTTPException(402, "You have used this month's Kiaat allowance for this kind of draft. It resets next month.")
         key = os.environ.get('SHEETQMS_GEMINI_API_KEY', '').strip()
         if not key:
-            raise HTTPException(503, 'Sheet Helper is not switched on yet. Your marks and learner data are unaffected.')
+            raise HTTPException(503, 'Kiaat is not switched on yet. Your marks and learner data are unaffected.')
         try:
             result = helper.generate(body, key, transport=getattr(app.state, 'helper_transport', None))
         except helper.HelperError as exc:
@@ -558,10 +558,10 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
     def helper_chat(body: helper.ChatRequest, user=Depends(current)):
         month = credit_month()
         if store.helper_count(user['id'], month, 'chat') >= helper.HELPER_LIMITS['chat']:
-            raise HTTPException(402, "You have used this month's Sheet Helper conversation messages. It resets next month.")
+            raise HTTPException(402, "You have used this month's Kiaat conversation messages. It resets next month.")
         key = os.environ.get('SHEETQMS_GEMINI_API_KEY', '').strip()
         if not key:
-            raise HTTPException(503, 'Sheet Helper is not switched on yet. Your marks and learner data are unaffected.')
+            raise HTTPException(503, 'Kiaat is not switched on yet. Your marks and learner data are unaffected.')
         try:
             result = helper.chat(body, key, transport=getattr(app.state, 'helper_transport', None))
         except helper.HelperError as exc:

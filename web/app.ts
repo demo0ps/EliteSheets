@@ -109,7 +109,7 @@ const VERTICAL_META:Record<string,VerticalConfig>={
       {page:'planner',label:'Planner',iconName:'clock'},
       {page:'pacing',label:'Pacing',iconName:'chart'},
       {page:'cptd',label:'CPTD',iconName:'shield'},
-      {page:'helper',label:'Sheet Helper',iconName:'spark'},
+      {page:'helper',label:'Kiaat',iconName:'spark'},
       {page:'workspace',label:'Import a file',iconName:'upload'},
       {page:'preferences',label:'Settings',iconName:'settings'}
     ],
@@ -284,10 +284,10 @@ function homePage(){
     {page:'planner',icon:'clock',title:'Planner',text:'Timetable, term dates, a weekly calendar and reminders.'},
     {page:'pacing',icon:'chart',title:'Pacing',text:'Plan your scheme of work on school days and move it when a day is lost.'},
     {page:'cptd',icon:'shield',title:'CPTD log',text:'PD points by type across your three-year cycle. A personal record; nothing is sent to SACE.'},
-    {page:'helper',icon:'spark',title:'Sheet Helper',text:'Draft CAPS-aligned lesson plans, class tests with memos, and assignments. You review every draft.'},
+    {page:'helper',icon:'spark',title:'Kiaat',text:'Draft CAPS-aligned lesson plans, class tests with memos, and assignments. You review every draft.'},
     {page:'workspace',icon:'upload',title:'Import a file',text:'Open an existing mark sheet, check it, and download a cleaned copy.'},
   ];
-  $('page').innerHTML=`<div class="page-heading"><div><h1>Home</h1><p class="home-lede">Start with your gradebook. Everything else is optional.</p></div></div>
+  $('page').innerHTML=`<div class="page-heading"><div><h1>Home</h1><p class="home-lede">Start with your gradebook. Everything else is optional. Like the kiaat, Elite Sheets grows steadily and leaves you in charge.</p></div></div>
   <section class="home-start" aria-label="Get started">
     <h2>Get started in three steps</h2>
     <ol class="home-steps">

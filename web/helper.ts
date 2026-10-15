@@ -1,4 +1,4 @@
-// Sheet Helper screen: CAPS-aligned lesson plans, class tests with memos, and assignments with rubrics,
+// Kiaat screen: CAPS-aligned lesson plans, class tests with memos, and assignments with rubrics,
 // plus a conversation for CAPS questions, alignment checks and changes to the current draft.
 // Only grade, subject, topic, mark totals and the conversation text are sent. Drafts are for the teacher to review.
 
@@ -59,11 +59,11 @@ function chatHtml(turns: Turn[]): string {
   const log = turns.length
     ? turns.map(t => `<article class="msg ${t.role === 'user' ? 'user' : ''}"><span class="msg-sender">${t.role === 'user' ? 'You' : 'Helper'}</span><div class="bubble">${esc(t.text)}</div></article>`).join('')
     : '<p style="font-size:13px;color:var(--muted)">Ask about CAPS content, check that a topic matches the outcomes, or ask for a change to the draft above.</p>';
-  return `<div class="panel" style="padding:16px;margin-top:14px" aria-label="Talk to Sheet Helper">
-    <h2 style="font-size:17px;margin:0 0 10px">Talk to Sheet Helper</h2>
+  return `<div class="panel" style="padding:16px;margin-top:14px" aria-label="Talk to Kiaat">
+    <h2 style="font-size:17px;margin:0 0 10px">Talk to Kiaat</h2>
     <div id="sh-chat-log" class="messages" tabindex="0" aria-live="polite" style="max-height:340px;overflow:auto">${log}</div>
     <form id="sh-chat-form" class="chat-compose" style="margin-top:10px">
-      <textarea id="sh-chat-text" rows="2" maxlength="1000" aria-label="Message Sheet Helper" placeholder="e.g. Does this match the CAPS outcome for fractions? Or: make question 2 harder"></textarea>
+      <textarea id="sh-chat-text" rows="2" maxlength="1000" aria-label="Message Kiaat" placeholder="e.g. Does this match the CAPS outcome for fractions? Or: make question 2 harder"></textarea>
       <button class="btn primary small" id="sh-chat-send" type="submit">Send</button>
     </form>
     <p style="font-size:12px;color:var(--muted);margin:8px 0 0">Do not type learner names or numbers here. Only what you write in this box is sent.</p>
@@ -84,12 +84,12 @@ export function renderHelper(root: HTMLElement, api: ApiFn, toast: (msg: string,
     const limits = info?.limits || { lesson: 20, assessment: 10, chat: 60 };
     const left = (k: string) => Math.max(0, (limits[k] ?? 0) - (used[k] ?? 0));
     const notReady = info && !info.configured
-      ? '<p role="status" style="font-size:13px;background:var(--gold-soft);border-radius:8px;padding:8px 10px;margin:10px 0">Sheet Helper is not switched on yet. You can see the form, but drafts and answers cannot be created until the service is connected.</p>' : '';
-    root.innerHTML = `<div class="page-heading"><div><h1>Sheet Helper</h1>
+      ? '<p role="status" style="font-size:13px;background:var(--gold-soft);border-radius:8px;padding:8px 10px;margin:10px 0">Kiaat is not switched on yet. You can see the form, but drafts and answers cannot be created until the service is connected.</p>' : '';
+    root.innerHTML = `<div class="page-heading"><div><h1>Kiaat</h1>
       <p style="font-size:13px;color:var(--muted);margin-top:4px">Drafts for lesson plans, class tests with memos, and assignments with rubrics. Aligned to CAPS, in English. Check every draft against your CAPS documents before you use it.</p></div></div>
       <div class="panel" style="padding:16px">
         <p style="font-size:13px;margin:0 0 10px">Left this month: <strong>${left('lesson')}</strong> of ${limits.lesson} lesson plans, <strong>${left('assessment')}</strong> of ${limits.assessment} tests or assignments, and <strong>${left('chat')}</strong> of ${limits.chat} conversation messages.</p>
-        <p style="font-size:12px;color:var(--muted);margin:0 0 12px">Only the grade, subject, topic, mark totals and what you type in the conversation are sent. Learner names, IDs and marks never leave your browser. Do not type a learner's name anywhere in Sheet Helper.</p>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 12px">Only the grade, subject, topic, mark totals and what you type in the conversation are sent. Learner names, IDs and marks never leave your browser. Do not type a learner's name anywhere in Kiaat.</p>
         ${notReady}
         <div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:end">
           <label>Type<select id="sh-kind">${Object.keys(KIND_LABEL).map(k => `<option value="${k}">${KIND_LABEL[k]}</option>`).join('')}</select></label>
@@ -154,7 +154,7 @@ export function renderHelper(root: HTMLElement, api: ApiFn, toast: (msg: string,
         info = await api('/api/helper/usage', undefined, 'GET');
         draw();
       } catch (err: any) {
-        const msg = err?.message || 'Sheet Helper could not write this draft.';
+        const msg = err?.message || 'Kiaat could not write this draft.';
         toast(msg, true);
         busy.textContent = msg;
       } finally {
@@ -210,7 +210,7 @@ export function renderHelper(root: HTMLElement, api: ApiFn, toast: (msg: string,
         draw();
       } catch (err: any) {
         turns = turns.slice(0, -1);
-        const msg = err?.message || 'Sheet Helper could not answer this message.';
+        const msg = err?.message || 'Kiaat could not answer this message.';
         toast(msg, true);
         root.querySelector('#sh-chat')!.innerHTML = chatHtml(turns);
         const again = root.querySelector<HTMLTextAreaElement>('#sh-chat-text');

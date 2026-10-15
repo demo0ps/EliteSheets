@@ -42,7 +42,7 @@ export function renderPlanner(root:HTMLElement,toast:(msg:string,err?:boolean)=>
         ${d.periods.map(p=>`<div style="font-size:13px;border-left:3px solid var(--accent);padding:4px 6px;margin-bottom:6px"><strong>${p.start}</strong> ${esc(p.label)}${p.room?`<br><span style="color:var(--muted);font-size:12px">${esc(p.room)}</span>`:''}</div>`).join('')||'<div style="font-size:12px;color:var(--muted)">No periods</div>'}
       </div>`).join('');
     const reminderList=rem.length?rem.map(r=>`<li style="margin-bottom:6px"><strong>${r.date}</strong> ${esc(r.text)}</li>`).join(''):'<li style="color:var(--muted)">Nothing due in the next two weeks.</li>';
-    root.innerHTML=`<div class="page-heading"><div><h1>Planner</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Your timetable, term dates, weekly calendar and reminders. Saved in this browser only.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="pl-open-helper">Open Sheet Helper</button><button class="btn" id="pl-open-pacing">Open pacing tracker</button></div></div>
+    root.innerHTML=`<div class="page-heading"><div><h1>Planner</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Your timetable, term dates, weekly calendar and reminders. Saved in this browser only.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="pl-open-helper">Open Kiaat</button><button class="btn" id="pl-open-pacing">Open pacing tracker</button></div></div>
       <div class="panel" style="padding:16px">
         <h2 style="font-size:17px;margin:0 0 10px">Reminders</h2>
         <ul style="margin:0 0 10px 18px;padding:0;font-size:14px">${reminderList}</ul>

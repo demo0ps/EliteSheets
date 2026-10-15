@@ -92,6 +92,11 @@ export function landingHtml(logoHtml: string, productCreditHtml: string, demo: b
   </figure>
 </section>
 
+<section class="lp-section" id="kiaat">
+  <h2>Built like a kiaat</h2>
+  <p>The kiaat is a South African tree. It grows steadily, roots deeply and gives shade to the people around it. Elite Sheets is built the same way: careful with every mark, dependable from one term to the next, and always leaving the teacher in charge of the result. Kiaat, our helper, is named after it.</p>
+</section>
+
 <section class="lp-section" id="why">
   <h2>Why term marks go wrong</h2>
   <p>Adding raw points favours the longer assessment. Each mark has to become a percentage first, then the weights apply. Here is one learner, with a test weighted 20% and an exam weighted 80%:</p>
@@ -151,7 +156,7 @@ export function landingHtml(logoHtml: string, productCreditHtml: string, demo: b
     <div class="lp-card"><h3>Planner</h3><p>Your timetable, term dates and a weekly calendar. Reminders show in the app, and browser notifications work if you allow them.</p></div>
     <div class="lp-card"><h3>Pacing</h3><p>Plan your scheme of work across school days, tick lessons as you teach them, and move the remaining plan when a day is lost.</p></div>
     <div class="lp-card"><h3>CPTD log</h3><p>Record your PD points by type across your three-year cycle, with reporting windows and an Excel summary.</p><p style="margin-top:6px;color:var(--muted)">A personal record only. Nothing is sent to SACE; you still report through SACE yourself.</p></div>
-    <div class="lp-card"><span class="lp-tag">AI helper</span><h3>Sheet Helper</h3><p>Draft CAPS-aligned lesson plans, class tests with memos, and assignments with rubrics. Mark totals are checked in code. Refine a draft in the same chat. You review every draft before you use it.</p></div>
+    <div class="lp-card"><span class="lp-tag">AI helper</span><h3>Kiaat</h3><p>Draft CAPS-aligned lesson plans, class tests with memos, and assignments with rubrics. Mark totals are checked in code. Refine a draft in the same chat. You review every draft before you use it.</p></div>
     <div class="lp-card"><h3>Import a file</h3><p>Already have a mark sheet? Open an Excel or CSV file, fix SA ID and phone formats, pass levels and duplicates, then download the cleaned copy.</p></div>
   </div>
 </section>
@@ -161,7 +166,7 @@ export function landingHtml(logoHtml: string, productCreditHtml: string, demo: b
   <p>Teachers work with learner information, so the rules are simple:</p>
   <ul class="lp-privacy">
     <li><strong>Marks, registers, planner, pacing and CPTD records are saved in your browser.</strong> They are not stored on our server. Clearing site data deletes them, so download your Excel files as a backup.</li>
-    <li><strong>Learner names and numbers never go to the AI service.</strong> Sheet Helper receives only the grade, subject, topic and mark totals you enter.</li>
+    <li><strong>Learner names and numbers never go to the AI service.</strong> Kiaat receives only the grade, subject, topic and mark totals you enter.</li>
     <li><strong>Register photos are never sent to the AI.</strong> Timetable photos may be, because they contain no learner information.</li>
   </ul>
 </section>
@@ -175,7 +180,7 @@ export function landingHtml(logoHtml: string, productCreditHtml: string, demo: b
       <ul>
         <li>Gradebook, registers, planner, pacing and CPTD log</li>
         <li>Import and clean existing files</li>
-        <li>Sheet Helper drafts</li>
+        <li>Kiaat drafts</li>
       </ul>
     </div>
     <a class="btn primary" href="#get-started">Start the free trial</a>
@@ -186,7 +191,7 @@ export function landingHtml(logoHtml: string, productCreditHtml: string, demo: b
   <h2>Questions teachers ask</h2>
   <details><summary>Can I share my gradebook with someone?</summary><p>Not yet. Download the Excel file and send it yourself.</p></details>
   <details><summary>What if I clear my browser data?</summary><p>The saved marks are deleted. Download Excel files regularly, and before you switch computers or browsers.</p></details>
-  <details><summary>Does Sheet Helper see my learners?</summary><p>No. It receives only the grade, CAPS subject, topic and mark totals you type in. Learner names and numbers never go to the AI service.</p></details>
+  <details><summary>Does Kiaat see my learners?</summary><p>No. It receives only the grade, CAPS subject, topic and mark totals you type in. Learner names and numbers never go to the AI service.</p></details>
   <details><summary>Is my CPTD log sent to SACE?</summary><p>No. It is your personal record. You still report your PD points through SACE yourself.</p></details>
   <details><summary>Does it connect to SA-SAMS?</summary><p>No. You export the checked marks and copy them across yourself.</p></details>
   <details><summary>Do I need to pay during the trial?</summary><p>No. The trial is free for 2 weeks. After that the plan is R79 a month, including VAT.</p></details>
