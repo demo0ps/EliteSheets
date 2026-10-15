@@ -28770,7 +28770,7 @@
     await preferencesPage();
   }
   function creditMeterHtml(c) {
-    if (!c) return "";
+    if (!c || typeof c.included !== "number" || !c.costs) return "";
     const pct = Math.min(100, Math.round(c.used / Math.max(c.included, 1) * 100));
     const warn = c.left <= 0 || pct >= 80;
     const resetDate = (/* @__PURE__ */ new Date(c.resets + "T00:00:00")).toLocaleDateString("en-ZA", { day: "numeric", month: "long" });
@@ -32517,6 +32517,10 @@
       }
     }
     if (path === "/api/knowledge") return { items: s.knowledge };
+    if (path === "/api/credits") return { month: "demo", included: 200, granted: 0, used: 0, left: 200, resets: (() => {
+      const d = /* @__PURE__ */ new Date();
+      return new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString().slice(0, 10);
+    })(), costs: { sheet_job: 3, helper_message: 1, share_email: 1 } };
     if (path === "/api/preferences") {
       s.preferences = { ...s.preferences, ...body };
       saveStaticState(s);

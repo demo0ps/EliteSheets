@@ -1834,7 +1834,7 @@ async function knowledgePage(){
 
 // Credit meter: shows credits left this month on the Past Files & Settings page.
 function creditMeterHtml(c:any){
-  if(!c)return '';
+  if(!c||typeof c.included!=='number'||!c.costs)return '';
   const pct=Math.min(100,Math.round((c.used/Math.max(c.included,1))*100));
   const warn=c.left<=0||pct>=80;
   const resetDate=new Date(c.resets+'T00:00:00').toLocaleDateString('en-ZA',{day:'numeric',month:'long'});
@@ -5117,6 +5117,7 @@ async function localApi<T=any>(path:string,body?:any,method='POST'):Promise<T>{
     if(action==='plan'){j.plan=body.plan;runStaticJob(s,j);s.jobs[id]=j;saveStaticState(s);return j as any}
   }
   if(path==='/api/knowledge')return {items:s.knowledge} as any;
+  if(path==='/api/credits')return {month:'demo',included:200,granted:0,used:0,left:200,resets:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth()+1,1).toISOString().slice(0,10)})(),costs:{sheet_job:3,helper_message:1,share_email:1}} as any;
   if(path==='/api/preferences'){s.preferences={...s.preferences,...body};saveStaticState(s);return s.preferences as any}
   if(path==='/api/admin/settings'){
     if(method==='PUT'){s.admin={...s.admin,...body};saveStaticState(s)}
