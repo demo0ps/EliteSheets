@@ -28787,9 +28787,19 @@
     } catch {
       creditInfo = null;
     }
+    let payInfo = null;
+    try {
+      payInfo = await api("/api/billing/me", void 0, "GET");
+    } catch {
+      payInfo = null;
+    }
+    const payHtml = payInfo && payInfo.can_pay ? `<section class="pay-monthly"><p class="cm-note">Monthly plan: R${payInfo.fee} including VAT. You pay on Yoco's secure page; we never see your card.</p><button class="btn primary" type="button" data-pay-monthly>Pay R${payInfo.fee} for this month</button></section>` : "";
+    const billingResult = new URLSearchParams(location.search).get("billing");
+    if (billingResult === "success") setTimeout(() => toast("Thank you. We are confirming your payment; it can take a minute to show."), 300);
+    if (billingResult === "cancelled") setTimeout(() => toast("Payment cancelled. Nothing was charged."), 300);
     $2("page").innerHTML = `
   <div class="page-heading"><h1>Past Files & Workspace Settings</h1></div>
-  ${creditMeterHtml(creditInfo)}
+  ${payHtml}${creditMeterHtml(creditInfo)}
   <div class="settings-grid">
     <section class="settings-panel">
       <h2>Your Past Spreadsheets (${overview.jobs?.length || 0})</h2>
@@ -28895,10 +28905,16 @@
     }).join("");
     return `<section class="settings-panel credit-admin-panel" aria-label="Credits">${creditMarginHtml(m)}${providersPanelHtml(pv)}<div class="cm-head"><h2>Credits</h2><span class="cm-note">${escapeHTML(d.month)} \xB7 resets ${creditDate(d.resets)}</span></div><p class="cm-note">${d.flagged} of ${d.total} users need attention (20% or less left, or none left).</p><div class="credit-admin-tools"><input id="credit-search" type="search" placeholder="Search name, email or workspace" value="${escapeHTML(creditAdminState.q)}" aria-label="Search users"><select id="credit-flag" aria-label="Show users"><option value="" ${!f ? "selected" : ""}>All users</option><option value="flagged" ${f === "flagged" ? "selected" : ""}>Needs attention</option><option value="zero" ${f === "zero" ? "selected" : ""}>Out of credits</option></select></div><div class="credit-admin-tools"><button class="btn small" data-credit-export="balances">Export balances (CSV)</button><button class="btn small" data-credit-export="ledger">Export ledger (CSV)</button><button class="btn small primary" data-credit-action="bulk" ${picked.size ? "" : "disabled"}>Grant credits to selected (${picked.size})</button>${picked.size ? '<button class="btn small" data-credit-action="clear">Clear selection</button>' : ""}</div><div class="table-scroll"><table class="credit-table"><thead><tr><th><input type="checkbox" id="credit-pick-all" aria-label="Select all shown users" ${allShown ? "checked" : ""}></th><th>User</th><th>Workspace</th><th>Used / left</th><th>Allowance</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="7">No users match.</td></tr>'}</tbody></table></div><form id="credit-settings-form" class="credit-settings"><h3>Plan settings</h3><p class="cm-note">New users and users without their own allowance get these values.</p><label for="cs-fee">Monthly fee (R)</label><input id="cs-fee" type="number" min="0" max="10000" step="1" value="${s.monthly_fee}"><label for="cs-included">Included credits per month</label><input id="cs-included" type="number" min="0" max="5000" step="1" value="${s.included}"><button class="btn primary small" type="submit">Save plan settings</button></form></section>`;
   }
+  function yocoKeysFormHtml(pv) {
+    const yocos = pv.items.filter((p) => p.kind === "yoco");
+    if (!yocos.length) return '<p class="cm-note">To take card payments, add a provider with "Yoco online checkout" first.</p>';
+    const opts = yocos.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join("");
+    return `<form id="yoco-keys-form" class="credit-settings"><h3>Yoco keys</h3><p class="cm-note">Keys are encrypted on the server and can never be shown again. To change one, enter it again. Use test keys until you are ready to go live.</p><label for="yk-provider">Yoco provider</label><select id="yk-provider">${opts}</select><label for="yk-mode">Mode</label><select id="yk-mode"><option value="test">Test</option><option value="live">Live</option></select><label for="yk-secret">Secret key (from Yoco, Payment Gateway)</label><input id="yk-secret" type="password" autocomplete="off" spellcheck="false"><label for="yk-webhook">Webhook signing secret (from Yoco webhooks)</label><input id="yk-webhook" type="password" autocomplete="off" spellcheck="false"><label for="yk-public">Public key (optional)</label><input id="yk-public" autocomplete="off" spellcheck="false"><button class="btn primary small" type="submit">Save keys</button></form>`;
+  }
   function providersPanelHtml(pv) {
     if (!pv) return '<p class="cm-note">Payment providers could not load.</p>';
-    const rows = pv.items.map((p) => `<tr><td><strong>${escapeHTML(p.name)}</strong></td><td>${escapeHTML(p.merchant_ref)}</td><td>\u2022\u2022\u2022\u2022 ${escapeHTML(p.settlement_last4)}</td><td>${p.is_default ? '<span class="cr-pill cr-ok">Default</span> ' : ""}${p.active ? "" : '<span class="cr-pill cr-zero">Inactive</span>'}</td><td class="credit-actions">${p.active && !p.is_default ? `<button class="btn small" data-provider-action="default" data-id="${escapeHTML(p.id)}">Make default</button>` : ""}${p.active ? `<button class="btn small" data-provider-action="deactivate" data-id="${escapeHTML(p.id)}" data-name="${escapeHTML(p.name)}">Deactivate</button>` : ""}</td></tr>`).join("");
-    return `<div class="credit-providers"><div class="cm-head"><h3>Payment providers</h3><span class="cm-note">Where customer money is received</span></div><p class="cm-note">Enter the account reference only. Secret keys are not stored here. Payments are recorded against the default provider unless another is chosen.</p><div class="table-scroll"><table class="credit-table"><thead><tr><th>Provider</th><th>Merchant reference</th><th>Settles to</th><th>Status</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No provider yet. Add one before recording payments.</td></tr>'}</tbody></table></div><form id="provider-form" class="credit-settings"><h3>Add a provider</h3><label for="prov-name">Provider</label><select id="prov-name"><option>Paystack</option><option>PayFast</option><option>Yoco</option><option>Peach Payments</option><option value="Other">Other</option></select><label for="prov-other">Name, if Other</label><input id="prov-other" maxlength="60"><label for="prov-ref">Merchant or account reference</label><input id="prov-ref" required minlength="3" maxlength="80"><label for="prov-acct">Settlement bank account number</label><input id="prov-acct" inputmode="numeric" required minlength="4" maxlength="20" placeholder="Only the last 4 digits are shown"><label><input type="checkbox" id="prov-default"> Make this the default</label><button class="btn primary small" type="submit">Add provider</button></form></div>`;
+    const rows = pv.items.map((p) => `<tr><td><strong>${escapeHTML(p.name)}</strong></td><td>${escapeHTML(p.merchant_ref)}</td><td>\u2022\u2022\u2022\u2022 ${escapeHTML(p.settlement_last4)}</td><td>${p.is_default ? '<span class="cr-pill cr-ok">Default</span> ' : ""}${p.active ? "" : '<span class="cr-pill cr-zero">Inactive</span>'}${p.kind === "yoco" ? `<div class="cm-note">${p.secret_configured ? `Keys saved: \u2022\u2022\u2022\u2022${escapeHTML(p.secret_key_last4)} \xB7 ${escapeHTML(p.mode)} mode` : "Keys not set yet"}<br>Yoco webhook: ${escapeHTML(location.origin)}/api/webhooks/yoco/${escapeHTML(p.id)}</div>` : '<div class="cm-note">Recorded by hand</div>'}</td><td class="credit-actions">${p.active && !p.is_default ? `<button class="btn small" data-provider-action="default" data-id="${escapeHTML(p.id)}">Make default</button>` : ""}${p.active ? `<button class="btn small" data-provider-action="deactivate" data-id="${escapeHTML(p.id)}" data-name="${escapeHTML(p.name)}">Deactivate</button>` : ""}</td></tr>`).join("");
+    return `<div class="credit-providers"><div class="cm-head"><h3>Payment providers</h3><span class="cm-note">Where customer money is received</span></div><p class="cm-note">Enter the account reference only. Secret keys are not stored here. Payments are recorded against the default provider unless another is chosen.</p><div class="table-scroll"><table class="credit-table"><thead><tr><th>Provider</th><th>Merchant reference</th><th>Settles to</th><th>Status</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No provider yet. Add one before recording payments.</td></tr>'}</tbody></table></div><form id="provider-form" class="credit-settings"><h3>Add a provider</h3><label for="prov-name">Provider</label><select id="prov-name"><option>Paystack</option><option>PayFast</option><option>Yoco</option><option>Peach Payments</option><option value="Other">Other</option></select><label for="prov-other">Name, if Other</label><input id="prov-other" maxlength="60"><label for="prov-ref">Merchant or account reference</label><input id="prov-ref" required minlength="3" maxlength="80"><label for="prov-kind">How payments arrive</label><select id="prov-kind"><option value="manual">Recorded by hand</option><option value="yoco">Yoco online checkout</option></select><label for="prov-acct">Settlement bank account number</label><input id="prov-acct" inputmode="numeric" required minlength="4" maxlength="20" placeholder="Only the last 4 digits are shown"><label><input type="checkbox" id="prov-default"> Make this the default</label><button class="btn primary small" type="submit">Add provider</button></form>${yocoKeysFormHtml(pv)}</div>`;
   }
   async function saveCsv(path) {
     const r = await api(path, void 0, "GET");
@@ -28993,8 +29009,26 @@
           void busy(btn2, async () => {
             const sel = $2("prov-name").value;
             const name = sel === "Other" ? $2("prov-other").value.trim() : sel;
-            await api("/api/admin/payment-providers", { name, merchant_ref: $2("prov-ref").value, settlement_account: $2("prov-acct").value, make_default: $2("prov-default").checked });
+            await api("/api/admin/payment-providers", { name, merchant_ref: $2("prov-ref").value, settlement_account: $2("prov-acct").value, make_default: $2("prov-default").checked, kind: $2("prov-kind").value });
             toast("Provider added.");
+            await loadCreditAdmin();
+          });
+          return;
+        }
+        if (f.id === "yoco-keys-form") {
+          e.preventDefault();
+          const btn2 = document.querySelector("#yoco-keys-form button[type=submit]");
+          void busy(btn2, async () => {
+            const pid = $2("yk-provider").value;
+            const body = { mode: $2("yk-mode").value, secret_key: $2("yk-secret").value, webhook_secret: $2("yk-webhook").value, public_key: $2("yk-public").value };
+            try {
+              await api(`/api/admin/payment-providers/${pid}/keys`, body, "PUT");
+              toast("Keys saved. They are encrypted and cannot be viewed again.");
+            } finally {
+              $2("yk-secret").value = "";
+              $2("yk-webhook").value = "";
+              $2("yk-public").value = "";
+            }
             await loadCreditAdmin();
           });
           return;
@@ -32804,9 +32838,12 @@
       }
     }
     if (path === "/api/knowledge") return { items: s.knowledge };
+    if (path === "/api/billing/me") return { access: "full", can_pay: false, fee: 79, subscription: "active", provider: null };
+    if (path === "/api/billing/checkout") throw new Error("Online payment works on the live site once Yoco keys are added.");
+    if (/^\/api\/admin\/payment-providers\/[^/]+\/keys$/.test(path)) return { ok: true };
     if (path === "/api/admin/payment-providers") {
       if (method === "POST") return { id: "demo-new", name: body?.name || "Demo", merchant_ref: body?.merchant_ref || "DEMO", settlement_last4: String(body?.settlement_account || "0000").slice(-4), active: true, is_default: !!body?.make_default };
-      return { items: [{ id: "demo-p", name: "Paystack", merchant_ref: "DEMO-MERCHANT", settlement_last4: "1234", active: true, is_default: true }] };
+      return { items: [{ id: "demo-p", name: "Paystack", merchant_ref: "DEMO-MERCHANT", settlement_last4: "1234", active: true, is_default: true, kind: "manual", mode: "test" }, { id: "demo-y", name: "Yoco", merchant_ref: "DEMO-YOCO", settlement_last4: "5678", active: true, is_default: false, kind: "yoco", mode: "test", secret_configured: true, secret_key_last4: "9xQ2", webhook_configured: true, public_key: "" }] };
     }
     if (/^\/api\/admin\/payment-providers\/[^/]+\/(default|deactivate)$/.test(path)) return { ok: true };
     if (path === "/api/admin/credit-settings") {
@@ -32963,6 +33000,18 @@
     }
   });
   window.__localApi = localApi;
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-pay-monthly]");
+    if (!b) return;
+    b.disabled = true;
+    try {
+      const r = await api("/api/billing/checkout", {});
+      window.location.href = r.redirect_url;
+    } catch (err) {
+      b.disabled = false;
+      toast(err?.message || "Payment could not start. Please try again.");
+    }
+  });
   void (async () => {
     try {
       boot = await api("/api/bootstrap");

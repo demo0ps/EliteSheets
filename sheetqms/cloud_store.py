@@ -37,7 +37,10 @@ credit_alerts = sa.Table('credit_alerts', M, sa.Column('user_id', sa.String, pri
 subscriptions = sa.Table('subscriptions', M, sa.Column('user_id', sa.String, primary_key=True), sa.Column('status', sa.String, nullable=False), sa.Column('period_end', sa.String, nullable=True), sa.Column('grace_until', sa.String, nullable=True), sa.Column('updated', sa.String, nullable=False))
 payments = sa.Table('payments', M, sa.Column('id', sa.String, primary_key=True), sa.Column('user_id', sa.String, nullable=False), sa.Column('kind', sa.String, nullable=False), sa.Column('amount_cents', sa.Integer, nullable=False), sa.Column('vat_cents', sa.Integer, nullable=False), sa.Column('credits', sa.Integer, nullable=False), sa.Column('reference', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False), sa.Column('recorded_by', sa.String, nullable=False), sa.Column('provider_id', sa.String, nullable=True))
 sa.Index('payments_user', payments.c.user_id)
-payment_providers = sa.Table('payment_providers', M, sa.Column('id', sa.String, primary_key=True), sa.Column('name', sa.String, nullable=False), sa.Column('merchant_ref', sa.String, nullable=False), sa.Column('settlement_last4', sa.String, nullable=False), sa.Column('active', sa.Boolean, nullable=False), sa.Column('is_default', sa.Boolean, nullable=False), sa.Column('created', sa.String, nullable=False))
+payment_providers = sa.Table('payment_providers', M, sa.Column('id', sa.String, primary_key=True), sa.Column('name', sa.String, nullable=False), sa.Column('merchant_ref', sa.String, nullable=False), sa.Column('settlement_last4', sa.String, nullable=False), sa.Column('active', sa.Boolean, nullable=False), sa.Column('is_default', sa.Boolean, nullable=False), sa.Column('kind', sa.String, nullable=False, default='manual'), sa.Column('mode', sa.String, nullable=False, default='test'), sa.Column('created', sa.String, nullable=False))
+provider_secrets = sa.Table('provider_secrets', M, sa.Column('provider_id', sa.String, primary_key=True), sa.Column('secret_sealed', sa.Text, nullable=False, default=''), sa.Column('webhook_sealed', sa.Text, nullable=False, default=''), sa.Column('public_key', sa.String, nullable=False, default=''), sa.Column('secret_last4', sa.String, nullable=False, default=''), sa.Column('updated', sa.String, nullable=False))
+checkouts = sa.Table('checkouts', M, sa.Column('id', sa.String, primary_key=True), sa.Column('provider_id', sa.String, nullable=False), sa.Column('user_id', sa.String, nullable=False), sa.Column('kind', sa.String, nullable=False), sa.Column('amount_cents', sa.Integer, nullable=False), sa.Column('reference', sa.String, nullable=False), sa.Column('external_id', sa.String), sa.Column('status', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False), sa.Column('paid', sa.String))
+sa.Index('checkouts_external', checkouts.c.external_id)
 rate_limits = sa.Table('rate_limits', M, sa.Column('id', sa.String, primary_key=True), sa.Column('count', sa.Integer, nullable=False), sa.Column('expires', sa.String, nullable=False))
 sa.Index('job_workspace_created', jobs.c.tenant_id, jobs.c.created)
 sa.Index('event_workspace_job', events.c.tenant_id, events.c.job_id, events.c.id)
@@ -80,6 +83,11 @@ class CloudStore:
             pay_columns = {v['name'] for v in sa.inspect(self.engine).get_columns('payments')}
             if 'provider_id' not in pay_columns:
                 c.exec_driver_sql('ALTER TABLE payments ADD COLUMN provider_id VARCHAR')
+            provider_columns = {v['name'] for v in sa.inspect(self.engine).get_columns('payment_providers')}
+            if 'kind' not in provider_columns:
+                c.exec_driver_sql("ALTER TABLE payment_providers ADD COLUMN kind VARCHAR NOT NULL DEFAULT 'manual'")
+            if 'mode' not in provider_columns:
+                c.exec_driver_sql("ALTER TABLE payment_providers ADD COLUMN mode VARCHAR NOT NULL DEFAULT 'test'")
             if c.execute(sa.select(config.c.id).where(config.c.id == 1)).first() is None:
                 self.upsert(c, config, {'id': 1, 'data': '{}', 'encrypted_key': ''}, ['id'], nothing=True)
 
@@ -329,6 +337,57 @@ class CloudStore:
         with self.tx(serial=True) as c:
             self.upsert(c, credit_allowances, {'user_id': user_id, 'included': int(included), 'updated': now()}, ['user_id'])
 
+    def save_provider_keys(self, provider_id, secret_sealed=None, webhook_sealed=None, public_key=None, secret_last4=None, mode=None):
+        """Store sealed keys. Only the provided fields change. Never returns key material."""
+        with self.tx(serial=True) as c:
+            row = c.execute(sa.select(provider_secrets).where(provider_secrets.c.provider_id == provider_id)).mappings().first()
+            values = dict(row) if row else {'provider_id': provider_id, 'secret_sealed': '', 'webhook_sealed': '', 'public_key': '', 'secret_last4': ''}
+            if secret_sealed is not None:
+                values['secret_sealed'], values['secret_last4'] = secret_sealed, secret_last4 or ''
+            if webhook_sealed is not None:
+                values['webhook_sealed'] = webhook_sealed
+            if public_key is not None:
+                values['public_key'] = public_key
+            values['updated'] = now()
+            if row:
+                c.execute(provider_secrets.update().where(provider_secrets.c.provider_id == provider_id).values(**{k: v for k, v in values.items() if k != 'provider_id'}))
+            else:
+                c.execute(provider_secrets.insert().values(**values))
+            if mode is not None:
+                c.execute(payment_providers.update().where(payment_providers.c.id == provider_id).values(mode=mode))
+
+    def provider_keys(self, provider_id):
+        with self.engine.connect() as c:
+            row = c.execute(sa.select(provider_secrets).where(provider_secrets.c.provider_id == provider_id)).mappings().first()
+        return dict(row) if row else None
+
+    def create_checkout(self, checkout_id, provider_id, user_id, kind, amount_cents, reference):
+        with self.tx(serial=True) as c:
+            c.execute(checkouts.insert().values(id=checkout_id, provider_id=provider_id, user_id=user_id, kind=kind, amount_cents=int(amount_cents), reference=reference, external_id=None, status='pending', created=now(), paid=None))
+
+    def set_checkout_external(self, checkout_id, external_id):
+        with self.tx(serial=True) as c:
+            c.execute(checkouts.update().where(checkouts.c.id == checkout_id).values(external_id=external_id))
+
+    def mark_checkout_failed(self, checkout_id):
+        with self.tx(serial=True) as c:
+            c.execute(checkouts.update().where(checkouts.c.id == checkout_id, checkouts.c.status == 'pending').values(status='failed'))
+
+    def checkout_by_external(self, external_id):
+        with self.engine.connect() as c:
+            row = c.execute(sa.select(checkouts).where(checkouts.c.external_id == external_id)).mappings().first()
+        return dict(row) if row else None
+
+    def mark_checkout_paid(self, checkout_id):
+        """True only for the first caller, so a repeated webhook can never record or grant twice."""
+        with self.tx(serial=True) as c:
+            result = c.execute(checkouts.update().where(checkouts.c.id == checkout_id, checkouts.c.status == 'pending').values(status='paid', paid=now()))
+            return result.rowcount == 1
+
+    def pending_checkout_count(self, user_id):
+        with self.engine.connect() as c:
+            return len(c.execute(sa.select(checkouts.c.id).where(checkouts.c.user_id == user_id, checkouts.c.status == 'pending')).all())
+
     def audit(self, actor_id, action, target_id, detail):
         with self.tx(serial=True) as c:
             c.execute(admin_audit.insert().values(id=str(uuid.uuid4()), actor_id=actor_id, action=action, target_id=target_id, detail=json.dumps(detail, sort_keys=True), created=now()))
@@ -429,14 +488,14 @@ class CloudStore:
             r = c.execute(sa.select(payment_providers).where(payment_providers.c.active == True, payment_providers.c.is_default == True)).mappings().first()  # noqa: E712
         return dict(r) if r else None
 
-    def add_provider(self, name, merchant_ref, settlement_last4, make_default):
+    def add_provider(self, name, merchant_ref, settlement_last4, make_default, kind='manual'):
         with self.tx(serial=True) as c:
             existing = c.execute(sa.select(payment_providers.c.id).where(payment_providers.c.active == True)).first()  # noqa: E712
             default = bool(make_default) or existing is None
             if default:
                 c.execute(payment_providers.update().values(is_default=False))
             provider_id = str(uuid.uuid4())
-            c.execute(payment_providers.insert().values(id=provider_id, name=str(name)[:60], merchant_ref=str(merchant_ref)[:80], settlement_last4=str(settlement_last4)[-4:], active=True, is_default=default, created=now()))
+            c.execute(payment_providers.insert().values(id=provider_id, name=str(name)[:60], merchant_ref=str(merchant_ref)[:80], settlement_last4=str(settlement_last4)[-4:], active=True, is_default=default, kind=kind, mode='test', created=now()))
             return provider_id
 
     def set_default_provider(self, provider_id):

@@ -33,6 +33,7 @@ from .models import MappingPlan, SourcePlan, AISettings
 from .online_models import Login, Signup, DemoLogin, Preferences, PlatformSettings, CustomerCreate, ChatInput, ProposalConfirm, Run, Analyse, PlanConfirm
 from .samples import create_samples, sample_case
 from .security import password_hash, password_matches, Vault
+from . import yoco
 from .store import now, canonical, digest, microdollars
 from .workbooks import profile, check_file, public_value, norm, book_rows
 
@@ -695,7 +696,10 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         return {'filename': f'credit-ledger-{month}.csv', 'csv': csv_text(header, rows)}
 
     def provider_view(p):
-        return {'id': p['id'], 'name': p['name'], 'merchant_ref': p['merchant_ref'], 'settlement_last4': p['settlement_last4'], 'active': bool(p['active']), 'is_default': bool(p['is_default'])}
+        keys = store.provider_keys(p['id']) or {}
+        return {'id': p['id'], 'name': p['name'], 'merchant_ref': p['merchant_ref'], 'settlement_last4': p['settlement_last4'], 'active': bool(p['active']), 'is_default': bool(p['is_default']),
+                'kind': p.get('kind') or 'manual', 'mode': p.get('mode') or 'test', 'public_key': keys.get('public_key') or '',
+                'secret_configured': bool(keys.get('secret_sealed')), 'secret_key_last4': keys.get('secret_last4') or '', 'webhook_configured': bool(keys.get('webhook_sealed'))}
 
     @app.get('/api/admin/payment-providers')
     def admin_providers(user=Depends(administrator)):
@@ -707,14 +711,17 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         ref = str(body.get('merchant_ref') or '').strip()
         account = re.sub(r'\s', '', str(body.get('settlement_account') or ''))
         make_default = bool(body.get('make_default', False))
+        kind = body.get('kind') or 'manual'
+        if kind not in ('manual', 'yoco'):
+            raise HTTPException(422, 'Choose manual recording or Yoco.')
         if not 2 <= len(name) <= 60:
             raise HTTPException(422, 'Enter the provider name.')
         if not 3 <= len(ref) <= 80:
             raise HTTPException(422, 'Enter the merchant or account reference (3 to 80 characters).')
         if not re.fullmatch(r'\d{4,20}', account):
             raise HTTPException(422, 'Enter the settlement bank account number, digits only (4 to 20).')
-        provider_id = store.add_provider(name, ref, account[-4:], make_default)
-        store.audit(user['id'], 'provider_add', 'payment-providers', {'provider': name, 'settles_to_last4': account[-4:], 'default': make_default})
+        provider_id = store.add_provider(name, ref, account[-4:], make_default, kind=kind)
+        store.audit(user['id'], 'provider_add', 'payment-providers', {'provider': name, 'kind': kind, 'settles_to_last4': account[-4:], 'default': make_default})
         return provider_view(store.get_provider(provider_id))
 
     @app.put('/api/admin/payment-providers/{provider_id}/default')
@@ -736,6 +743,127 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         store.deactivate_provider(provider_id)
         store.audit(user['id'], 'provider_deactivate', 'payment-providers', {'provider': p['name']})
         return {'ok': True}
+
+    def public_base(request: Request):
+        return (os.getenv('SHEETQMS_PUBLIC_URL') or str(request.base_url)).rstrip('/')
+
+    @app.put('/api/admin/payment-providers/{provider_id}/keys')
+    def admin_provider_keys(provider_id: str, body: dict, user=Depends(administrator)):
+        """Write-only: keys are sealed before storage and never returned. Only the last 4 characters are shown."""
+        p = store.get_provider(provider_id)
+        if not p:
+            raise HTTPException(404, 'That provider was not found.')
+        if p['kind'] != 'yoco':
+            raise HTTPException(422, 'Keys are only used by online providers such as Yoco.')
+        if not (encryption_key or os.getenv('SHEETQMS_ENCRYPTION_KEY')):
+            raise HTTPException(422, 'Configure a stable encryption key through private environment/secret manager before saving keys.')
+        mode = body.get('mode')
+        if mode not in ('test', 'live'):
+            raise HTTPException(422, 'Choose test or live mode.')
+        secret = str(body.get('secret_key') or '').strip()
+        webhook = str(body.get('webhook_secret') or '').strip()
+        public = str(body.get('public_key') or '').strip()
+        if not (secret or webhook or public):
+            raise HTTPException(422, 'Enter at least one key to save.')
+        if not secret and mode != p['mode']:
+            raise HTTPException(422, 'Enter the secret key for the new mode.')
+        secret_sealed, last4 = None, None
+        if secret:
+            if not yoco.SECRET_KEY_PATTERN.fullmatch(secret) or yoco.key_mode(secret) != mode:
+                raise HTTPException(422, 'The secret key must start with sk_test_ in test mode or sk_live_ in live mode.')
+            secret_sealed, last4 = vault.seal(secret), secret[-4:]
+        webhook_sealed = None
+        if webhook:
+            if not yoco.WEBHOOK_SECRET_PATTERN.fullmatch(webhook):
+                raise HTTPException(422, 'The webhook signing secret must start with whsec_.')
+            webhook_sealed = vault.seal(webhook)
+        if public and (not yoco.PUBLIC_KEY_PATTERN.fullmatch(public) or public.split('_')[1] != mode):
+            raise HTTPException(422, 'The public key must match the chosen mode (pk_test_ or pk_live_).')
+        store.save_provider_keys(provider_id, secret_sealed, webhook_sealed, public or None, last4, mode)
+        store.audit(user['id'], 'provider_keys', provider_id, {'provider': p['name'], 'mode': mode, 'secret_saved': bool(secret), 'webhook_saved': bool(webhook), 'public_saved': bool(public), 'secret_last4': last4})
+        return provider_view(store.get_provider(provider_id))
+
+    @app.get('/api/billing/me')
+    def billing_me(user=Depends(current)):
+        if user['role'] == 'admin':
+            return {'access': 'full', 'can_pay': False, 'fee': None, 'subscription': None, 'provider': None}
+        p = store.default_provider()
+        keys = store.provider_keys(p['id']) if p else None
+        ready = bool(p and p['kind'] == 'yoco' and keys and keys['secret_sealed'])
+        return {'access': access_for(user['id']), 'can_pay': bool(ready), 'fee': store.credit_config()['monthly_fee'],
+                'subscription': store.get_subscription(user['id'])['status'], 'provider': p['name'] if ready else None}
+
+    @app.post('/api/billing/checkout')
+    def start_checkout(request: Request, user=Depends(current)):
+        """Creates a hosted Yoco checkout for the monthly fee. The amount comes from the server, never from the browser."""
+        if user['role'] == 'admin':
+            raise HTTPException(422, 'Admin accounts do not have payments.')
+        p = store.default_provider()
+        keys = store.provider_keys(p['id']) if p else None
+        if not p or p['kind'] != 'yoco' or not keys or not keys['secret_sealed']:
+            raise HTTPException(422, 'Online payment is not set up yet. Please contact your administrator.')
+        if store.pending_checkout_count(user['id']) >= 5:
+            raise HTTPException(429, 'You have several unfinished payments. Wait a few minutes or contact your administrator.')
+        try:
+            secret = vault.open(keys['secret_sealed'])
+        except ValueError:
+            raise HTTPException(422, 'Stored payment keys cannot be read. Ask the administrator to re-enter them.')
+        fee = store.credit_config()['monthly_fee']
+        cents = int(round(float(fee) * 100))
+        checkout_id = str(uuid.uuid4())
+        reference = 'SUB-' + checkout_id[:8].upper()
+        store.create_checkout(checkout_id, p['id'], user['id'], 'subscription', cents, reference)
+        base = public_base(request)
+        try:
+            created = yoco.create_checkout(secret, cents, 'ZAR', base + '/?billing=success', base + '/?billing=cancelled', base + '/?billing=failed',
+                                           {'checkout_id': checkout_id, 'reference': reference}, checkout_id)
+        except yoco.YocoError as exc:
+            store.mark_checkout_failed(checkout_id)
+            raise HTTPException(502, str(exc))
+        store.set_checkout_external(checkout_id, created['id'])
+        store.audit(user['id'], 'checkout_start', user['id'], {'reference': reference, 'amount_cents': cents, 'provider': p['name'], 'mode': p['mode']})
+        return {'redirect_url': created['redirectUrl'], 'reference': reference, 'amount_rand': fee}
+
+    @app.post('/api/webhooks/yoco/{provider_id}')
+    async def yoco_webhook(provider_id: str, request: Request):
+        """Public endpoint, protected by the signature. A payment is recorded only after Yoco confirms it and only once."""
+        body = await request.body()
+        p = store.get_provider(provider_id)
+        keys = store.provider_keys(provider_id) if p else None
+        if not p or not p['active'] or p['kind'] != 'yoco' or not keys or not keys['webhook_sealed'] or not keys['secret_sealed']:
+            raise HTTPException(404, 'Not found.')
+        try:
+            whsec, secret = vault.open(keys['webhook_sealed']), vault.open(keys['secret_sealed'])
+        except ValueError:
+            raise HTTPException(500, 'Stored keys cannot be read.')
+        try:
+            yoco.verify_webhook(whsec, request.headers, body)
+        except yoco.WebhookError:
+            raise HTTPException(400, 'Signature check failed.')
+        try:
+            event = json.loads(body)
+        except ValueError:
+            raise HTTPException(400, 'Bad payload.')
+        if not isinstance(event, dict) or event.get('type') != 'payment.succeeded':
+            return {'ignored': True}
+        data = event.get('data') or event.get('payload') or {}
+        external = str(data.get('id') or '') if isinstance(data, dict) else ''
+        local = store.checkout_by_external(external) if external else None
+        if not local or local['provider_id'] != provider_id:
+            return {'ignored': True}
+        try:
+            remote = yoco.fetch_checkout(secret, external)
+        except yoco.YocoError:
+            raise HTTPException(502, 'Could not confirm with Yoco yet. Yoco will retry.')
+        if not yoco.is_paid(remote, local['amount_cents']):
+            return {'ignored': True}
+        if not store.mark_checkout_paid(local['id']):
+            return {'already_recorded': True}
+        cents = int(local['amount_cents'])
+        vat = cents - int(round(cents / (1 + VAT_RATE)))
+        store.add_payment(local['user_id'], local['kind'], cents, vat, 0, local['reference'], 'yoco', provider_id=provider_id)
+        store.audit('system:yoco', 'payment_received', local['user_id'], {'reference': local['reference'], 'amount_cents': cents, 'vat_cents': vat, 'provider': p['name'], 'mode': p['mode'], 'event_id': request.headers.get('webhook-id', '')})
+        return {'recorded': True}
 
     @app.get('/api/admin/billing/{user_id}')
     def admin_billing(user_id: str, user=Depends(administrator)):
