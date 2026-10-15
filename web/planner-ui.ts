@@ -10,7 +10,7 @@ export function notifyDueReminders(){
   if(typeof Notification==='undefined'||Notification.permission!=='granted')return;
   const list=unshownReminders(reminders(todayLocal(),loadPlanner(),loadRegisters()));
   const now=list.filter(r=>r.date<=todayLocal()).slice(0,3);
-  for(const r of now){new Notification('Elite Sheets reminder',{body:r.text})}
+  for(const r of now){new Notification('Kiaat reminder',{body:r.text})}
   if(now.length)markShown(now);
 }
 

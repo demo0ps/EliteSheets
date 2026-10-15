@@ -285,7 +285,7 @@ def test_sasams_two_sheet_student_and_subject_percentage_matrix_import(client):
 
 
 def test_grid_edits_are_saved_as_values_and_rebuild_the_workbook(client):
-    # Elite Sheets batch 1: Excel-style grid saves values only; a typed '=' stays plain text.
+    # Kiaat batch 1: Excel-style grid saves values only; a typed '=' stays plain text.
     from io import BytesIO
     from openpyxl import load_workbook
     c, _ = client

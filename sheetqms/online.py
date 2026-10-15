@@ -125,7 +125,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         else:
             blobs = LocalBlobs(root / 'objects')
     vault = Vault(encryption_key or os.getenv('SHEETQMS_ENCRYPTION_KEY'), demo=demo or not production)
-    app = FastAPI(title='Elite Sheets online', version='0.2.0', docs_url=None, redoc_url=None)
+    app = FastAPI(title='Kiaat online', version='0.2.0', docs_url=None, redoc_url=None)
     app.state.store, app.state.blobs, app.state.demo = store, blobs, demo
     allowed = ['*'] if demo else ['localhost', '127.0.0.1', 'testserver'] + [x.strip() for x in os.getenv('SHEETQMS_APP_HOSTS', '').split(',') if x.strip()]
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed)
@@ -508,9 +508,9 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         if not settings:
             return  # no email service configured yet; the meter still shows the warning
         try:
-            send_plain_email(settings, user['email'], 'Your Elite Sheets credits are running low',
+            send_plain_email(settings, user['email'], 'Your Kiaat credits are running low',
                              f"You have {view['left']} of {view['included']} credits left this month. Credits reset on {credit_resets()}. "
-                             "Buy a top-up in Elite Sheets or ask your administrator to add credits.\n\n"
+                             "Buy a top-up in Kiaat or ask your administrator to add credits.\n\n"
                              "If you were not expecting this, you can ignore this email.")
         except Exception:
             LOG.exception('low-balance email failed')

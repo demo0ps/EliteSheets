@@ -1,6 +1,6 @@
-# Elite Sheets
+# Kiaat
 
-> Elite Sheets is a gradebook for South African teachers. It turns school marks into weighted term marks, CAPS levels and checked Excel reports.
+> Kiaat is a gradebook for South African teachers. It turns school marks into weighted term marks, CAPS levels and checked Excel reports.
 
 Key facts:
 - Each mark is converted to a percentage of its own maximum before weighting, so a 6/10 test and an 80/100 exam count as set.
@@ -8,7 +8,7 @@ Key facts:
 - Export: Excel (.xlsx) with Marks and Checks sheets; CSV also available.
 - Marks are saved in the browser only (localStorage). They are not sent to the server.
 - Pricing: free 2-week trial, then R79 a month.
-- Elite Sheets does not connect to SA-SAMS. Exported marks are copied across manually.
+- Kiaat does not connect to SA-SAMS. Exported marks are copied across manually.
 
 Pages:
 - Home: https://demo0ps.github.io/EliteSheets/

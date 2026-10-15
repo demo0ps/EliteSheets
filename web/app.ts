@@ -70,7 +70,7 @@ function bindMobileMenu(){
     if(t.closest('.nav-btn,#help'))setOpen(false);
   });
 }
-function logo(){return `<div class="logo"><span class="logo-box"><img class="brand-logo-img" src="${ELITE_LOGO_URI}" alt="" width="34" height="34"></span><span><b>Elite</b> Sheets</span></div>`}
+function logo(){return `<div class="logo"><span class="logo-box"><img class="brand-logo-img" src="${ELITE_LOGO_URI}" alt="" width="56" height="56"></span><span><b>Kiaat</b></span></div>`}
 function productCredit(){return `<footer class="product-credit"><p>&copy; 2026 &middot; Product of <a href="https://eliteway.co.za" target="_blank" rel="noopener">Elite Way Holdings</a></p></footer>`}
 function openModal(title:string,body:string){previousFocus=document.activeElement as HTMLElement;$('modal-title').textContent=title;$('modal-content').innerHTML=body;$('modal').hidden=false;$('close-modal').focus()}
 function closeModal(){$('modal').hidden=true;previousFocus?.focus()}
@@ -163,7 +163,7 @@ function loginPage(){
     });
     $<HTMLInputElement>('signup-password').value='';
     await signedIn(r);
-    toast('Welcome to Elite Sheets. Start with your gradebook.');
+    toast('Welcome to Kiaat. Start with your gradebook.');
   })});
   if(boot.demo_mode){
     document.querySelectorAll<HTMLButtonElement>('[data-launch-vert]').forEach(b=>b.addEventListener('click',()=>void demoLogin('operator',b.dataset.launchVert!)));
@@ -189,7 +189,7 @@ function shell(){
   if(!user){updateTabbar();return}
   const vert=activeVertical();
   const vMeta=VERTICAL_META[vert]||VERTICAL_META.education;
-  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Main navigation">${visibleTabs(vMeta).filter(t=>!SECONDARY_PAGES.includes(t.page)).map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right">${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}${visibleTabs(vMeta).filter(t=>SECONDARY_PAGES.includes(t.page)).map(t=>`<button class="btn small" data-page="${t.page}" title="${escapeHTML(t.label)}">${icon(t.iconName as any)}<span>${escapeHTML(t.label)}</span></button>`).join('')}<button id="help" class="btn small">${icon('info')}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Elite Sheets</strong> · Teacher gradebook, registers and planning</div>${productCredit()}</footer></div>`;
+  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Main navigation">${visibleTabs(vMeta).filter(t=>!SECONDARY_PAGES.includes(t.page)).map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right">${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}${visibleTabs(vMeta).filter(t=>SECONDARY_PAGES.includes(t.page)).map(t=>`<button class="btn small" data-page="${t.page}" title="${escapeHTML(t.label)}">${icon(t.iconName as any)}<span>${escapeHTML(t.label)}</span></button>`).join('')}<button id="help" class="btn small">${icon('info')}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Kiaat</strong> · Teacher gradebook, registers and planning</div>${productCredit()}</footer></div>`;
   bindMobileMenu();
   document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach(b=>b.addEventListener('click',()=>void showPage(b.dataset.page!)));
   $('logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
@@ -287,7 +287,7 @@ function homePage(){
     {page:'helper',icon:'spark',title:'Kiaat',text:'Draft CAPS-aligned lesson plans, class tests with memos, and assignments. You review every draft.'},
     {page:'workspace',icon:'upload',title:'Import a file',text:'Open an existing mark sheet, check it, and download a cleaned copy.'},
   ];
-  $('page').innerHTML=`<div class="page-heading"><div><h1>Home</h1><p class="home-lede">Start with your gradebook. Everything else is optional. Like the kiaat, Elite Sheets grows steadily and leaves you in charge.</p></div></div>
+  $('page').innerHTML=`<div class="page-heading"><div><h1>Home</h1><p class="home-lede">Start with your gradebook. Everything else is optional. Like the kiaat, Kiaat grows steadily and leaves you in charge.</p></div></div>
   <section class="home-start" aria-label="Get started">
     <h2>Get started in three steps</h2>
     <ol class="home-steps">
@@ -1207,7 +1207,7 @@ function builderPage(){
     const cur=currentBuilderTab();
     openModal('Split Sheet into Multiple Tabs by Column',`
       <form id="split-modal-form">
-        <p>Pick which column to group by — Elite Sheets will create a separate tab for each unique value (e.g. Grade 7, Grade 8, Grade 9) inside your workbook:</p>
+        <p>Pick which column to group by — Kiaat will create a separate tab for each unique value (e.g. Grade 7, Grade 8, Grade 9) inside your workbook:</p>
         <label for="split-col">Split by Column</label>
         <select id="split-col">${cur.headers.map(h=>`<option value="${escapeHTML(h)}" ${/grade|site|branch|category|status/i.test(h)?'selected':''}>${escapeHTML(h)}</option>`).join('')}</select>
         <button type="submit" class="btn primary" style="margin-top:14px">Split into Tabs</button>
@@ -1229,7 +1229,7 @@ function builderPage(){
     const cur=currentBuilderTab();
     openModal('Generate Summary Breakdown Tab',`
       <form id="sum-modal-form">
-        <p>Choose a column to group by — Elite Sheets will create a new <b>Summary</b> tab with Row Counts, Totals, and Averages:</p>
+        <p>Choose a column to group by — Kiaat will create a new <b>Summary</b> tab with Row Counts, Totals, and Averages:</p>
         <label for="sum-col">Summarize by Column</label>
         <select id="sum-col">${cur.headers.map(h=>`<option value="${escapeHTML(h)}" ${/grade|site|branch|category|subjects/i.test(h)?'selected':''}>${escapeHTML(h)}</option>`).join('')}</select>
         <button type="submit" class="btn primary" style="margin-top:14px">Create Summary Tab</button>
@@ -1595,7 +1595,7 @@ function inspectSource(id:string){
   openModal('Source · '+p.name,p.sheets.map((s:any)=>`<h3>${escapeHTML(s.name)}</h3><div class="table-scroll"><table><thead><tr>${s.headers.map((h:string)=>`<th>${escapeHTML(h)}</th>`).join('')}</tr></thead><tbody>${s.preview.map((row:any[])=>`<tr>${row.map(v=>`<td>${escapeHTML(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join(''));
 }
 
-// ===== Excel-style editable grid (Elite Sheets batch 1) =====
+// ===== Excel-style editable grid (Kiaat batch 1) =====
 type XlCell={r:number;c:number;from:any;to:any};
 let xlSel={ar:0,ac:0,fr:0,fc:0};
 let xlEditing:{r:number;c:number;orig:any}|null=null;
@@ -1981,7 +1981,7 @@ function xlBindAfterRender(){
 function openShareDialog(){
   if(!job?.id||!job.report)return;
   const jobId=job.id;
-  if(staticMode){openModal('Share your spreadsheet','<p class="muted">Sharing needs the online version of Elite Sheets. Download the file and send it yourself.</p>');return}
+  if(staticMode){openModal('Share your spreadsheet','<p class="muted">Sharing needs the online version of Kiaat. Download the file and send it yourself.</p>');return}
   openModal('Share your spreadsheet',`
     <p class="muted">Anyone with the link can download this file until it expires. The file contains learner data, so share it only with people who should see it.</p>
     <fieldset class="share-days"><legend><strong>Link works for</strong></legend>

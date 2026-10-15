@@ -79,7 +79,7 @@ export function landingHtml(logoHtml: string, productCreditHtml: string, demo: b
 <section class="lp-hero">
   <div>
     <h1>Turn messy school marks into checked, shareable reports.</h1>
-    <p class="lp-lede">Elite Sheets is a gradebook for South African teachers. Weight your tests and exams, see term marks and CAPS levels, fix problems before you export, and download a clean Excel file.</p>
+    <p class="lp-lede">Kiaat is a gradebook for South African teachers. Weight your tests and exams, see term marks and CAPS levels, fix problems before you export, and download a clean Excel file.</p>
     <div class="lp-actions">
       ${demoCta}
       <a class="lp-link" href="#get-started">Create a free account</a>
@@ -87,14 +87,14 @@ export function landingHtml(logoHtml: string, productCreditHtml: string, demo: b
     <p class="lp-note">Free for 2 weeks, then R79 a month including VAT.</p>
   </div>
   <figure class="lp-shot">
-    <img src="${assetUrl('landing-gradebook.png')}" alt="Elite Sheets gradebook for a sample Grade 9B Maths class, with three assessments, learner numbers, term marks and CAPS levels" width="1000" height="1490">
+    <img src="${assetUrl('landing-gradebook.png')}" alt="Kiaat gradebook for a sample Grade 9B Maths class, with three assessments, learner numbers, term marks and CAPS levels" width="1000" height="1490">
     <figcaption>Sample class. Learners are shown by number only.</figcaption>
   </figure>
 </section>
 
 <section class="lp-section" id="kiaat">
   <h2>Built like a kiaat</h2>
-  <p>The kiaat is a South African tree. It grows steadily, roots deeply and gives shade to the people around it. Elite Sheets is built the same way: careful with every mark, dependable from one term to the next, and always leaving the teacher in charge of the result. Kiaat, our helper, is named after it.</p>
+  <p>The kiaat is a South African tree. It grows steadily, roots deeply and gives shade to the people around it. Kiaat is built the same way: careful with every mark, dependable from one term to the next, and always leaving the teacher in charge of the result.</p>
 </section>
 
 <section class="lp-section" id="why">
