@@ -68,6 +68,22 @@ def csv_text(header, rows):
     return '\ufeff' + buffer.getvalue()  # BOM so Excel reads the UTF-8 correctly
 
 
+SUBSCRIPTION_STATUSES = ('active', 'trial', 'past_due', 'paused', 'cancelled')
+DATE_PATTERN = re.compile(r'\d{4}-\d{2}-\d{2}')
+
+
+def valid_date(value):
+    if value is None:
+        return True
+    if not isinstance(value, str) or not DATE_PATTERN.fullmatch(value):
+        return False
+    try:
+        datetime.strptime(value, '%Y-%m-%d')
+    except ValueError:
+        return False
+    return True
+
+
 CREDIT_COSTS = {'sheet_job': 3, 'helper_message': 1, 'share_email': 1}
 CREDIT_TZ = ZoneInfo('Africa/Johannesburg')
 
@@ -151,8 +167,12 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         user = store.session(token_for(request))
         if not user:
             raise HTTPException(401, 'Sign in to access your customer workspace.')
-        if user['role'] != 'admin' and store.get_user_limits(user['id'])['paused']:
-            raise HTTPException(403, 'Your account is paused. Contact your administrator to restore access.')
+        if user['role'] != 'admin':
+            access = access_for(user['id'])
+            if access == 'blocked':
+                raise HTTPException(403, 'Your account is paused. Contact your administrator to restore access.')
+            if access == 'read_only' and request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+                raise HTTPException(403, 'Your subscription is not active, so you can view and download but not make changes. Renew or contact your administrator.')
         if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
             supplied = request.headers.get('X-CSRF-Token', '')
             if not hmac.compare_digest(supplied, user['csrf']):
@@ -454,6 +474,19 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         response.delete_cookie('sqm_session')
         return {'ok': True}
 
+    def access_for(user_id):
+        if store.get_user_limits(user_id)['paused']:
+            return 'blocked'
+        sub = store.get_subscription(user_id)
+        if sub['status'] == 'paused':
+            return 'blocked'
+        if sub['status'] == 'cancelled':
+            return 'read_only'
+        if sub['status'] == 'past_due':
+            today = datetime.now(CREDIT_TZ).strftime('%Y-%m-%d')
+            return 'full' if sub['grace_until'] and today <= sub['grace_until'] else 'read_only'
+        return 'full'
+
     def credit_limit(user_id):
         allowance = store.credit_allowance(user_id)
         return allowance if allowance is not None else store.credit_config()['included']
@@ -514,7 +547,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
     @app.get('/api/credits')
     def credits(identity=Depends(workspace)):
         user, _ = identity
-        return {'month': credit_month(), **credit_view(user['id']), 'resets': credit_resets(), 'costs': CREDIT_COSTS}
+        return {'month': credit_month(), **credit_view(user['id']), 'resets': credit_resets(), 'costs': CREDIT_COSTS, 'access': access_for(user['id'])}
 
     @app.get('/api/admin/credit-settings')
     def admin_credit_settings(user=Depends(administrator)):
@@ -541,7 +574,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             left_raw = included + row['granted'] - row['used']
             status = 'zero' if left_raw <= 0 else ('low' if left_raw <= 0.2 * included else 'ok')
             lim = store.get_user_limits(row['id'])
-            everyone.append({'paused': lim['paused'], 'spend_cap': lim['spend_cap'], 'id': row['id'], 'name': row['name'], 'email': row['email'], 'role': row['role'], 'workspace': row['tenant_name'], 'included': included, 'granted': row['granted'], 'used': row['used'], 'left': max(left_raw, 0), 'status': status})
+            everyone.append({'paused': lim['paused'], 'spend_cap': lim['spend_cap'], 'subscription': store.get_subscription(row['id'])['status'], 'id': row['id'], 'name': row['name'], 'email': row['email'], 'role': row['role'], 'workspace': row['tenant_name'], 'included': included, 'granted': row['granted'], 'used': row['used'], 'left': max(left_raw, 0), 'status': status})
         needle = q.strip().lower()
         items = []
         for item in everyone:
@@ -660,6 +693,71 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         header = ['When', 'Month', 'Name', 'Email', 'Workspace', 'Credits', 'Reason', 'Ledger ID']
         rows = [[r['created'], r['month'], r['name'], r['email'], r['tenant_name'], r['delta'], r['reason'], r['id']] for r in store.credit_ledger_rows(month)]
         return {'filename': f'credit-ledger-{month}.csv', 'csv': csv_text(header, rows)}
+
+    @app.get('/api/admin/billing/{user_id}')
+    def admin_billing(user_id: str, user=Depends(administrator)):
+        target = store.user_by_id(user_id)
+        if not target:
+            raise HTTPException(404, 'That user was not found.')
+        return {'user': {'name': target['name'], 'email': target['email'], 'workspace': target['tenant_name'], 'role': target['role']},
+                'subscription': store.get_subscription(user_id), 'access': access_for(user_id), 'fee': store.credit_config()['monthly_fee'],
+                'included': credit_limit(user_id), 'payments': store.user_payments(user_id)}
+
+    @app.put('/api/admin/billing/{user_id}/subscription')
+    def admin_set_subscription(user_id: str, body: dict, user=Depends(administrator)):
+        status = body.get('status')
+        period_end = body.get('period_end') or None
+        grace_until = body.get('grace_until') or None
+        reason = str(body.get('reason') or '').strip()
+        if status not in SUBSCRIPTION_STATUSES:
+            raise HTTPException(422, 'Choose a valid subscription status.')
+        if not valid_date(period_end) or not valid_date(grace_until):
+            raise HTTPException(422, 'Dates must look like 2026-11-30.')
+        if status == 'past_due' and not grace_until:
+            raise HTTPException(422, 'Set the grace end date for a past-due account.')
+        if len(reason) < 3:
+            raise HTTPException(422, 'Give a reason of at least 3 characters.')
+        target = store.user_by_id(user_id)
+        if not target:
+            raise HTTPException(404, 'That user was not found.')
+        if target['role'] == 'admin':
+            raise HTTPException(422, 'Admin accounts do not have a subscription.')
+        before = store.get_subscription(user_id)
+        store.save_subscription(user_id, status, period_end, grace_until)
+        store.audit(user['id'], 'subscription', user_id, {'from': before['status'], 'to': status, 'period_end': period_end, 'grace_until': grace_until, 'reason': reason})
+        return {'subscription': store.get_subscription(user_id), 'access': access_for(user_id)}
+
+    @app.post('/api/admin/billing/{user_id}/payments')
+    def admin_record_payment(user_id: str, body: dict, user=Depends(administrator)):
+        kind = body.get('kind')
+        amount = body.get('amount_rand')
+        reference = str(body.get('reference') or '').strip()
+        credits = body.get('credits', 0)
+        if kind not in ('subscription', 'topup'):
+            raise HTTPException(422, 'Choose subscription or top-up.')
+        if not isinstance(amount, (int, float)) or isinstance(amount, bool) or not 0 < amount <= 100000:
+            raise HTTPException(422, 'Enter the amount in rand, including VAT, from 0.01 to 100000.')
+        if not 3 <= len(reference) <= 80:
+            raise HTTPException(422, 'Enter the payment reference (3 to 80 characters).')
+        if kind == 'topup':
+            if not whole_number(credits, 1, 100000):
+                raise HTTPException(422, 'Enter how many credits this top-up buys.')
+        else:
+            credits = 0
+        target = store.user_by_id(user_id)
+        if not target:
+            raise HTTPException(404, 'That user was not found.')
+        if target['role'] == 'admin':
+            raise HTTPException(422, 'Admin accounts do not have payments.')
+        if store.payment_reference_exists(user_id, reference):
+            raise HTTPException(409, 'That payment reference is already recorded for this user.')
+        cents = int(round(float(amount) * 100))
+        vat = cents - int(round(cents / (1 + VAT_RATE)))
+        store.add_payment(user_id, kind, cents, vat, credits, reference, user['id'])
+        if kind == 'topup':
+            store.credit_adjust(user_id, credit_month(), credits, 'Top-up payment: ' + reference)
+        store.audit(user['id'], 'payment', user_id, {'kind': kind, 'amount_cents': cents, 'vat_cents': vat, 'credits': credits, 'reference': reference})
+        return {'recorded': True, 'excl_vat_cents': cents - vat, 'vat_cents': vat, 'credits_added': credits, 'access': access_for(user_id)}
 
     @app.post('/api/admin/credits/{user_id}/grant')
     def admin_grant_credits(user_id: str, body: dict, user=Depends(administrator)):

@@ -34,6 +34,9 @@ sa.Index('admin_audit_target', admin_audit.c.target_id)
 user_limits = sa.Table('user_limits', M, sa.Column('user_id', sa.String, primary_key=True), sa.Column('paused', sa.Boolean, nullable=False), sa.Column('pause_reason', sa.String, nullable=False), sa.Column('spend_cap', sa.Integer, nullable=True), sa.Column('updated', sa.String, nullable=False))
 credit_undos = sa.Table('credit_undos', M, sa.Column('ledger_id', sa.String, primary_key=True), sa.Column('user_id', sa.String, nullable=False), sa.Column('reversal_id', sa.String, nullable=False), sa.Column('actor_id', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False))
 credit_alerts = sa.Table('credit_alerts', M, sa.Column('user_id', sa.String, primary_key=True), sa.Column('month', sa.String, primary_key=True), sa.Column('kind', sa.String, primary_key=True), sa.Column('created', sa.String, nullable=False))
+subscriptions = sa.Table('subscriptions', M, sa.Column('user_id', sa.String, primary_key=True), sa.Column('status', sa.String, nullable=False), sa.Column('period_end', sa.String, nullable=True), sa.Column('grace_until', sa.String, nullable=True), sa.Column('updated', sa.String, nullable=False))
+payments = sa.Table('payments', M, sa.Column('id', sa.String, primary_key=True), sa.Column('user_id', sa.String, nullable=False), sa.Column('kind', sa.String, nullable=False), sa.Column('amount_cents', sa.Integer, nullable=False), sa.Column('vat_cents', sa.Integer, nullable=False), sa.Column('credits', sa.Integer, nullable=False), sa.Column('reference', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False), sa.Column('recorded_by', sa.String, nullable=False))
+sa.Index('payments_user', payments.c.user_id)
 rate_limits = sa.Table('rate_limits', M, sa.Column('id', sa.String, primary_key=True), sa.Column('count', sa.Integer, nullable=False), sa.Column('expires', sa.String, nullable=False))
 sa.Index('job_workspace_created', jobs.c.tenant_id, jobs.c.created)
 sa.Index('event_workspace_job', events.c.tenant_id, events.c.job_id, events.c.id)
@@ -381,6 +384,30 @@ class CloudStore:
         j = credit_ledger.join(users, users.c.id == credit_ledger.c.user_id).join(tenants, tenants.c.id == users.c.tenant_id)
         with self.engine.connect() as c:
             rows = c.execute(sa.select(credit_ledger.c.id, credit_ledger.c.created, credit_ledger.c.month, credit_ledger.c.delta, credit_ledger.c.reason, users.c.name, users.c.email, tenants.c.name.label('tenant_name')).select_from(j).where(credit_ledger.c.month == month).order_by(credit_ledger.c.created)).mappings().all()
+        return [dict(r) for r in rows]
+
+    def get_subscription(self, user_id):
+        with self.engine.connect() as c:
+            r = c.execute(sa.select(subscriptions).where(subscriptions.c.user_id == user_id)).mappings().first()
+        if not r:
+            return {'status': 'active', 'period_end': None, 'grace_until': None}
+        return {'status': r['status'], 'period_end': r['period_end'], 'grace_until': r['grace_until']}
+
+    def save_subscription(self, user_id, status, period_end, grace_until):
+        with self.tx() as c:
+            self.upsert(c, subscriptions, {'user_id': user_id, 'status': status, 'period_end': period_end, 'grace_until': grace_until, 'updated': now()}, ['user_id'])
+
+    def payment_reference_exists(self, user_id, reference):
+        with self.engine.connect() as c:
+            return c.execute(sa.select(payments.c.id).where(payments.c.user_id == user_id, payments.c.reference == reference)).first() is not None
+
+    def add_payment(self, user_id, kind, amount_cents, vat_cents, credits, reference, recorded_by):
+        with self.tx() as c:
+            c.execute(payments.insert().values(id=str(uuid.uuid4()), user_id=user_id, kind=kind, amount_cents=int(amount_cents), vat_cents=int(vat_cents), credits=int(credits), reference=str(reference)[:80], created=now(), recorded_by=recorded_by))
+
+    def user_payments(self, user_id, limit=100):
+        with self.engine.connect() as c:
+            rows = c.execute(sa.select(payments).where(payments.c.user_id == user_id).order_by(payments.c.created.desc()).limit(limit)).mappings().all()
         return [dict(r) for r in rows]
 
     def credit_alert_sent(self, user_id, month, kind):
