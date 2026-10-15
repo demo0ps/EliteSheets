@@ -1366,3 +1366,20 @@ body.compact td, body.compact th { padding: 8px 12px; }
 .home-card strong{font-size:16px}
 .home-card span:not(.home-ico){font-size:14px;color:var(--muted);line-height:1.45}
 .home-ico{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;background:var(--accent-soft)}
+
+/* Kiaat quick access: desktop top bar, phone floating orb, Home card */
+.kiaat-quick{display:inline-flex;align-items:center;gap:6px;font-weight:700}
+.kiaat-quick-img{width:22px;height:22px;border-radius:50%}
+.kiaat-orb{position:fixed;left:14px;bottom:86px;width:64px;height:64px;padding:0;border:0;border-radius:50%;background:transparent;cursor:pointer;z-index:70;box-shadow:0 10px 22px rgba(19,41,61,.28)}
+.kiaat-orb img{display:block;width:100%;height:100%;border-radius:50%}
+.kiaat-orb[hidden]{display:none !important}
+@media (min-width:1025px){.kiaat-orb{display:none !important}}
+@media (max-width:1024px){.kiaat-quick{display:none !important}}
+.home-kiaat{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--accent-border);border-radius:14px;padding:14px 18px;margin-bottom:14px;cursor:pointer;font:inherit;color:var(--ink)}
+.home-kiaat img{width:56px;height:56px;border-radius:50%;flex:none}
+.home-kiaat strong{display:block;font-size:17px;margin-bottom:2px}
+.home-kiaat span span{font-size:14px;color:var(--muted);line-height:1.45}
+.home-kiaat:hover{box-shadow:0 6px 18px rgba(10,124,120,.12)}
+
+/* Leave room under the content so the floating Kiaat orb never covers the last button on phones */
+@media (max-width:1024px){#page{padding-bottom:110px}}

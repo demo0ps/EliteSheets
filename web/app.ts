@@ -189,7 +189,7 @@ function shell(){
   if(!user){updateTabbar();return}
   const vert=activeVertical();
   const vMeta=VERTICAL_META[vert]||VERTICAL_META.education;
-  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Main navigation">${visibleTabs(vMeta).filter(t=>!SECONDARY_PAGES.includes(t.page)).map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right">${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}${visibleTabs(vMeta).filter(t=>SECONDARY_PAGES.includes(t.page)).map(t=>`<button class="btn small" data-page="${t.page}" title="${escapeHTML(t.label)}">${icon(t.iconName as any)}<span>${escapeHTML(t.label)}</span></button>`).join('')}<button id="help" class="btn small">${icon('info')}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Kiaat</strong> · Teacher gradebook, registers and planning</div>${productCredit()}</footer></div>`;
+  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Main navigation">${visibleTabs(vMeta).filter(t=>!SECONDARY_PAGES.includes(t.page)).map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right">${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}${user.role!=='admin'?`<button class="btn small kiaat-quick" data-page="helper" title="Ask Kiaat"><img class="kiaat-quick-img" src="${ELITE_LOGO_URI}" alt="" width="22" height="22">Ask Kiaat</button>`:''}${visibleTabs(vMeta).filter(t=>SECONDARY_PAGES.includes(t.page)).map(t=>`<button class="btn small" data-page="${t.page}" title="${escapeHTML(t.label)}">${icon(t.iconName as any)}<span>${escapeHTML(t.label)}</span></button>`).join('')}<button id="help" class="btn small">${icon('info')}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Kiaat</strong> · Teacher gradebook, registers and planning</div>${productCredit()}</footer></div>`;
   bindMobileMenu();
   document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach(b=>b.addEventListener('click',()=>void showPage(b.dataset.page!)));
   $('logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
@@ -288,6 +288,7 @@ function homePage(){
     {page:'workspace',icon:'upload',title:'Import a file',text:'Open an existing mark sheet, check it, and download a cleaned copy.'},
   ];
   $('page').innerHTML=`<div class="page-heading"><div><h1>Home</h1><p class="home-lede">Start with your gradebook. Everything else is optional. Like the kiaat, Kiaat grows steadily and leaves you in charge.</p></div></div>
+  <button class="home-kiaat" data-page="helper"><img src="${ELITE_LOGO_URI}" alt="" width="56" height="56"><span><strong>Ask Kiaat</strong><span>Draft a CAPS lesson plan, class test with memo or assignment, or ask a CAPS question. You review every draft.</span></span></button>
   <section class="home-start" aria-label="Get started">
     <h2>Get started in three steps</h2>
     <ol class="home-steps">
@@ -2056,12 +2057,25 @@ function openSaveDialog(){
 function updateTabbar(){
   const bar=document.getElementById('m-tabbar');
   if(bar)bar.hidden=!user;
+  ensureKiaatOrb();
+  const orb=document.getElementById('kiaat-orb');
+  if(orb)orb.hidden=!user||user.role==='admin'||currentPage==='helper';
   const mt=document.body.dataset.mtab||'chat';
   document.querySelectorAll<HTMLElement>('.m-tab').forEach(b=>{
     const on=b.dataset.mtab?(currentPage==='workspace'&&b.dataset.mtab===mt):b.dataset.tpage===currentPage;
     b.classList.toggle('active',Boolean(on));
     if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
   });
+}
+// Floating Kiaat orb for phones: bottom-left, above the tab bar. Hidden on desktop by CSS.
+function ensureKiaatOrb(){
+  if(document.getElementById('kiaat-orb'))return;
+  const orb=document.createElement('button');
+  orb.id='kiaat-orb';orb.className='kiaat-orb';orb.type='button';orb.hidden=true;
+  orb.setAttribute('aria-label','Ask Kiaat');orb.title='Ask Kiaat';
+  orb.innerHTML=`<img src="${ELITE_LOGO_URI}" alt="" width="64" height="64">`;
+  orb.addEventListener('click',()=>void showPage('helper'));
+  document.body.appendChild(orb);
 }
 function ensureTabbar(){
   let bar=document.getElementById('m-tabbar');
