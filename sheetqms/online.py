@@ -694,6 +694,49 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         rows = [[r['created'], r['month'], r['name'], r['email'], r['tenant_name'], r['delta'], r['reason'], r['id']] for r in store.credit_ledger_rows(month)]
         return {'filename': f'credit-ledger-{month}.csv', 'csv': csv_text(header, rows)}
 
+    def provider_view(p):
+        return {'id': p['id'], 'name': p['name'], 'merchant_ref': p['merchant_ref'], 'settlement_last4': p['settlement_last4'], 'active': bool(p['active']), 'is_default': bool(p['is_default'])}
+
+    @app.get('/api/admin/payment-providers')
+    def admin_providers(user=Depends(administrator)):
+        return {'items': [provider_view(p) for p in store.list_providers()]}
+
+    @app.post('/api/admin/payment-providers')
+    def admin_add_provider(body: dict, user=Depends(administrator)):
+        name = str(body.get('name') or '').strip()
+        ref = str(body.get('merchant_ref') or '').strip()
+        account = re.sub(r'\s', '', str(body.get('settlement_account') or ''))
+        make_default = bool(body.get('make_default', False))
+        if not 2 <= len(name) <= 60:
+            raise HTTPException(422, 'Enter the provider name.')
+        if not 3 <= len(ref) <= 80:
+            raise HTTPException(422, 'Enter the merchant or account reference (3 to 80 characters).')
+        if not re.fullmatch(r'\d{4,20}', account):
+            raise HTTPException(422, 'Enter the settlement bank account number, digits only (4 to 20).')
+        provider_id = store.add_provider(name, ref, account[-4:], make_default)
+        store.audit(user['id'], 'provider_add', 'payment-providers', {'provider': name, 'settles_to_last4': account[-4:], 'default': make_default})
+        return provider_view(store.get_provider(provider_id))
+
+    @app.put('/api/admin/payment-providers/{provider_id}/default')
+    def admin_default_provider(provider_id: str, user=Depends(administrator)):
+        p = store.get_provider(provider_id)
+        if not p:
+            raise HTTPException(404, 'That provider was not found.')
+        if not p['active']:
+            raise HTTPException(422, 'This provider is inactive. Add it again to use it.')
+        store.set_default_provider(provider_id)
+        store.audit(user['id'], 'provider_default', 'payment-providers', {'provider': p['name']})
+        return {'ok': True}
+
+    @app.put('/api/admin/payment-providers/{provider_id}/deactivate')
+    def admin_deactivate_provider(provider_id: str, user=Depends(administrator)):
+        p = store.get_provider(provider_id)
+        if not p:
+            raise HTTPException(404, 'That provider was not found.')
+        store.deactivate_provider(provider_id)
+        store.audit(user['id'], 'provider_deactivate', 'payment-providers', {'provider': p['name']})
+        return {'ok': True}
+
     @app.get('/api/admin/billing/{user_id}')
     def admin_billing(user_id: str, user=Depends(administrator)):
         target = store.user_by_id(user_id)
@@ -701,7 +744,8 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             raise HTTPException(404, 'That user was not found.')
         return {'user': {'name': target['name'], 'email': target['email'], 'workspace': target['tenant_name'], 'role': target['role']},
                 'subscription': store.get_subscription(user_id), 'access': access_for(user_id), 'fee': store.credit_config()['monthly_fee'],
-                'included': credit_limit(user_id), 'payments': store.user_payments(user_id)}
+                'included': credit_limit(user_id), 'payments': store.user_payments(user_id),
+                'providers': [provider_view(p) for p in store.list_providers() if p['active']]}
 
     @app.put('/api/admin/billing/{user_id}/subscription')
     def admin_set_subscription(user_id: str, body: dict, user=Depends(administrator)):
@@ -751,13 +795,23 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             raise HTTPException(422, 'Admin accounts do not have payments.')
         if store.payment_reference_exists(user_id, reference):
             raise HTTPException(409, 'That payment reference is already recorded for this user.')
+        provider = None
+        requested = body.get('provider_id')
+        if requested:
+            provider = store.get_provider(str(requested))
+            if not provider or not provider['active']:
+                raise HTTPException(422, 'Choose an active payment provider.')
+        else:
+            provider = store.default_provider()
+            if not provider:
+                raise HTTPException(422, 'Add a payment provider in the Billing section before recording payments.')
         cents = int(round(float(amount) * 100))
         vat = cents - int(round(cents / (1 + VAT_RATE)))
-        store.add_payment(user_id, kind, cents, vat, credits, reference, user['id'])
+        store.add_payment(user_id, kind, cents, vat, credits, reference, user['id'], provider_id=provider['id'])
         if kind == 'topup':
             store.credit_adjust(user_id, credit_month(), credits, 'Top-up payment: ' + reference)
-        store.audit(user['id'], 'payment', user_id, {'kind': kind, 'amount_cents': cents, 'vat_cents': vat, 'credits': credits, 'reference': reference})
-        return {'recorded': True, 'excl_vat_cents': cents - vat, 'vat_cents': vat, 'credits_added': credits, 'access': access_for(user_id)}
+        store.audit(user['id'], 'payment', user_id, {'kind': kind, 'amount_cents': cents, 'vat_cents': vat, 'credits': credits, 'reference': reference, 'provider': provider['name']})
+        return {'recorded': True, 'excl_vat_cents': cents - vat, 'vat_cents': vat, 'credits_added': credits, 'provider': provider['name'], 'access': access_for(user_id)}
 
     @app.post('/api/admin/credits/{user_id}/grant')
     def admin_grant_credits(user_id: str, body: dict, user=Depends(administrator)):

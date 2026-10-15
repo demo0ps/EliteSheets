@@ -35,8 +35,9 @@ user_limits = sa.Table('user_limits', M, sa.Column('user_id', sa.String, primary
 credit_undos = sa.Table('credit_undos', M, sa.Column('ledger_id', sa.String, primary_key=True), sa.Column('user_id', sa.String, nullable=False), sa.Column('reversal_id', sa.String, nullable=False), sa.Column('actor_id', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False))
 credit_alerts = sa.Table('credit_alerts', M, sa.Column('user_id', sa.String, primary_key=True), sa.Column('month', sa.String, primary_key=True), sa.Column('kind', sa.String, primary_key=True), sa.Column('created', sa.String, nullable=False))
 subscriptions = sa.Table('subscriptions', M, sa.Column('user_id', sa.String, primary_key=True), sa.Column('status', sa.String, nullable=False), sa.Column('period_end', sa.String, nullable=True), sa.Column('grace_until', sa.String, nullable=True), sa.Column('updated', sa.String, nullable=False))
-payments = sa.Table('payments', M, sa.Column('id', sa.String, primary_key=True), sa.Column('user_id', sa.String, nullable=False), sa.Column('kind', sa.String, nullable=False), sa.Column('amount_cents', sa.Integer, nullable=False), sa.Column('vat_cents', sa.Integer, nullable=False), sa.Column('credits', sa.Integer, nullable=False), sa.Column('reference', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False), sa.Column('recorded_by', sa.String, nullable=False))
+payments = sa.Table('payments', M, sa.Column('id', sa.String, primary_key=True), sa.Column('user_id', sa.String, nullable=False), sa.Column('kind', sa.String, nullable=False), sa.Column('amount_cents', sa.Integer, nullable=False), sa.Column('vat_cents', sa.Integer, nullable=False), sa.Column('credits', sa.Integer, nullable=False), sa.Column('reference', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False), sa.Column('recorded_by', sa.String, nullable=False), sa.Column('provider_id', sa.String, nullable=True))
 sa.Index('payments_user', payments.c.user_id)
+payment_providers = sa.Table('payment_providers', M, sa.Column('id', sa.String, primary_key=True), sa.Column('name', sa.String, nullable=False), sa.Column('merchant_ref', sa.String, nullable=False), sa.Column('settlement_last4', sa.String, nullable=False), sa.Column('active', sa.Boolean, nullable=False), sa.Column('is_default', sa.Boolean, nullable=False), sa.Column('created', sa.String, nullable=False))
 rate_limits = sa.Table('rate_limits', M, sa.Column('id', sa.String, primary_key=True), sa.Column('count', sa.Integer, nullable=False), sa.Column('expires', sa.String, nullable=False))
 sa.Index('job_workspace_created', jobs.c.tenant_id, jobs.c.created)
 sa.Index('event_workspace_job', events.c.tenant_id, events.c.job_id, events.c.id)
@@ -76,6 +77,9 @@ class CloudStore:
                 for table in ['events', 'knowledge']:
                     c.exec_driver_sql(f'DROP TRIGGER IF EXISTS immutable_{table} ON {table}')
                     c.exec_driver_sql(f'CREATE TRIGGER immutable_{table} BEFORE UPDATE OR DELETE ON {table} FOR EACH ROW EXECUTE FUNCTION block_audit_mutation()')
+            pay_columns = {v['name'] for v in sa.inspect(self.engine).get_columns('payments')}
+            if 'provider_id' not in pay_columns:
+                c.exec_driver_sql('ALTER TABLE payments ADD COLUMN provider_id VARCHAR')
             if c.execute(sa.select(config.c.id).where(config.c.id == 1)).first() is None:
                 self.upsert(c, config, {'id': 1, 'data': '{}', 'encrypted_key': ''}, ['id'], nothing=True)
 
@@ -401,14 +405,48 @@ class CloudStore:
         with self.engine.connect() as c:
             return c.execute(sa.select(payments.c.id).where(payments.c.user_id == user_id, payments.c.reference == reference)).first() is not None
 
-    def add_payment(self, user_id, kind, amount_cents, vat_cents, credits, reference, recorded_by):
+    def add_payment(self, user_id, kind, amount_cents, vat_cents, credits, reference, recorded_by, provider_id=None):
         with self.tx() as c:
-            c.execute(payments.insert().values(id=str(uuid.uuid4()), user_id=user_id, kind=kind, amount_cents=int(amount_cents), vat_cents=int(vat_cents), credits=int(credits), reference=str(reference)[:80], created=now(), recorded_by=recorded_by))
+            c.execute(payments.insert().values(id=str(uuid.uuid4()), user_id=user_id, kind=kind, amount_cents=int(amount_cents), vat_cents=int(vat_cents), credits=int(credits), reference=str(reference)[:80], created=now(), recorded_by=recorded_by, provider_id=provider_id))
 
     def user_payments(self, user_id, limit=100):
         with self.engine.connect() as c:
             rows = c.execute(sa.select(payments).where(payments.c.user_id == user_id).order_by(payments.c.created.desc()).limit(limit)).mappings().all()
         return [dict(r) for r in rows]
+
+    def list_providers(self):
+        with self.engine.connect() as c:
+            rows = c.execute(sa.select(payment_providers).order_by(payment_providers.c.created)).mappings().all()
+        return [dict(r) for r in rows]
+
+    def get_provider(self, provider_id):
+        with self.engine.connect() as c:
+            r = c.execute(sa.select(payment_providers).where(payment_providers.c.id == provider_id)).mappings().first()
+        return dict(r) if r else None
+
+    def default_provider(self):
+        with self.engine.connect() as c:
+            r = c.execute(sa.select(payment_providers).where(payment_providers.c.active == True, payment_providers.c.is_default == True)).mappings().first()  # noqa: E712
+        return dict(r) if r else None
+
+    def add_provider(self, name, merchant_ref, settlement_last4, make_default):
+        with self.tx(serial=True) as c:
+            existing = c.execute(sa.select(payment_providers.c.id).where(payment_providers.c.active == True)).first()  # noqa: E712
+            default = bool(make_default) or existing is None
+            if default:
+                c.execute(payment_providers.update().values(is_default=False))
+            provider_id = str(uuid.uuid4())
+            c.execute(payment_providers.insert().values(id=provider_id, name=str(name)[:60], merchant_ref=str(merchant_ref)[:80], settlement_last4=str(settlement_last4)[-4:], active=True, is_default=default, created=now()))
+            return provider_id
+
+    def set_default_provider(self, provider_id):
+        with self.tx(serial=True) as c:
+            c.execute(payment_providers.update().values(is_default=False))
+            c.execute(payment_providers.update().where(payment_providers.c.id == provider_id, payment_providers.c.active == True).values(is_default=True))  # noqa: E712
+
+    def deactivate_provider(self, provider_id):
+        with self.tx(serial=True) as c:
+            c.execute(payment_providers.update().where(payment_providers.c.id == provider_id).values(active=False, is_default=False))
 
     def credit_alert_sent(self, user_id, month, kind):
         with self.engine.connect() as c:

@@ -28878,7 +28878,7 @@
     const pct = m.margin_pct == null ? "\u2013" : `${m.margin_pct}%`;
     return `<div class="credit-margin" aria-label="Margin this month"><div class="cm-head"><h3>Margin this month</h3><span class="cm-note">${escapeHTML(m.month)} \xB7 estimated</span></div><dl class="credit-margin-grid"><div><dt>Revenue (excl. VAT)</dt><dd>${randText(m.revenue_excl_vat)}</dd></div><div><dt>Estimated cost</dt><dd>${randText(m.estimated_cost)}</dd></div><div><dt>Margin</dt><dd>${pct}</dd></div><div><dt>Credits spent</dt><dd>${escapeHTML(m.credits_spent)}</dd></div><div><dt>Credits granted</dt><dd>${escapeHTML(m.credits_granted)}</dd></div></dl><p class="cm-note">${escapeHTML(m.assumption)}</p></div>`;
   }
-  function creditAdminHtml(d, m) {
+  function creditAdminHtml(d, m, pv) {
     const s = d.settings;
     const f = creditAdminState.flag;
     const picked = creditAdminState.picked;
@@ -28893,7 +28893,12 @@
       const pause = i.role !== "admin" ? `<button class="btn small" data-credit-action="pause" data-id="${id}" data-name="${name}" data-paused="${i.paused ? "1" : "0"}">${i.paused ? "Restore" : "Pause"}</button>` : "";
       return `<tr><td><input type="checkbox" class="credit-pick" data-id="${id}" aria-label="Select ${name}" ${picked.has(i.id) ? "checked" : ""}></td><td><strong>${name}</strong><div class="cm-note">${escapeHTML(i.email)}</div></td><td>${escapeHTML(i.workspace || "")}</td><td>${i.used} used \xB7 <strong>${i.left} left</strong><div class="cm-bar"><span style="width:${pct}%"></span></div></td><td>${i.included}${i.granted ? `<div class="cm-note">+${i.granted} added</div>` : ""}<div class="cm-note">${cap ? `Cap ${escapeHTML(cap)}` : "No cap"}</div></td><td>${pill}<div class="cm-note">Plan: ${escapeHTML(i.subscription || "active")}</div></td><td class="credit-actions"><button class="btn small" data-credit-action="grant" data-id="${id}" data-name="${name}">Add credits</button><button class="btn small" data-credit-action="allowance" data-id="${id}" data-name="${name}" data-included="${i.included}" data-cap="${escapeHTML(cap)}">Limits</button><button class="btn small" data-credit-action="history" data-id="${id}" data-name="${name}">History</button><button class="btn small" data-credit-action="billing" data-id="${id}" data-name="${name}">Billing</button>${pause}</td></tr>`;
     }).join("");
-    return `<section class="settings-panel credit-admin-panel" aria-label="Credits">${creditMarginHtml(m)}<div class="cm-head"><h2>Credits</h2><span class="cm-note">${escapeHTML(d.month)} \xB7 resets ${creditDate(d.resets)}</span></div><p class="cm-note">${d.flagged} of ${d.total} users need attention (20% or less left, or none left).</p><div class="credit-admin-tools"><input id="credit-search" type="search" placeholder="Search name, email or workspace" value="${escapeHTML(creditAdminState.q)}" aria-label="Search users"><select id="credit-flag" aria-label="Show users"><option value="" ${!f ? "selected" : ""}>All users</option><option value="flagged" ${f === "flagged" ? "selected" : ""}>Needs attention</option><option value="zero" ${f === "zero" ? "selected" : ""}>Out of credits</option></select></div><div class="credit-admin-tools"><button class="btn small" data-credit-export="balances">Export balances (CSV)</button><button class="btn small" data-credit-export="ledger">Export ledger (CSV)</button><button class="btn small primary" data-credit-action="bulk" ${picked.size ? "" : "disabled"}>Grant credits to selected (${picked.size})</button>${picked.size ? '<button class="btn small" data-credit-action="clear">Clear selection</button>' : ""}</div><div class="table-scroll"><table class="credit-table"><thead><tr><th><input type="checkbox" id="credit-pick-all" aria-label="Select all shown users" ${allShown ? "checked" : ""}></th><th>User</th><th>Workspace</th><th>Used / left</th><th>Allowance</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="7">No users match.</td></tr>'}</tbody></table></div><form id="credit-settings-form" class="credit-settings"><h3>Plan settings</h3><p class="cm-note">New users and users without their own allowance get these values.</p><label for="cs-fee">Monthly fee (R)</label><input id="cs-fee" type="number" min="0" max="10000" step="1" value="${s.monthly_fee}"><label for="cs-included">Included credits per month</label><input id="cs-included" type="number" min="0" max="5000" step="1" value="${s.included}"><button class="btn primary small" type="submit">Save plan settings</button></form></section>`;
+    return `<section class="settings-panel credit-admin-panel" aria-label="Credits">${creditMarginHtml(m)}${providersPanelHtml(pv)}<div class="cm-head"><h2>Credits</h2><span class="cm-note">${escapeHTML(d.month)} \xB7 resets ${creditDate(d.resets)}</span></div><p class="cm-note">${d.flagged} of ${d.total} users need attention (20% or less left, or none left).</p><div class="credit-admin-tools"><input id="credit-search" type="search" placeholder="Search name, email or workspace" value="${escapeHTML(creditAdminState.q)}" aria-label="Search users"><select id="credit-flag" aria-label="Show users"><option value="" ${!f ? "selected" : ""}>All users</option><option value="flagged" ${f === "flagged" ? "selected" : ""}>Needs attention</option><option value="zero" ${f === "zero" ? "selected" : ""}>Out of credits</option></select></div><div class="credit-admin-tools"><button class="btn small" data-credit-export="balances">Export balances (CSV)</button><button class="btn small" data-credit-export="ledger">Export ledger (CSV)</button><button class="btn small primary" data-credit-action="bulk" ${picked.size ? "" : "disabled"}>Grant credits to selected (${picked.size})</button>${picked.size ? '<button class="btn small" data-credit-action="clear">Clear selection</button>' : ""}</div><div class="table-scroll"><table class="credit-table"><thead><tr><th><input type="checkbox" id="credit-pick-all" aria-label="Select all shown users" ${allShown ? "checked" : ""}></th><th>User</th><th>Workspace</th><th>Used / left</th><th>Allowance</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="7">No users match.</td></tr>'}</tbody></table></div><form id="credit-settings-form" class="credit-settings"><h3>Plan settings</h3><p class="cm-note">New users and users without their own allowance get these values.</p><label for="cs-fee">Monthly fee (R)</label><input id="cs-fee" type="number" min="0" max="10000" step="1" value="${s.monthly_fee}"><label for="cs-included">Included credits per month</label><input id="cs-included" type="number" min="0" max="5000" step="1" value="${s.included}"><button class="btn primary small" type="submit">Save plan settings</button></form></section>`;
+  }
+  function providersPanelHtml(pv) {
+    if (!pv) return '<p class="cm-note">Payment providers could not load.</p>';
+    const rows = pv.items.map((p) => `<tr><td><strong>${escapeHTML(p.name)}</strong></td><td>${escapeHTML(p.merchant_ref)}</td><td>\u2022\u2022\u2022\u2022 ${escapeHTML(p.settlement_last4)}</td><td>${p.is_default ? '<span class="cr-pill cr-ok">Default</span> ' : ""}${p.active ? "" : '<span class="cr-pill cr-zero">Inactive</span>'}</td><td class="credit-actions">${p.active && !p.is_default ? `<button class="btn small" data-provider-action="default" data-id="${escapeHTML(p.id)}">Make default</button>` : ""}${p.active ? `<button class="btn small" data-provider-action="deactivate" data-id="${escapeHTML(p.id)}" data-name="${escapeHTML(p.name)}">Deactivate</button>` : ""}</td></tr>`).join("");
+    return `<div class="credit-providers"><div class="cm-head"><h3>Payment providers</h3><span class="cm-note">Where customer money is received</span></div><p class="cm-note">Enter the account reference only. Secret keys are not stored here. Payments are recorded against the default provider unless another is chosen.</p><div class="table-scroll"><table class="credit-table"><thead><tr><th>Provider</th><th>Merchant reference</th><th>Settles to</th><th>Status</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5">No provider yet. Add one before recording payments.</td></tr>'}</tbody></table></div><form id="provider-form" class="credit-settings"><h3>Add a provider</h3><label for="prov-name">Provider</label><select id="prov-name"><option>Paystack</option><option>PayFast</option><option>Yoco</option><option>Peach Payments</option><option value="Other">Other</option></select><label for="prov-other">Name, if Other</label><input id="prov-other" maxlength="60"><label for="prov-ref">Merchant or account reference</label><input id="prov-ref" required minlength="3" maxlength="80"><label for="prov-acct">Settlement bank account number</label><input id="prov-acct" inputmode="numeric" required minlength="4" maxlength="20" placeholder="Only the last 4 digits are shown"><label><input type="checkbox" id="prov-default"> Make this the default</label><button class="btn primary small" type="submit">Add provider</button></form></div>`;
   }
   async function saveCsv(path) {
     const r = await api(path, void 0, "GET");
@@ -28939,6 +28944,24 @@
       });
       box.addEventListener("click", (e) => {
         const target = e.target;
+        const pa = target.closest("[data-provider-action]");
+        if (pa) {
+          const pid = pa.dataset.id || "";
+          if (pa.dataset.providerAction === "default") void busy(pa, async () => {
+            await api(`/api/admin/payment-providers/${pid}/default`, {}, "PUT");
+            toast("Default provider changed.");
+            await loadCreditAdmin();
+          });
+          if (pa.dataset.providerAction === "deactivate") {
+            if (!window.confirm(`Deactivate ${pa.dataset.name || "this provider"}? Past payments stay on record.`)) return;
+            void busy(pa, async () => {
+              await api(`/api/admin/payment-providers/${pid}/deactivate`, {}, "PUT");
+              toast("Provider deactivated.");
+              await loadCreditAdmin();
+            });
+          }
+          return;
+        }
         const ex = target.closest("[data-credit-export]");
         if (ex) {
           const q = `q=${encodeURIComponent(creditAdminState.q)}&flag=${encodeURIComponent(creditAdminState.flag)}`;
@@ -28964,6 +28987,18 @@
       });
       box.addEventListener("submit", (e) => {
         const f = e.target;
+        if (f.id === "provider-form") {
+          e.preventDefault();
+          const btn2 = document.querySelector("#provider-form button[type=submit]");
+          void busy(btn2, async () => {
+            const sel = $2("prov-name").value;
+            const name = sel === "Other" ? $2("prov-other").value.trim() : sel;
+            await api("/api/admin/payment-providers", { name, merchant_ref: $2("prov-ref").value, settlement_account: $2("prov-acct").value, make_default: $2("prov-default").checked });
+            toast("Provider added.");
+            await loadCreditAdmin();
+          });
+          return;
+        }
         if (f.id !== "credit-settings-form") return;
         e.preventDefault();
         const btn = document.querySelector("#credit-settings-form button[type=submit]");
@@ -28982,7 +29017,13 @@
       } catch {
         margin = null;
       }
-      box.innerHTML = creditAdminHtml(data, margin);
+      let providers = null;
+      try {
+        providers = await api("/api/admin/payment-providers", void 0, "GET");
+      } catch {
+        providers = null;
+      }
+      box.innerHTML = creditAdminHtml(data, margin, providers);
     } catch (e) {
       box.innerHTML = `<p class="cm-note">Credits could not load: ${escapeHTML(e instanceof Error ? e.message : String(e))}</p>`;
     }
@@ -29064,11 +29105,12 @@
     const sub = b.subscription;
     const labels = { active: "Active", trial: "Trial", past_due: "Past due (grace period)", paused: "Paused for non-payment", cancelled: "Cancelled" };
     const opts = Object.keys(labels).map((v) => `<option value="${v}" ${sub.status === v ? "selected" : ""}>${labels[v]}</option>`).join("");
+    const provOpts = (b.providers || []).map((p) => `<option value="${escapeHTML(p.id)}" ${p.is_default ? "selected" : ""}>${escapeHTML(p.name)}</option>`).join("") || '<option value="">No active provider</option>';
     const access = b.access === "full" ? "Full access" : b.access === "read_only" ? "Read only" : "Blocked";
     const rows = b.payments.length ? b.payments.map((p) => `<tr><td>${creditWhen(p.created)}</td><td>${p.kind === "topup" ? "Top-up" : "Subscription"}</td><td>${randText(p.amount_cents / 100)}</td><td>${randText(p.vat_cents / 100)}</td><td>${p.credits || ""}</td><td>${escapeHTML(p.reference)}</td></tr>`).join("") : '<tr><td colspan="6">No payments recorded yet.</td></tr>';
     openModal("Billing \xB7 " + name, `<p class="cm-note">${access} \xB7 plan fee ${randText(b.fee)} incl. VAT \xB7 ${escapeHTML(b.included)} credits included each month</p>
   <form id="billing-sub-form"><h3>Subscription status</h3><label for="sub-status">Status</label><select id="sub-status">${opts}</select><label for="sub-period">Paid until (optional)</label><input id="sub-period" type="date" value="${escapeHTML(sub.period_end || "")}"><label for="sub-grace">Grace until (past due only)</label><input id="sub-grace" type="date" value="${escapeHTML(sub.grace_until || "")}"><label for="sub-reason">Reason</label><input id="sub-reason" required minlength="3" maxlength="80" placeholder="e.g. Card declined, retry on 30 Oct"><div class="modal-actions"><button class="btn primary" type="submit" id="sub-save">Save status</button></div></form>
-  <form id="billing-pay-form"><h3>Record a payment</h3><p class="cm-note">Payments are recorded by hand until a payment provider is connected. VAT at 15% is worked out from the amount you enter.</p><label for="pay-kind">Payment type</label><select id="pay-kind"><option value="subscription">Monthly subscription</option><option value="topup">Credit top-up</option></select><label for="pay-amount">Amount paid, including VAT (R)</label><input id="pay-amount" type="number" min="0.01" max="100000" step="0.01" required><label for="pay-credits">Credits bought (top-ups only)</label><input id="pay-credits" type="number" min="1" max="100000" step="1"><label for="pay-ref">Payment reference</label><input id="pay-ref" required minlength="3" maxlength="80" placeholder="e.g. bank reference"><div class="modal-actions"><button class="btn primary" type="submit" id="pay-save">Record payment</button></div></form>
+  <form id="billing-pay-form"><h3>Record a payment</h3><p class="cm-note">Payments are recorded by hand until a payment provider is connected. VAT at 15% is worked out from the amount you enter.</p><label for="pay-kind">Payment type</label><select id="pay-kind"><option value="subscription">Monthly subscription</option><option value="topup">Credit top-up</option></select><label for="pay-amount">Amount paid, including VAT (R)</label><input id="pay-amount" type="number" min="0.01" max="100000" step="0.01" required><label for="pay-credits">Credits bought (top-ups only)</label><input id="pay-credits" type="number" min="1" max="100000" step="1"><label for="pay-provider">Received by</label><select id="pay-provider">${provOpts}</select><label for="pay-ref">Payment reference</label><input id="pay-ref" required minlength="3" maxlength="80" placeholder="e.g. bank reference"><div class="modal-actions"><button class="btn primary" type="submit" id="pay-save">Record payment</button></div></form>
   <h3>Payments</h3><div class="table-scroll"><table class="credit-table"><thead><tr><th>When</th><th>Type</th><th>Paid</th><th>VAT</th><th>Credits</th><th>Reference</th></tr></thead><tbody>${rows}</tbody></table></div>`);
     $2("billing-sub-form").addEventListener("submit", (e) => {
       e.preventDefault();
@@ -29083,7 +29125,7 @@
       e.preventDefault();
       void busy($2("pay-save"), async () => {
         const kind = $2("pay-kind").value;
-        const r = await api(`/api/admin/billing/${id}/payments`, { kind, amount_rand: Number($2("pay-amount").value), reference: $2("pay-ref").value, credits: kind === "topup" ? Number($2("pay-credits").value) : 0 });
+        const r = await api(`/api/admin/billing/${id}/payments`, { kind, amount_rand: Number($2("pay-amount").value), reference: $2("pay-ref").value, credits: kind === "topup" ? Number($2("pay-credits").value) : 0, provider_id: $2("pay-provider").value || null });
         closeModal();
         toast(`Payment recorded: ${randText(r.excl_vat_cents / 100)} excl. VAT, ${randText(r.vat_cents / 100)} VAT.`);
         await loadCreditAdmin();
@@ -32762,6 +32804,11 @@
       }
     }
     if (path === "/api/knowledge") return { items: s.knowledge };
+    if (path === "/api/admin/payment-providers") {
+      if (method === "POST") return { id: "demo-new", name: body?.name || "Demo", merchant_ref: body?.merchant_ref || "DEMO", settlement_last4: String(body?.settlement_account || "0000").slice(-4), active: true, is_default: !!body?.make_default };
+      return { items: [{ id: "demo-p", name: "Paystack", merchant_ref: "DEMO-MERCHANT", settlement_last4: "1234", active: true, is_default: true }] };
+    }
+    if (/^\/api\/admin\/payment-providers\/[^/]+\/(default|deactivate)$/.test(path)) return { ok: true };
     if (path === "/api/admin/credit-settings") {
       if (method === "PUT") return { included: Number(body?.included) || 200, monthly_fee: Number(body?.monthly_fee) || 79 };
       return { included: 200, monthly_fee: 79 };
@@ -32780,7 +32827,7 @@
     if (path === "/api/admin/credits/grant-bulk") return { granted_to: Array.isArray(body?.user_ids) ? new Set(body.user_ids).size : 0, amount: Number(body?.amount) || 0 };
     if (/^\/api\/admin\/credits\/[^/]+\/history$/.test(path)) return { user: { name: "Demo user", workspace: "Demo workspace" }, view: { used: 1, left: 199 }, ledger: [{ id: "demo-charge", month: "demo", delta: -1, reason: "helper_message", created: "2026-10-14T10:00:00", undone: false }], audit: [] };
     if (/^\/api\/admin\/credits\/[^/]+\/(grant|allowance|cap|pause|undo\/[^/]+)$/.test(path)) return { included: 200, granted: Number(body?.amount) || 0, used: 0, left: 200, paused: !!body?.paused, spend_cap: body?.spend_cap ?? null };
-    if (/^\/api\/admin\/billing\/[^/]+$/.test(path)) return { user: { name: "Demo user", email: "demo@example.local", workspace: "Demo workspace", role: "operator" }, subscription: { status: "active", period_end: null, grace_until: null }, access: "full", fee: 79, included: 200, payments: [] };
+    if (/^\/api\/admin\/billing\/[^/]+$/.test(path)) return { user: { name: "Demo user", email: "demo@example.local", workspace: "Demo workspace", role: "operator" }, subscription: { status: "active", period_end: null, grace_until: null }, access: "full", fee: 79, included: 200, payments: [], providers: [{ id: "demo-p", name: "Paystack", is_default: true }] };
     if (/^\/api\/admin\/billing\/[^/]+\/subscription$/.test(path)) return { subscription: { status: body?.status || "active", period_end: body?.period_end || null, grace_until: body?.grace_until || null }, access: "full" };
     if (/^\/api\/admin\/billing\/[^/]+\/payments$/.test(path)) {
       const cents = Math.round((Number(body?.amount_rand) || 0) * 100);

@@ -7,6 +7,11 @@ def id_for(client, email):
     return next(i['id'] for i in items if i['email'] == email)
 
 
+def add_provider(client):
+    c, _ = client
+    return c.post('/api/admin/payment-providers', json={'name': 'Paystack', 'merchant_ref': 'TEST-MERCHANT', 'settlement_account': '0123456789', 'make_default': True})
+
+
 def set_sub(client, uid, status, grace=None, period=None):
     c, _ = client
     body = {'status': status, 'reason': 'Test change', 'period_end': period}
@@ -77,6 +82,7 @@ def test_subscription_validation(client):
 def test_subscription_payment_splits_vat_and_is_not_repeatable(client):
     c, _ = client
     sign(client, role='admin')
+    add_provider(client)
     op = id_for(client, 'operator@demo.sheetqms')
     body = {'kind': 'subscription', 'amount_rand': 79, 'reference': 'PAY-OCT-001'}
     recorded = c.post(f'/api/admin/billing/{op}/payments', json=body)
@@ -91,6 +97,7 @@ def test_subscription_payment_splits_vat_and_is_not_repeatable(client):
 def test_topup_payment_grants_credits(client):
     c, _ = client
     sign(client, role='admin')
+    add_provider(client)
     op = id_for(client, 'operator@demo.sheetqms')
     before = c.get(f'/api/admin/billing/{op}').json()['included']
     r = c.post(f'/api/admin/billing/{op}/payments', json={'kind': 'topup', 'amount_rand': 20, 'credits': 200, 'reference': 'TOP-OCT-001'})
