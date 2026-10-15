@@ -25,6 +25,8 @@ events = sa.Table('events', M, sa.Column('id', sa.Integer, primary_key=True, aut
 knowledge = sa.Table('knowledge', M, sa.Column('id', sa.String, primary_key=True), sa.Column('tenant_id', sa.String, nullable=False), sa.Column('scope', sa.String, nullable=False), sa.Column('plan_hash', sa.String, nullable=False), sa.Column('data', sa.Text, nullable=False), sa.Column('created', sa.String, nullable=False), sa.UniqueConstraint('tenant_id', 'scope', 'plan_hash'))
 heads = sa.Table('knowledge_heads', M, sa.Column('tenant_id', sa.String, primary_key=True), sa.Column('scope', sa.String, primary_key=True), sa.Column('knowledge_id', sa.String, nullable=False))
 spend = sa.Table('spend', M, sa.Column('id', sa.String, primary_key=True), sa.Column('month', sa.String, nullable=False), sa.Column('reserved', sa.BigInteger, nullable=False), sa.Column('actual', sa.BigInteger), sa.Column('created', sa.String, nullable=False))
+credit_ledger = sa.Table('credit_ledger', M, sa.Column('id', sa.String, primary_key=True), sa.Column('user_id', sa.String, nullable=False), sa.Column('month', sa.String, nullable=False), sa.Column('delta', sa.Integer, nullable=False), sa.Column('reason', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False))
+sa.Index('credit_user_month', credit_ledger.c.user_id, credit_ledger.c.month)
 rate_limits = sa.Table('rate_limits', M, sa.Column('id', sa.String, primary_key=True), sa.Column('count', sa.Integer, nullable=False), sa.Column('expires', sa.String, nullable=False))
 sa.Index('job_workspace_created', jobs.c.tenant_id, jobs.c.created)
 sa.Index('event_workspace_job', events.c.tenant_id, events.c.job_id, events.c.id)
@@ -263,6 +265,25 @@ class CloudStore:
         with self.engine.connect() as c:
             count, used = c.execute(sa.select(sa.func.count(), sa.func.coalesce(sa.func.sum(jobs.c.stored_bytes),0)).where(jobs.c.tenant_id == tenant)).one()
             return int(count), int(used)
+
+    def credit_adjust(self, user_id, month, delta, reason, included=None):
+        with self.tx(serial=True) as c:
+            net = int(c.execute(sa.select(sa.func.coalesce(sa.func.sum(credit_ledger.c.delta), 0)).where(credit_ledger.c.user_id == user_id, credit_ledger.c.month == month)).scalar())
+            if delta < 0 and included is not None and included + net + delta < 0:
+                raise ValueError('out of credits')
+            c.execute(credit_ledger.insert().values(id=str(uuid.uuid4()), user_id=user_id, month=month, delta=int(delta), reason=str(reason)[:80], created=now()))
+            return net + int(delta)
+
+    def credit_summary(self, user_id, month):
+        with self.engine.connect() as c:
+            deltas = c.execute(sa.select(credit_ledger.c.delta).where(credit_ledger.c.user_id == user_id, credit_ledger.c.month == month)).scalars().all()
+        granted = sum(d for d in deltas if d > 0)
+        used = -sum(d for d in deltas if d < 0)
+        return int(granted), int(used)
+
+    def user_in_tenant(self, tenant, user_id):
+        with self.engine.connect() as c:
+            return c.execute(sa.select(users.c.id).where(users.c.id == user_id, users.c.tenant_id == tenant)).first() is not None
 
     @contextmanager
     def lease(self, tenant, identifier):

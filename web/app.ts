@@ -1832,12 +1832,22 @@ async function knowledgePage(){
   await preferencesPage();
 }
 
+// Credit meter: shows credits left this month on the Past Files & Settings page.
+function creditMeterHtml(c:any){
+  if(!c)return '';
+  const pct=Math.min(100,Math.round((c.used/Math.max(c.included,1))*100));
+  const warn=c.left<=0||pct>=80;
+  const resetDate=new Date(c.resets+'T00:00:00').toLocaleDateString('en-ZA',{day:'numeric',month:'long'});
+  return `<section class="credit-meter${warn?' cm-warn':''}" aria-label="Credit meter"><div class="cm-head"><strong>Credits this month</strong><span class="cm-left">${c.left} left</span></div><div class="cm-bar" role="progressbar" aria-label="Credits used this month" aria-valuemin="0" aria-valuemax="${c.included}" aria-valuenow="${c.used}"><span style="width:${pct}%"></span></div><p class="cm-note">${c.used} of ${c.included} used · resets on ${resetDate}${c.left<=0?' · you are out of credits; buy a top-up or wait for the reset':''}</p><p class="cm-note">A sheet job uses ${c.costs.sheet_job} credits, a Helper message ${c.costs.helper_message}, and a share email ${c.costs.share_email}.</p></section>`;
+}
 async function preferencesPage(){
   const p=overview.preferences||{theme:'light',density:'comfortable',explanations:'detailed',auto_checks:true,vertical:'general'};
   const vert=p.vertical||'general';
   const savedRules=(await api('/api/knowledge',undefined,'GET')).items||[];
+  let creditInfo:any=null;try{creditInfo=await api('/api/credits',undefined,'GET');}catch{creditInfo=null;}
   $('page').innerHTML=`
   <div class="page-heading"><h1>Past Files & Workspace Settings</h1></div>
+  ${creditMeterHtml(creditInfo)}
   <div class="settings-grid">
     <section class="settings-panel">
       <h2>Your Past Spreadsheets (${overview.jobs?.length||0})</h2>

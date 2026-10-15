@@ -16,6 +16,7 @@ import re
 import secrets
 import tempfile
 import uuid
+from zoneinfo import ZoneInfo
 from functools import wraps
 
 from fastapi import FastAPI, Request, HTTPException, Depends, UploadFile, File, Form
@@ -37,6 +38,22 @@ from .workbooks import profile, check_file, public_value, norm, book_rows
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = logging.getLogger('sheetqms.online')
+
+
+# Credits: one credit = R0.01 of provider cost (see billing/CREDITS-DESIGN.md)
+INCLUDED_CREDITS = 200
+CREDIT_COSTS = {'sheet_job': 3, 'helper_message': 1, 'share_email': 1}
+CREDIT_TZ = ZoneInfo('Africa/Johannesburg')
+
+
+def credit_month():
+    return datetime.now(CREDIT_TZ).strftime('%Y-%m')
+
+
+def credit_resets():
+    d = datetime.now(CREDIT_TZ)
+    year, month = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
+    return f'{year:04d}-{month:02d}-01'
 
 
 def _text_safe_cell(*cells):
@@ -408,6 +425,29 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         store.logout(token_for(request))
         response.delete_cookie('sqm_session')
         return {'ok': True}
+
+    def charge_credits(user, action):
+        try:
+            store.credit_adjust(user['id'], credit_month(), -CREDIT_COSTS[action], action, included=INCLUDED_CREDITS)
+        except ValueError:
+            raise HTTPException(402, "You have used this month's credits. Buy a top-up or wait for the monthly reset.")
+
+    @app.get('/api/credits')
+    def credits(identity=Depends(workspace)):
+        user, _ = identity
+        granted, used = store.credit_summary(user['id'], credit_month())
+        return {'month': credit_month(), 'included': INCLUDED_CREDITS, 'granted': granted, 'used': used, 'left': max(INCLUDED_CREDITS + granted - used, 0), 'resets': credit_resets(), 'costs': CREDIT_COSTS}
+
+    @app.post('/api/admin/users/{user_id}/credits')
+    def grant_credits(user_id: str, body: dict, user=Depends(administrator)):
+        amount = body.get('amount')
+        if not isinstance(amount, int) or isinstance(amount, bool) or not 1 <= amount <= 10000:
+            raise HTTPException(422, 'Enter a whole number of credits from 1 to 10000.')
+        if not store.user_in_tenant(user['tenant_id'], user_id):
+            raise HTTPException(404, 'That user is not in this workspace.')
+        store.credit_adjust(user_id, credit_month(), amount, str(body.get('reason') or 'Top-up')[:80])
+        granted, used = store.credit_summary(user_id, credit_month())
+        return {'granted': granted, 'used': used, 'left': max(INCLUDED_CREDITS + granted - used, 0)}
 
     @app.get('/api/overview')
     def overview(identity=Depends(workspace)):
@@ -1063,6 +1103,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         job['explanation_style'] = Preferences.model_validate(store.preferences(user['id'])).explanations
         if body.request_id in job.get('chat_requests', []):
             return public(job)
+        charge_credits(user, 'helper_message')
         job.setdefault('chat_requests', []).append(body.request_id)
         answer = message(job, 'user', body.text)
         job['clarifications'].append({'text': body.text, 'created': answer['created'], 'actor': user['id'], 'message_id': answer['id']})
@@ -1126,7 +1167,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
     @app.post('/api/jobs/{identifier}/analyse')
     @job_lease
     def analyse(identifier: str, body: Analyse, identity=Depends(workspace)):
-        _, tenant = identity
+        user, tenant = identity
         if demo:
             raise HTTPException(403, 'Live AI is disabled in the synthetic preview.')
         if not body.consent_to_external_processing:
@@ -1136,6 +1177,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         identity_key = ai.request_identity(job, settings)
         if job.get('ai_identity') == identity_key:
             return public(job)
+        charge_credits(user, 'sheet_job')
         key = vault.open(store.encrypted_key())
         try:
             with materialise(job, blobs) as (work, _):
@@ -1214,7 +1256,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
     @app.post('/api/jobs/{identifier}/share/email')
     @job_lease
     def email_share(identifier: str, body: dict, identity=Depends(workspace)):
-        _, tenant = identity
+        user, tenant = identity
         to = str(body.get('to') or '').strip()
         if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', to):
             raise HTTPException(422, 'Enter a valid email address.')
@@ -1242,6 +1284,7 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
         except Exception:
             LOG.exception('share email failed')
             raise HTTPException(502, 'The email could not be sent. Copy the link and send it yourself.')
+        charge_credits(user, 'share_email')
         return {'share_id': link['share_id'], 'expires': link['expires'], 'sent_to': to}
 
     @app.get('/api/shared/{token}')
