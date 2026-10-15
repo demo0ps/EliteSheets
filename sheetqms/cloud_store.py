@@ -377,6 +377,12 @@ class CloudStore:
             c.execute(credit_undos.insert().values(ledger_id=ledger_id, user_id=user_id, reversal_id=reversal, actor_id=actor_id, created=now()))
             return -int(r['delta'])
 
+    def credit_ledger_rows(self, month):
+        j = credit_ledger.join(users, users.c.id == credit_ledger.c.user_id).join(tenants, tenants.c.id == users.c.tenant_id)
+        with self.engine.connect() as c:
+            rows = c.execute(sa.select(credit_ledger.c.id, credit_ledger.c.created, credit_ledger.c.month, credit_ledger.c.delta, credit_ledger.c.reason, users.c.name, users.c.email, tenants.c.name.label('tenant_name')).select_from(j).where(credit_ledger.c.month == month).order_by(credit_ledger.c.created)).mappings().all()
+        return [dict(r) for r in rows]
+
     def credit_alert_sent(self, user_id, month, kind):
         with self.engine.connect() as c:
             return c.execute(sa.select(credit_alerts.c.kind).where(credit_alerts.c.user_id == user_id, credit_alerts.c.month == month, credit_alerts.c.kind == kind)).first() is not None

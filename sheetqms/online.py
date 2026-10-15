@@ -42,6 +42,32 @@ LOG = logging.getLogger('sheetqms.online')
 
 # Credits: one credit = R0.01 of provider cost (see billing/CREDITS-DESIGN.md)
 INCLUDED_CREDITS = 200
+# Margin view estimates (billing/CREDITS-DESIGN.md): R0.01 provider cost per credit, 15% VAT on the fee.
+CREDIT_PROVIDER_COST_RAND = 0.01
+VAT_RATE = 0.15
+GRANT_PREFIX = 'Admin grant: '
+
+
+def csv_cell(value):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value  # numbers stay numeric, so a charge of -1 is not turned into text
+    text = '' if value is None else str(value)
+    # Stop spreadsheet formula injection when the file is opened in Excel.
+    if text[:1] in ('=', '+', '-', '@'):
+        text = "'" + text
+    return text
+
+
+def csv_text(header, rows):
+    import csv as _csv
+    buffer = StringIO()
+    writer = _csv.writer(buffer)
+    writer.writerow(header)
+    for row in rows:
+        writer.writerow([csv_cell(v) for v in row])
+    return '\ufeff' + buffer.getvalue()  # BOM so Excel reads the UTF-8 correctly
+
+
 CREDIT_COSTS = {'sheet_job': 3, 'helper_message': 1, 'share_email': 1}
 CREDIT_TZ = ZoneInfo('Africa/Johannesburg')
 
@@ -583,6 +609,57 @@ def create_online_app(root=None, demo=None, database_url=None, blobs=None, encry
             raise HTTPException(409, 'That charge has already been undone.')
         store.audit(user['id'], 'undo', user_id, {'ledger_id': ledger_id, 'credits': credits, 'reason': reason})
         return credit_view(user_id)
+
+    @app.get('/api/admin/margin')
+    def admin_margin(user=Depends(administrator)):
+        month = credit_month()
+        cfg = store.credit_config()
+        people = [r for r in store.credit_directory(month) if r['role'] != 'admin']
+        rows = store.credit_ledger_rows(month)
+        spent = -sum(int(r['delta']) for r in rows if not r['reason'].startswith(GRANT_PREFIX))
+        granted = sum(int(r['delta']) for r in rows if r['reason'].startswith(GRANT_PREFIX))
+        revenue = round(cfg['monthly_fee'] * len(people) / (1 + VAT_RATE), 2)
+        cost = round(spent * CREDIT_PROVIDER_COST_RAND, 2)
+        margin = round((revenue - cost) / revenue * 100, 1) if revenue else None
+        return {'month': month, 'users': len(people), 'fee': cfg['monthly_fee'], 'revenue_excl_vat': revenue,
+                'credits_spent': spent, 'credits_granted': granted, 'estimated_cost': cost, 'margin_pct': margin,
+                'assumption': 'Assumes every non-admin user pays the monthly fee. Billing is not connected yet, so top-ups are not counted as revenue. Fixed platform costs are not included.'}
+
+    @app.post('/api/admin/credits/grant-bulk')
+    def admin_grant_bulk(body: dict, user=Depends(administrator)):
+        ids = body.get('user_ids')
+        amount = body.get('amount')
+        reason = str(body.get('reason') or '').strip()
+        if not isinstance(ids, list) or not ids or len(ids) > 500 or not all(isinstance(i, str) for i in ids):
+            raise HTTPException(422, 'Select between 1 and 500 users.')
+        ids = list(dict.fromkeys(ids))
+        if not whole_number(amount, 1, 10000):
+            raise HTTPException(422, 'Enter a whole number of credits from 1 to 10000.')
+        if len(reason) < 3:
+            raise HTTPException(422, 'Give a reason of at least 3 characters.')
+        if any(not store.user_by_id(i) for i in ids):
+            raise HTTPException(404, 'Some selected users were not found. Nothing was granted.')
+        month = credit_month()
+        for uid in ids:
+            store.credit_adjust(uid, month, amount, GRANT_PREFIX + reason)
+            store.audit(user['id'], 'grant', uid, {'amount': amount, 'reason': reason, 'bulk': True})
+        return {'granted_to': len(ids), 'amount': amount}
+
+    @app.get('/api/admin/exports/balances')
+    def admin_export_balances(q: str = '', flag: str = '', user=Depends(administrator)):
+        data = admin_credits(q=q, flag=flag, user=user)
+        header = ['Name', 'Email', 'Workspace', 'Allowance', 'Spending cap', 'Used', 'Left', 'Status']
+        rows = [[i['name'], i['email'], i['workspace'], i['included'], '' if i['spend_cap'] is None else i['spend_cap'], i['used'], i['left'], i['status']] for i in data['items']]
+        return {'filename': f"credit-balances-{data['month']}.csv", 'csv': csv_text(header, rows)}
+
+    @app.get('/api/admin/exports/ledger')
+    def admin_export_ledger(month: str = '', user=Depends(administrator)):
+        month = month or credit_month()
+        if not re.fullmatch(r'\d{4}-\d{2}', month):
+            raise HTTPException(422, 'Month must look like 2026-10.')
+        header = ['When', 'Month', 'Name', 'Email', 'Workspace', 'Credits', 'Reason', 'Ledger ID']
+        rows = [[r['created'], r['month'], r['name'], r['email'], r['tenant_name'], r['delta'], r['reason'], r['id']] for r in store.credit_ledger_rows(month)]
+        return {'filename': f'credit-ledger-{month}.csv', 'csv': csv_text(header, rows)}
 
     @app.post('/api/admin/credits/{user_id}/grant')
     def admin_grant_credits(user_id: str, body: dict, user=Depends(administrator)):

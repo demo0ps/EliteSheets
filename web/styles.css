@@ -1346,3 +1346,11 @@ body.compact td, body.compact th { padding: 8px 12px; }
 .credit-audit{padding-left:18px;font-size:14px}
 @media (max-width:1024px){.credit-table thead{display:none}.credit-table tr{display:block;border-bottom:1px solid rgba(0,0,0,.1);padding:8px 0}.credit-table td{display:block;border:0;padding:4px 0}}
 .cr-paused{background:#ebe9fb;color:#3b2f9a}
+
+/* Admin margin and exports (Batch 3) */
+.credit-margin{display:grid;gap:10px;padding-bottom:14px;border-bottom:1px solid rgba(0,0,0,.08)}
+.credit-margin h3{margin:0}
+.credit-margin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0}
+.credit-margin-grid dt{font-size:13px;color:#5b6472}
+.credit-margin-grid dd{margin:2px 0 0;font-size:18px;font-weight:600}
+.credit-table input[type=checkbox]{width:18px;height:18px;min-height:0}

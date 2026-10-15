@@ -28861,17 +28861,28 @@
       });
     });
   }
-  var creditAdminState = { q: "", flag: "" };
+  var creditAdminState = { q: "", flag: "", picked: /* @__PURE__ */ new Set() };
   function creditDate(s) {
     return (/* @__PURE__ */ new Date(s + "T00:00:00")).toLocaleDateString("en-ZA", { day: "numeric", month: "long" });
   }
   function creditWhen(s) {
     return escapeHTML(String(s ?? "").slice(0, 16).replace("T", " "));
   }
+  function randText(n) {
+    return "R" + Number(n || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   var CREDIT_STATUS = { ok: "OK", low: "Low", zero: "Out" };
-  function creditAdminHtml(d) {
+  function creditMarginHtml(m) {
+    if (!m) return "";
+    const pct = m.margin_pct == null ? "\u2013" : `${m.margin_pct}%`;
+    return `<div class="credit-margin" aria-label="Margin this month"><div class="cm-head"><h3>Margin this month</h3><span class="cm-note">${escapeHTML(m.month)} \xB7 estimated</span></div><dl class="credit-margin-grid"><div><dt>Revenue (excl. VAT)</dt><dd>${randText(m.revenue_excl_vat)}</dd></div><div><dt>Estimated cost</dt><dd>${randText(m.estimated_cost)}</dd></div><div><dt>Margin</dt><dd>${pct}</dd></div><div><dt>Credits spent</dt><dd>${escapeHTML(m.credits_spent)}</dd></div><div><dt>Credits granted</dt><dd>${escapeHTML(m.credits_granted)}</dd></div></dl><p class="cm-note">${escapeHTML(m.assumption)}</p></div>`;
+  }
+  function creditAdminHtml(d, m) {
     const s = d.settings;
     const f = creditAdminState.flag;
+    const picked = creditAdminState.picked;
+    const shownIds = d.items.map((i) => i.id);
+    const allShown = shownIds.length > 0 && shownIds.every((id) => picked.has(id));
     const rows = d.items.map((i) => {
       const pct = Math.min(100, Math.round(i.used / Math.max(i.included, 1) * 100));
       const name = escapeHTML(i.name);
@@ -28879,9 +28890,21 @@
       const cap = i.spend_cap == null ? "" : String(i.spend_cap);
       const pill = (i.paused ? '<span class="cr-pill cr-paused">Paused</span> ' : "") + `<span class="cr-pill cr-${i.status}">${CREDIT_STATUS[i.status]}</span>`;
       const pause = i.role !== "admin" ? `<button class="btn small" data-credit-action="pause" data-id="${id}" data-name="${name}" data-paused="${i.paused ? "1" : "0"}">${i.paused ? "Restore" : "Pause"}</button>` : "";
-      return `<tr><td><strong>${name}</strong><div class="cm-note">${escapeHTML(i.email)}</div></td><td>${escapeHTML(i.workspace || "")}</td><td>${i.used} used \xB7 <strong>${i.left} left</strong><div class="cm-bar"><span style="width:${pct}%"></span></div></td><td>${i.included}${i.granted ? `<div class="cm-note">+${i.granted} added</div>` : ""}<div class="cm-note">${cap ? `Cap ${escapeHTML(cap)}` : "No cap"}</div></td><td>${pill}</td><td class="credit-actions"><button class="btn small" data-credit-action="grant" data-id="${id}" data-name="${name}">Add credits</button><button class="btn small" data-credit-action="allowance" data-id="${id}" data-name="${name}" data-included="${i.included}" data-cap="${escapeHTML(cap)}">Limits</button><button class="btn small" data-credit-action="history" data-id="${id}" data-name="${name}">History</button>${pause}</td></tr>`;
+      return `<tr><td><input type="checkbox" class="credit-pick" data-id="${id}" aria-label="Select ${name}" ${picked.has(i.id) ? "checked" : ""}></td><td><strong>${name}</strong><div class="cm-note">${escapeHTML(i.email)}</div></td><td>${escapeHTML(i.workspace || "")}</td><td>${i.used} used \xB7 <strong>${i.left} left</strong><div class="cm-bar"><span style="width:${pct}%"></span></div></td><td>${i.included}${i.granted ? `<div class="cm-note">+${i.granted} added</div>` : ""}<div class="cm-note">${cap ? `Cap ${escapeHTML(cap)}` : "No cap"}</div></td><td>${pill}</td><td class="credit-actions"><button class="btn small" data-credit-action="grant" data-id="${id}" data-name="${name}">Add credits</button><button class="btn small" data-credit-action="allowance" data-id="${id}" data-name="${name}" data-included="${i.included}" data-cap="${escapeHTML(cap)}">Limits</button><button class="btn small" data-credit-action="history" data-id="${id}" data-name="${name}">History</button>${pause}</td></tr>`;
     }).join("");
-    return `<section class="settings-panel credit-admin-panel" aria-label="Credits"><div class="cm-head"><h2>Credits</h2><span class="cm-note">${escapeHTML(d.month)} \xB7 resets ${creditDate(d.resets)}</span></div><p class="cm-note">${d.flagged} of ${d.total} users need attention (20% or less left, or none left).</p><div class="credit-admin-tools"><input id="credit-search" type="search" placeholder="Search name, email or workspace" value="${escapeHTML(creditAdminState.q)}" aria-label="Search users"><select id="credit-flag" aria-label="Show users"><option value="" ${!f ? "selected" : ""}>All users</option><option value="flagged" ${f === "flagged" ? "selected" : ""}>Needs attention</option><option value="zero" ${f === "zero" ? "selected" : ""}>Out of credits</option></select></div><div class="table-scroll"><table class="credit-table"><thead><tr><th>User</th><th>Workspace</th><th>Used / left</th><th>Allowance</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="6">No users match.</td></tr>'}</tbody></table></div><form id="credit-settings-form" class="credit-settings"><h3>Plan settings</h3><p class="cm-note">New users and users without their own allowance get these values.</p><label for="cs-fee">Monthly fee (R)</label><input id="cs-fee" type="number" min="0" max="10000" step="1" value="${s.monthly_fee}"><label for="cs-included">Included credits per month</label><input id="cs-included" type="number" min="0" max="5000" step="1" value="${s.included}"><button class="btn primary small" type="submit">Save plan settings</button></form></section>`;
+    return `<section class="settings-panel credit-admin-panel" aria-label="Credits">${creditMarginHtml(m)}<div class="cm-head"><h2>Credits</h2><span class="cm-note">${escapeHTML(d.month)} \xB7 resets ${creditDate(d.resets)}</span></div><p class="cm-note">${d.flagged} of ${d.total} users need attention (20% or less left, or none left).</p><div class="credit-admin-tools"><input id="credit-search" type="search" placeholder="Search name, email or workspace" value="${escapeHTML(creditAdminState.q)}" aria-label="Search users"><select id="credit-flag" aria-label="Show users"><option value="" ${!f ? "selected" : ""}>All users</option><option value="flagged" ${f === "flagged" ? "selected" : ""}>Needs attention</option><option value="zero" ${f === "zero" ? "selected" : ""}>Out of credits</option></select></div><div class="credit-admin-tools"><button class="btn small" data-credit-export="balances">Export balances (CSV)</button><button class="btn small" data-credit-export="ledger">Export ledger (CSV)</button><button class="btn small primary" data-credit-action="bulk" ${picked.size ? "" : "disabled"}>Grant credits to selected (${picked.size})</button>${picked.size ? '<button class="btn small" data-credit-action="clear">Clear selection</button>' : ""}</div><div class="table-scroll"><table class="credit-table"><thead><tr><th><input type="checkbox" id="credit-pick-all" aria-label="Select all shown users" ${allShown ? "checked" : ""}></th><th>User</th><th>Workspace</th><th>Used / left</th><th>Allowance</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="7">No users match.</td></tr>'}</tbody></table></div><form id="credit-settings-form" class="credit-settings"><h3>Plan settings</h3><p class="cm-note">New users and users without their own allowance get these values.</p><label for="cs-fee">Monthly fee (R)</label><input id="cs-fee" type="number" min="0" max="10000" step="1" value="${s.monthly_fee}"><label for="cs-included">Included credits per month</label><input id="cs-included" type="number" min="0" max="5000" step="1" value="${s.included}"><button class="btn primary small" type="submit">Save plan settings</button></form></section>`;
+  }
+  async function saveCsv(path) {
+    const r = await api(path, void 0, "GET");
+    const blob = new Blob([r.csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = r.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1e3);
   }
   async function loadCreditAdmin() {
     const box = document.getElementById("credit-admin");
@@ -28898,15 +28921,44 @@
           creditAdminState.flag = t.value;
           void loadCreditAdmin();
         }
+        if (t.classList.contains("credit-pick")) {
+          const id = t.dataset.id || "";
+          if (t.checked) creditAdminState.picked.add(id);
+          else creditAdminState.picked.delete(id);
+          void loadCreditAdmin();
+        }
+        if (t.id === "credit-pick-all") {
+          box.querySelectorAll(".credit-pick").forEach((b) => {
+            const id = b.dataset.id || "";
+            if (t.checked) creditAdminState.picked.add(id);
+            else creditAdminState.picked.delete(id);
+          });
+          void loadCreditAdmin();
+        }
       });
       box.addEventListener("click", (e) => {
-        const b = e.target.closest("[data-credit-action]");
+        const target = e.target;
+        const ex = target.closest("[data-credit-export]");
+        if (ex) {
+          const q = `q=${encodeURIComponent(creditAdminState.q)}&flag=${encodeURIComponent(creditAdminState.flag)}`;
+          void busy(ex, async () => {
+            await saveCsv(ex.dataset.creditExport === "balances" ? `/api/admin/exports/balances?${q}` : "/api/admin/exports/ledger");
+            toast("CSV downloaded.");
+          });
+          return;
+        }
+        const b = target.closest("[data-credit-action]");
         if (!b) return;
         const id = b.dataset.id || "", name = b.dataset.name || "";
         if (b.dataset.creditAction === "grant") openGrantCredits(id, name);
         if (b.dataset.creditAction === "allowance") openLimits(id, name, Number(b.dataset.included || 0), b.dataset.cap || "");
         if (b.dataset.creditAction === "history") void openCreditHistory(id, name);
         if (b.dataset.creditAction === "pause") openPause(id, name, b.dataset.paused === "1");
+        if (b.dataset.creditAction === "bulk") openBulkGrant([...creditAdminState.picked]);
+        if (b.dataset.creditAction === "clear") {
+          creditAdminState.picked.clear();
+          void loadCreditAdmin();
+        }
       });
       box.addEventListener("submit", (e) => {
         const f = e.target;
@@ -28922,7 +28974,13 @@
     }
     try {
       const data = await api(`/api/admin/credits?q=${encodeURIComponent(creditAdminState.q)}&flag=${encodeURIComponent(creditAdminState.flag)}`, void 0, "GET");
-      box.innerHTML = creditAdminHtml(data);
+      let margin = null;
+      try {
+        margin = await api("/api/admin/margin", void 0, "GET");
+      } catch {
+        margin = null;
+      }
+      box.innerHTML = creditAdminHtml(data, margin);
     } catch (e) {
       box.innerHTML = `<p class="cm-note">Credits could not load: ${escapeHTML(e instanceof Error ? e.message : String(e))}</p>`;
     }
@@ -28935,6 +28993,20 @@
         await api(`/api/admin/credits/${id}/grant`, { amount: Number($2("credit-amount").value), reason: $2("credit-reason").value });
         closeModal();
         toast("Credits added.");
+        await loadCreditAdmin();
+      });
+    });
+  }
+  function openBulkGrant(ids) {
+    if (!ids.length) return;
+    openModal(`Add credits to ${ids.length} selected user${ids.length === 1 ? "" : "s"}`, `<form id="credit-bulk-form"><p class="cm-note">Every selected user receives the same number of credits, with one reason recorded against each account.</p><label for="bulk-amount">Credits to add to each user</label><input id="bulk-amount" type="number" min="1" max="10000" step="1" required><label for="bulk-reason">Reason</label><input id="bulk-reason" required minlength="3" maxlength="80" placeholder="e.g. Term bonus"><div class="modal-actions"><button class="btn primary" type="submit" id="bulk-save">Add credits</button></div></form>`);
+    $2("credit-bulk-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      void busy($2("bulk-save"), async () => {
+        const r = await api("/api/admin/credits/grant-bulk", { user_ids: ids, amount: Number($2("bulk-amount").value), reason: $2("bulk-reason").value });
+        creditAdminState.picked.clear();
+        closeModal();
+        toast(`Credits added to ${r.granted_to} user${r.granted_to === 1 ? "" : "s"}.`);
         await loadCreditAdmin();
       });
     });
@@ -32669,6 +32741,10 @@
       { id: "demo-low", name: "Thandi Mokoena", email: "thandi@school.example", role: "operator", workspace: "Sample School", included: 200, granted: 0, used: 188, left: 12, status: "low", paused: false, spend_cap: 250 },
       { id: "demo-zero", name: "Pieter van Wyk", email: "pieter@example.co.za", role: "operator", workspace: "Sample Business", included: 200, granted: 0, used: 200, left: 0, status: "zero", paused: true, spend_cap: null }
     ] };
+    if (path === "/api/admin/margin") return { month: "Demo month", users: 3, fee: 79, revenue_excl_vat: 206.09, credits_spent: 189, credits_granted: 0, estimated_cost: 1.89, margin_pct: 99.1, assumption: "Assumes every non-admin user pays the monthly fee. Billing is not connected yet, so top-ups are not counted as revenue. Fixed platform costs are not included." };
+    if (path.split("?")[0] === "/api/admin/exports/balances") return { filename: "credit-balances-demo.csv", csv: "\uFEFFName,Email,Workspace,Allowance,Spending cap,Used,Left,Status\nDemo Operator,operator@demo.local,Demo workspace,200,,0,200,ok\n" };
+    if (path.split("?")[0] === "/api/admin/exports/ledger") return { filename: "credit-ledger-demo.csv", csv: "\uFEFFWhen,Month,Name,Email,Workspace,Credits,Reason,Ledger ID\n2026-10-14T10:00:00,demo,Demo Operator,operator@demo.local,Demo workspace,-1,helper_message,demo-charge\n" };
+    if (path === "/api/admin/credits/grant-bulk") return { granted_to: Array.isArray(body?.user_ids) ? new Set(body.user_ids).size : 0, amount: Number(body?.amount) || 0 };
     if (/^\/api\/admin\/credits\/[^/]+\/history$/.test(path)) return { user: { name: "Demo user", workspace: "Demo workspace" }, view: { used: 1, left: 199 }, ledger: [{ id: "demo-charge", month: "demo", delta: -1, reason: "helper_message", created: "2026-10-14T10:00:00", undone: false }], audit: [] };
     if (/^\/api\/admin\/credits\/[^/]+\/(grant|allowance|cap|pause|undo\/[^/]+)$/.test(path)) return { included: 200, granted: Number(body?.amount) || 0, used: 0, left: 200, paused: !!body?.paused, spend_cap: body?.spend_cap ?? null };
     if (path === "/api/credits") return { month: "demo", included: 200, granted: 0, used: 0, left: 200, resets: (() => {
