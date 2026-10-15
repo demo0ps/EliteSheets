@@ -1370,7 +1370,7 @@ body.compact td, body.compact th { padding: 8px 12px; }
 /* Kiaat quick access: desktop top bar, phone floating orb, Home card */
 .kiaat-quick{display:inline-flex;align-items:center;gap:6px;font-weight:700}
 .kiaat-quick-img{width:22px;height:22px;border-radius:50%}
-.kiaat-orb{position:fixed;left:14px;bottom:86px;width:64px;height:64px;padding:0;border:0;border-radius:50%;background:transparent;cursor:pointer;z-index:70;box-shadow:0 10px 22px rgba(19,41,61,.28)}
+.kiaat-orb{position:fixed;right:14px;bottom:86px;width:64px;height:64px;padding:0;border:0;border-radius:50%;background:transparent;cursor:pointer;z-index:70;box-shadow:0 10px 22px rgba(19,41,61,.28)}
 .kiaat-orb img{display:block;width:100%;height:100%;border-radius:50%}
 .kiaat-orb[hidden]{display:none !important}
 @media (min-width:1025px){.kiaat-orb{display:none !important}}
