@@ -58,6 +58,11 @@ body:has(.login-minimal){background:#F3FAF9 !important;background-image:none !im
 .lp-end .btn.primary{background:#FFFFFF;color:#0A7C78;box-shadow:none}
 .lp-end .btn.primary:hover:not(:disabled){background:#E0F4F1}
 `;
+  function assetUrl(name) {
+    const link = document.querySelector('link[href*="styles.css"]');
+    const base = link ? new URL(".", link.href).href : "/static/";
+    return base + name;
+  }
   function landingHtml(logoHtml, productCreditHtml, demo) {
     const demoCta = demo ? `<button class="btn primary" data-launch-vert="education">Try the sample class</button>` : "";
     const demoCtaEnd = demo ? `<button class="btn primary" data-launch-vert="education" style="margin-top:14px">Try the sample class</button>` : "";
@@ -76,7 +81,7 @@ body:has(.login-minimal){background:#F3FAF9 !important;background-image:none !im
     <p class="lp-note">Free for 2 weeks, then R79 a month including VAT.</p>
   </div>
   <figure class="lp-shot">
-    <img src="/static/landing-gradebook.png" alt="Elite Sheets gradebook for a sample Grade 9B Maths class, with three assessments, learner numbers, term marks and CAPS levels" width="1000" height="1490">
+    <img src="${assetUrl("landing-gradebook.png")}" alt="Elite Sheets gradebook for a sample Grade 9B Maths class, with three assessments, learner numbers, term marks and CAPS levels" width="1000" height="1490">
     <figcaption>Sample class. Learners are shown by number only.</figcaption>
   </figure>
 </section>
@@ -121,11 +126,11 @@ body:has(.login-minimal){background:#F3FAF9 !important;background-image:none !im
   </ol>
   <div class="lp-pair">
     <figure class="lp-shot" style="margin:0">
-      <img src="/static/landing-gradebook-checks.png" alt="Gradebook Checks panel listing an error when the weights add up to 90 percent instead of 100 percent" width="1000" height="1490" loading="lazy">
+      <img src="${assetUrl("landing-gradebook-checks.png")}" alt="Gradebook Checks panel listing an error when the weights add up to 90 percent instead of 100 percent" width="1000" height="1490" loading="lazy">
       <figcaption>The Checks panel, with a weight error. Download stays locked until it is fixed.</figcaption>
     </figure>
     <figure class="lp-shot" style="margin:0">
-      <img src="/static/landing-gradebook.png" alt="Gradebook with the weights totalling 100 percent, term marks and CAPS levels for each learner" width="1000" height="1490" loading="lazy">
+      <img src="${assetUrl("landing-gradebook.png")}" alt="Gradebook with the weights totalling 100 percent, term marks and CAPS levels for each learner" width="1000" height="1490" loading="lazy">
       <figcaption>The same class with the weights corrected to 100%.</figcaption>
     </figure>
   </div>
