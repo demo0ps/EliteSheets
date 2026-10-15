@@ -1,63 +1,8 @@
-// Public landing page shown before sign-in. Facts only: every claim matches what the app does today.
+// Public landing page shown before sign-in. Built to be understood at a glance: a looping product demo,
+// three picture steps and short labels. Every claim matches what the app does today.
 // The element IDs below are used by the sign-in and sign-up handlers in app.ts; do not rename them.
 
-export const LANDING_CSS = `
-.login-minimal,body:has(.login-minimal){--bg:#F3FAF9;--panel:#FFFFFF;--line:#D3E8E5;--line-strong:#A6D0CA;--ink:#13293D;--muted:#4D6475;--accent:#0A7C78;--accent-hover:#076562;--accent-soft:#E0F4F1;--accent-border:#9ED8D1;--gold:#F5B82E;--gold-soft:#FFF4DB}
-body:has(.login-minimal){background:#F3FAF9 !important;background-image:none !important}
-.login-minimal{max-width:960px;margin:0 auto;padding:12px 16px 40px;color:var(--ink);text-align:left}
-.login-minimal .btn.primary{box-shadow:0 6px 16px rgba(10,124,120,.25)}
-.lp-hero{display:grid;grid-template-columns:minmax(0,1fr);gap:28px;margin:18px 0 8px}
-@media (min-width:860px){.lp-hero{grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);align-items:center}}
-.lp-hero h1{color:var(--ink);font-size:clamp(28px,4vw,42px);line-height:1.12;margin:12px 0 14px}
-.lp-lede{font-size:17px;line-height:1.55;color:var(--muted);margin:0 0 20px}
-.lp-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
-.lp-actions .btn{padding:14px 20px;font-size:16px}
-.lp-link{font-weight:600;color:var(--accent-hover)}
-.lp-note{font-size:14px;color:var(--muted);margin:14px 0 0}
-.lp-shot{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;box-shadow:0 10px 30px rgba(19,41,61,.08)}
-.lp-shot img{width:100%;height:auto;display:block;border-radius:8px;border:1px solid var(--line)}
-.lp-shot figcaption{font-size:13px;color:var(--muted);margin:8px 2px 2px}
-.lp-section{margin:56px 0 0}
-.lp-section h2{font-size:24px;line-height:1.25;margin:0 0 10px;color:var(--ink)}
-.lp-section > p{font-size:16px;line-height:1.6;color:var(--ink);margin:0 0 14px;max-width:760px}
-.lp-table{width:100%;max-width:620px;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:16px 0 8px;font-size:15px}
-.lp-table th,.lp-table td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}
-.lp-table th{background:var(--accent-soft);color:var(--accent-hover);font-weight:700}
-.lp-table tr:last-child td{border-bottom:0}
-.lp-table td.num{font-variant-numeric:tabular-nums}
-.lp-table tr.total td{font-weight:700;background:var(--gold-soft)}
-.lp-steps{list-style:none;margin:18px 0 0;padding:0;display:grid;gap:14px}
-.lp-steps li{display:grid;grid-template-columns:40px minmax(0,1fr);gap:14px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;padding:16px 18px}
-.lp-steps b{width:34px;height:34px;line-height:34px;text-align:center;border-radius:50%;background:var(--gold);color:var(--ink);font-weight:700}
-.lp-steps h3{font-size:17px;margin:2px 0 6px}
-.lp-steps p{font-size:15px;line-height:1.55;margin:0;color:var(--ink)}
-.lp-steps p + p{margin-top:6px;color:var(--muted)}
-.lp-pair{display:grid;gap:16px;margin-top:20px}
-@media (min-width:860px){.lp-pair{grid-template-columns:1fr 1fr}}
-.lp-grid{display:grid;gap:14px;margin-top:18px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
-.lp-card{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--accent);border-radius:12px;padding:18px}
-.lp-card h3{font-size:17px;margin:0 0 6px}
-.lp-card p{font-size:15px;line-height:1.55;margin:0}
-.lp-card .lp-tag{display:inline-block;font-size:12px;font-weight:700;color:var(--accent-hover);background:var(--accent-soft);border-radius:999px;padding:3px 9px;margin-bottom:8px}
-.lp-privacy{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:10px}
-.lp-privacy li{background:var(--accent-soft);border:1px solid var(--accent-border);border-radius:10px;padding:12px 14px;font-size:15px;line-height:1.5}
-.lp-price{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:16px;display:grid;gap:14px}
-@media (min-width:700px){.lp-price{grid-template-columns:1fr auto;align-items:center}}
-.lp-price strong{font-size:26px;color:var(--ink)}
-.lp-price ul{margin:8px 0 0;padding-left:18px;font-size:15px;line-height:1.7}
-.lp-faq details{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-top:10px}
-.lp-faq summary{cursor:pointer;font-weight:600}
-.lp-faq p{margin:8px 0 0;font-size:15px;line-height:1.55}
-.lp-signin{margin:56px auto 0;max-width:520px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
-.lp-signin h2{font-size:22px;margin:10px 0 4px}
-.lp-end{margin:48px 0 10px;padding:26px;background:linear-gradient(135deg,var(--accent) 0%,#0B5E7A 100%);color:#fff;border-radius:14px}
-.lp-end h2{color:#fff;font-size:24px;margin:0 0 6px}
-.lp-end p{color:#E6F7F5;margin:0 0 14px}
-.lp-end .btn.primary{background:#FFFFFF;color:#0A7C78;box-shadow:none}
-.lp-end .btn.primary:hover:not(:disabled){background:#E0F4F1}
-`;
-
-// Images sit next to styles.css, so resolve from that link: works on the local server (/static/)
+// Images and icons sit next to styles.css, so resolve from that link: works on the local server (/static/)
 // and on GitHub Pages (./web/), where absolute /static paths do not exist.
 function assetUrl(name: string): string {
   const link = document.querySelector<HTMLLinkElement>('link[href*="styles.css"]');
@@ -65,13 +10,92 @@ function assetUrl(name: string): string {
   return base + name;
 }
 
+export const LANDING_CSS = `
+.login-minimal,body:has(.login-minimal){--bg:#F3FAF9;--panel:#FFFFFF;--line:#D3E8E5;--ink:#13293D;--muted:#4D6475;--accent:#0A7C78;--accent-hover:#076562;--accent-soft:#E0F4F1;--accent-border:#9ED8D1;--gold:#F5B82E;--gold-soft:#FFF4DB}
+body:has(.login-minimal){background:#F3FAF9 !important;background-image:none !important}
+.login-minimal{max-width:1040px;margin:0 auto;padding:12px 18px 48px;color:var(--ink);text-align:center}
+.login-minimal .btn.primary{box-shadow:0 8px 20px rgba(10,124,120,.28)}
+.lp-big{font-size:18px;padding:16px 28px;border-radius:14px}
+.lp-hero{display:grid;gap:28px;align-items:center;margin:20px 0 8px;text-align:left}
+@media (min-width:880px){.lp-hero{grid-template-columns:1fr 1.1fr}}
+.lp-hero h1{font-size:clamp(30px,4.6vw,46px);line-height:1.1;margin:0 0 14px;color:var(--ink)}
+.lp-sub{font-size:19px;color:var(--muted);margin:0 0 22px;line-height:1.45}
+.lp-cta{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.lp-try{font-weight:600;color:var(--accent-hover);font-size:15px}
+.lp-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.lp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:7px 13px;font-size:14px;font-weight:600}
+.lp-chip img,.lp-ico{width:20px;height:20px;display:block}
+/* demo card */
+.lp-demo{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 14px 36px rgba(19,41,61,.10);text-align:left;font-size:13px}
+.lp-demo-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-weight:700;font-size:14px}
+.lp-stack{position:relative;height:26px;min-width:120px}
+.lp-stack span{position:absolute;right:0;top:0;white-space:nowrap}
+.lp-w1{color:#B42318;animation:lpProblem 9s linear infinite}
+.lp-w2{color:var(--accent);opacity:0;animation:lpOk 9s linear infinite}
+.lp-weights{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
+.lp-weights div{background:var(--accent-soft);border-radius:8px;padding:6px 8px;font-size:12px;color:var(--accent-hover);font-weight:600}
+.lp-table{width:100%;border-collapse:collapse}
+.lp-table th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left;padding:4px 6px}
+.lp-table td{padding:6px;border-top:1px solid var(--line)}
+.lp-c{display:inline-block;min-width:34px;text-align:center;background:#F3F7F7;border-radius:6px;padding:4px 0;opacity:0;animation:lpPop 9s linear infinite;animation-delay:var(--d)}
+.lp-t{font-weight:700;color:var(--accent-hover);opacity:0;animation:lpPop 9s linear infinite;animation-delay:var(--d)}
+.lp-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.lp-status{position:relative;height:22px;font-weight:700}
+.lp-status span{position:absolute;left:0;top:0;white-space:nowrap}
+.lp-s1{color:#B42318;animation:lpProblem 9s linear infinite}
+.lp-s2{color:var(--accent-hover);opacity:0;animation:lpOk 9s linear infinite}
+.lp-dl{background:#C9D8D6;color:#fff;border-radius:10px;padding:9px 14px;font-weight:700;font-size:13px;animation:lpDl 9s linear infinite}
+@keyframes lpPop{0%{opacity:0}6%,92%{opacity:1}100%{opacity:0}}
+@keyframes lpProblem{0%,40%{opacity:1}46%,100%{opacity:0}}
+@keyframes lpOk{0%,50%{opacity:0}56%,94%{opacity:1}100%{opacity:0}}
+@keyframes lpDl{0%,52%{background:#C9D8D6}58%,94%{background:#0A7C78}100%{background:#C9D8D6}}
+@media (prefers-reduced-motion: reduce){
+  .lp-w1,.lp-s1,.lp-w2,.lp-s2,.lp-c,.lp-t,.lp-dl{animation:none !important}
+  .lp-w1,.lp-s1{opacity:0}.lp-w2,.lp-s2,.lp-c,.lp-t{opacity:1}.lp-dl{background:#0A7C78}
+}
+/* sections */
+.lp-section{margin:64px 0 0}
+.lp-section h2{font-size:26px;margin:0 0 22px;color:var(--ink)}
+.lp-steps{display:grid;gap:14px;grid-template-columns:1fr}
+@media (min-width:760px){.lp-steps{grid-template-columns:repeat(3,1fr)}}
+.lp-step{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px 18px}
+.lp-step .lp-num{display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center;border-radius:50%;background:var(--gold);color:var(--ink);font-weight:800;margin-bottom:10px}
+.lp-step img{width:64px;height:64px;display:block;margin:0 auto 10px}
+.lp-step strong{font-size:20px}
+.lp-tiles{display:grid;gap:12px;grid-template-columns:repeat(2,1fr)}
+@media (min-width:760px){.lp-tiles{grid-template-columns:repeat(4,1fr)}}
+.lp-tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 10px;font-weight:700;font-size:15px}
+.lp-tile img{width:44px;height:44px;display:block;margin:0 auto 8px}
+.lp-kiaat{font-size:17px;color:var(--muted);margin:0 0 18px}
+.lp-privacy{display:grid;gap:12px;grid-template-columns:1fr}
+@media (min-width:760px){.lp-privacy{grid-template-columns:repeat(3,1fr)}}
+.lp-privacy div{background:var(--accent-soft);border:1px solid var(--accent-border);border-radius:14px;padding:18px 12px;font-weight:700;font-size:16px}
+.lp-privacy img{width:36px;height:36px;display:block;margin:0 auto 8px}
+.lp-price{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:26px;display:grid;gap:14px;justify-items:center}
+.lp-price strong{font-size:30px}
+.lp-faq{text-align:left;max-width:720px;margin:0 auto}
+.lp-faq details{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin-top:10px}
+.lp-faq summary{cursor:pointer;font-weight:700;font-size:16px}
+.lp-faq p{margin:8px 0 0;font-size:15px;line-height:1.5;color:var(--muted)}
+.lp-signin{margin:64px auto 0;max-width:520px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;text-align:left}
+.lp-signin h2{font-size:22px;margin:12px 0 4px;text-align:center}
+.lp-end{margin:56px 0 10px;padding:32px 24px;background:linear-gradient(135deg,var(--accent) 0%,#0B5E7A 100%);color:#fff;border-radius:18px}
+.lp-end h2{color:#fff;font-size:28px;margin:0 0 16px}
+.lp-end .btn.primary{background:#FFFFFF;color:#0A7C78;box-shadow:none}
+.lp-end .btn.primary:hover:not(:disabled){background:#E0F4F1}
+.lp-note{font-size:14px;color:var(--muted);margin:0}
+.login-minimal a,.login-minimal .btn{text-decoration:none !important}
+`;
+
 export function landingHtml(logoHtml: string, productCreditHtml: string, demo: boolean): string {
-  const demoCta = demo
-    ? `<button class="btn primary" data-launch-vert="education">Try the sample class</button>`
+  const trySample = demo
+    ? `<a class="lp-try" href="#" data-launch-vert="education">or try the sample class</a>`
     : '';
-  const demoCtaEnd = demo
-    ? `<button class="btn primary" data-launch-vert="education" style="margin-top:14px">Try the sample class</button>`
+  const trySampleEnd = demo
+    ? `<button class="btn primary lp-big" data-launch-vert="education" style="margin-top:16px;background:#FFFFFF;color:#0A7C78">Try the sample class</button>`
     : '';
+  const cells = (marks: string[], delays: number[]) =>
+    marks.map((m, i) => `<td><span class="lp-c" style="--d:${delays[i]}s">${m}</span></td>`).join('');
   return `<main class="login-minimal">
 <style>${LANDING_CSS}</style>
 <header>${logoHtml}</header>
@@ -79,128 +103,84 @@ export function landingHtml(logoHtml: string, productCreditHtml: string, demo: b
 <section class="lp-hero">
   <div>
     <h1>Turn messy school marks into checked, shareable reports.</h1>
-    <p class="lp-lede">Kiaat is a gradebook for South African teachers. Weight your tests and exams, see term marks and CAPS levels, fix problems before you export, and download a clean Excel file.</p>
-    <div class="lp-actions">
-      ${demoCta}
-      <a class="lp-link" href="#get-started">Create a free account</a>
+    <p class="lp-sub">Weighted gradebook for South African teachers.</p>
+    <div class="lp-cta">
+      <a class="btn primary lp-big" href="#get-started">Start free trial</a>
+      ${trySample}
     </div>
-    <p class="lp-note">Free for 2 weeks, then R79 a month including VAT.</p>
+    <div class="lp-chips">
+      <span class="lp-chip"><img src="${assetUrl('icons/clock.png')}" alt="" onerror="this.remove()">Free 2 weeks</span>
+      <span class="lp-chip"><img src="${assetUrl('icons/dollar.png')}" alt="" onerror="this.remove()">R79 a month</span>
+      <span class="lp-chip"><img src="${assetUrl('icons/shield.png')}" alt="" onerror="this.remove()">Marks stay in your browser</span>
+    </div>
   </div>
-  <figure class="lp-shot">
-    <img src="${assetUrl('landing-gradebook.png')}" alt="Kiaat gradebook for a sample Grade 9B Maths class, with three assessments, learner numbers, term marks and CAPS levels" width="1000" height="1490">
-    <figcaption>Sample class. Learners are shown by number only.</figcaption>
-  </figure>
+  <div class="lp-demo" role="img" aria-label="Animated gradebook: marks fill in, weights are checked, then Download Excel turns on">
+    <div class="lp-demo-top"><span>Grade 9B Maths</span><span class="lp-stack"><span class="lp-w1">Weights 90%</span><span class="lp-w2">Weights 100%</span></span></div>
+    <div class="lp-weights"><div>Test 1 · 20%</div><div>Test 2 · 20%</div><div>Exam · 60%</div></div>
+    <table class="lp-table">
+      <thead><tr><th>Learner</th><th>Test 1</th><th>Test 2</th><th>Exam</th><th>Term</th></tr></thead>
+      <tbody>
+        <tr><td>L-014</td>${cells(['8','18','71'],[0.4,0.8,1.2])}<td><span class="lp-t" style="--d:1.6s">73%</span></td></tr>
+        <tr><td>L-027</td>${cells(['6','22','80'],[1.8,2.2,2.6])}<td><span class="lp-t" style="--d:3s">77%</span></td></tr>
+        <tr><td>L-031</td>${cells(['4','12','44'],[3.4,3.8,4.2])}<td><span class="lp-t" style="--d:4.6s">44%</span></td></tr>
+      </tbody>
+    </table>
+    <div class="lp-foot">
+      <span class="lp-status"><span class="lp-s1">1 problem: weights add to 90%</span><span class="lp-s2">All checks passed</span></span>
+      <span class="lp-dl">Download Excel</span>
+    </div>
+  </div>
 </section>
 
-<section class="lp-section" id="kiaat">
-  <h2>Built like a kiaat</h2>
-  <p>The kiaat is a South African tree. It grows steadily, roots deeply and gives shade to the people around it. Kiaat is built the same way: careful with every mark, dependable from one term to the next, and always leaving the teacher in charge of the result.</p>
-</section>
-
-<section class="lp-section" id="why">
-  <h2>Why term marks go wrong</h2>
-  <p>Adding raw points favours the longer assessment. Each mark has to become a percentage first, then the weights apply. Here is one learner, with a test weighted 20% and an exam weighted 80%:</p>
-  <table class="lp-table">
-    <thead><tr><th>Assessment</th><th>Mark</th><th>Percentage</th><th>Weight</th></tr></thead>
-    <tbody>
-      <tr><td>Test</td><td class="num">6 / 10</td><td class="num">60%</td><td class="num">20%</td></tr>
-      <tr><td>Exam</td><td class="num">80 / 100</td><td class="num">80%</td><td class="num">80%</td></tr>
-      <tr class="total"><td colspan="2">Term mark (weighted)</td><td class="num">76%</td><td class="num">100%</td></tr>
-    </tbody>
-  </table>
-  <p class="lp-note" style="margin-top:8px">Adding the raw points instead gives 86 out of 110, which is 78%. That is a different mark, and it is wrong for this weighting.</p>
-</section>
-
-<section class="lp-section" id="how-it-works">
-  <h2>How it works</h2>
-  <p>Four steps, in the order you use them. You can change anything at any time.</p>
-  <ol class="lp-steps">
-    <li><b>1</b><div>
-      <h3>Create a class and add learners</h3>
-      <p>Name the class, for example Grade 9B Maths. Add each learner by learner number or initials.</p>
-      <p>Learner names are not needed in the gradebook.</p>
-    </div></li>
-    <li><b>2</b><div>
-      <h3>Add assessments with weights</h3>
-      <p>For each test, exam or task, enter a name, the maximum mark and the weight as a percentage. The weights must total 100%, and the running total is shown above the list.</p>
-    </div></li>
-    <li><b>3</b><div>
-      <h3>Enter marks as they are on the paper</h3>
-      <p>Type the raw marks. Each mark is converted to a percentage, then the term mark and CAPS level (1 to 7) are calculated for every learner.</p>
-      <p>Mark a learner absent and no term mark is calculated until a mark is entered.</p>
-    </div></li>
-    <li><b>4</b><div>
-      <h3>Check, then download Excel</h3>
-      <p>The Checks panel lists missing marks, marks above the maximum, duplicate learners and weights that do not total 100%. Download unlocks when there are no errors.</p>
-      <p>The Excel file has a Marks sheet with the calculated results, and a Checks sheet with what was found.</p>
-    </div></li>
-  </ol>
-  <div class="lp-pair">
-    <figure class="lp-shot" style="margin:0">
-      <img src="${assetUrl('landing-gradebook-checks.png')}" alt="Gradebook Checks panel listing an error when the weights add up to 90 percent instead of 100 percent" width="1000" height="1490" loading="lazy">
-      <figcaption>The Checks panel, with a weight error. Download stays locked until it is fixed.</figcaption>
-    </figure>
-    <figure class="lp-shot" style="margin:0">
-      <img src="${assetUrl('landing-gradebook.png')}" alt="Gradebook with the weights totalling 100 percent, term marks and CAPS levels for each learner" width="1000" height="1490" loading="lazy">
-      <figcaption>The same class with the weights corrected to 100%.</figcaption>
-    </figure>
+<section class="lp-section" id="how">
+  <h2>Three steps</h2>
+  <div class="lp-steps">
+    <div class="lp-step"><span class="lp-num">1</span><img src="${assetUrl('icons/grid.png')}" alt=""><strong>Add marks</strong></div>
+    <div class="lp-step"><span class="lp-num">2</span><img src="${assetUrl('icons/check.png')}" alt=""><strong>Check</strong></div>
+    <div class="lp-step"><span class="lp-num">3</span><img src="${assetUrl('icons/download.png')}" alt=""><strong>Download</strong></div>
   </div>
 </section>
 
 <section class="lp-section" id="features">
-  <h2>Everything else a teacher needs, in one app</h2>
-  <p>Use only the tools you need. Each one opens from the Home page.</p>
-  <div class="lp-grid">
-    <div class="lp-card"><span class="lp-tag">Core</span><h3>Gradebook</h3><p>Weighted assessments, term marks, CAPS levels, checks before export, and an Excel download.</p></div>
-    <div class="lp-card"><h3>Registers</h3><p>Daily class or period registers with present, absent and late marks. Monthly absentee rate, flags for three days in a row and for repeated absence, and a signed monthly Excel export.</p></div>
-    <div class="lp-card"><h3>Planner</h3><p>Your timetable, term dates and a weekly calendar. Reminders show in the app, and browser notifications work if you allow them.</p></div>
-    <div class="lp-card"><h3>Pacing</h3><p>Plan your scheme of work across school days, tick lessons as you teach them, and move the remaining plan when a day is lost.</p></div>
-    <div class="lp-card"><h3>CPTD log</h3><p>Record your PD points by type across your three-year cycle, with reporting windows and an Excel summary.</p><p style="margin-top:6px;color:var(--muted)">A personal record only. Nothing is sent to SACE; you still report through SACE yourself.</p></div>
-    <div class="lp-card"><span class="lp-tag">AI helper</span><h3>Kiaat</h3><p>Draft CAPS-aligned lesson plans, class tests with memos, and assignments with rubrics. Mark totals are checked in code. Refine a draft in the same chat. You review every draft before you use it.</p></div>
-    <div class="lp-card"><h3>Import a file</h3><p>Already have a mark sheet? Open an Excel or CSV file, fix SA ID and phone formats, pass levels and duplicates, then download the cleaned copy.</p></div>
+  <h2>Everything in one app</h2>
+  <div class="lp-tiles">
+    <div class="lp-tile"><img src="${assetUrl('icons/book.png')}" alt="">Gradebook</div>
+    <div class="lp-tile"><img src="${assetUrl('icons/clipboard.png')}" alt="">Registers</div>
+    <div class="lp-tile"><img src="${assetUrl('icons/clock.png')}" alt="">Planner</div>
+    <div class="lp-tile"><img src="${assetUrl('icons/chart.png')}" alt="">Pacing</div>
+    <div class="lp-tile"><img src="${assetUrl('icons/shield.png')}" alt="">CPTD log</div>
+    <div class="lp-tile"><img src="${assetUrl('icons/spark.png')}" alt="">Kiaat helper</div>
+    <div class="lp-tile"><img src="${assetUrl('icons/upload.png')}" alt="">Import</div>
+    <div class="lp-tile"><img src="${assetUrl('icons/school.png')}" alt="">CAPS levels</div>
   </div>
 </section>
 
 <section class="lp-section" id="privacy">
-  <h2>Where your data is kept</h2>
-  <p>Teachers work with learner information, so the rules are simple:</p>
-  <ul class="lp-privacy">
-    <li><strong>Marks, registers, planner, pacing and CPTD records are saved in your browser.</strong> They are not stored on our server. Clearing site data deletes them, so download your Excel files as a backup.</li>
-    <li><strong>Learner names and numbers never go to the AI service.</strong> Kiaat receives only the grade, subject, topic and mark totals you enter.</li>
-    <li><strong>Register photos are never sent to the AI.</strong> Timetable photos may be, because they contain no learner information.</li>
-  </ul>
+  <div class="lp-privacy">
+    <div><img src="${assetUrl('icons/lock.png')}" alt="">Saved in your browser</div>
+    <div><img src="${assetUrl('icons/users.png')}" alt="">No learner names to AI</div>
+    <div><img src="${assetUrl('icons/download.png')}" alt="">Export anytime</div>
+  </div>
 </section>
 
 <section class="lp-section" id="pricing">
-  <h2>Price</h2>
   <div class="lp-price">
-    <div>
-      <strong>Free for 2 weeks, then R79 a month</strong>
-      <p class="lp-note" style="margin:6px 0 0">Monthly plan, including VAT. Pay on Yoco's secure page; we never see your card.</p>
-      <ul>
-        <li>Gradebook, registers, planner, pacing and CPTD log</li>
-        <li>Import and clean existing files</li>
-        <li>Kiaat drafts</li>
-      </ul>
-    </div>
-    <a class="btn primary" href="#get-started">Start the free trial</a>
+    <strong>Free 2 weeks, then R79 a month</strong>
+    <p class="lp-note">Including VAT. Cancel any time.</p>
+    <a class="btn primary lp-big" href="#get-started">Start free trial</a>
   </div>
 </section>
 
 <section class="lp-section lp-faq" id="faq">
-  <h2>Questions teachers ask</h2>
-  <details><summary>Can I share my gradebook with someone?</summary><p>Not yet. Download the Excel file and send it yourself.</p></details>
-  <details><summary>What if I clear my browser data?</summary><p>The saved marks are deleted. Download Excel files regularly, and before you switch computers or browsers.</p></details>
-  <details><summary>Does Kiaat see my learners?</summary><p>No. It receives only the grade, CAPS subject, topic and mark totals you type in. Learner names and numbers never go to the AI service.</p></details>
-  <details><summary>Is my CPTD log sent to SACE?</summary><p>No. It is your personal record. You still report your PD points through SACE yourself.</p></details>
-  <details><summary>Does it connect to SA-SAMS?</summary><p>No. You export the checked marks and copy them across yourself.</p></details>
-  <details><summary>Do I need to pay during the trial?</summary><p>No. The trial is free for 2 weeks. After that the plan is R79 a month, including VAT.</p></details>
+  <details><summary>Can I share it?</summary><p>Not yet. Download the Excel file and send it.</p></details>
+  <details><summary>Does Kiaat see my learners?</summary><p>No. It sees only grade, subject, topic and mark totals.</p></details>
+  <details><summary>Is my CPTD log sent to SACE?</summary><p>No. It is your personal record.</p></details>
+  <details><summary>Does it connect to SA-SAMS?</summary><p>No. Copy the checked marks across yourself.</p></details>
 </section>
 
 <section class="lp-signin" id="get-started">
   ${logoHtml}
-  <h2>Get started</h2>
-  <p class="lp-note" style="margin-top:0">Create a free account, or sign in to yours.</p>
+  <h2>Start your free trial</h2>
   <details class="divider-details"><summary>Create a free account</summary>
     <form id="signup-form">
       <label for="signup-name">Your name</label>
@@ -226,10 +206,10 @@ export function landingHtml(logoHtml: string, productCreditHtml: string, demo: b
 </section>
 
 <section class="lp-end">
-  <h2>Check your next mark sheet in minutes</h2>
-  <p>Start with the sample class, then replace it with your own learners.</p>
-  ${demoCtaEnd}
+  <h2>Your next mark sheet, checked.</h2>
+  <a class="btn primary lp-big" href="#get-started">Start free trial</a>
+  ${trySampleEnd}
 </section>
-<div style="margin-top:20px">${productCreditHtml}</div>
+<div style="margin-top:22px">${productCreditHtml}</div>
 </main>`;
 }
