@@ -1348,3 +1348,21 @@ body.compact td, body.compact th { padding: 8px 12px; }
 }
 
 .m-tab .icon-3d { width: 26px; height: 26px; }
+
+/* Home page: three-step start and one card per tool */
+.home-lede{font-size:15px;color:var(--muted);margin:4px 0 0}
+.home-start{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--accent);border-radius:14px;padding:20px 22px;margin-bottom:8px}
+.home-start h2{font-size:18px;margin:0 0 12px}
+.home-steps{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:12px}
+@media (min-width:760px){.home-steps{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.home-steps li{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;align-items:start}
+.home-steps b{width:28px;height:28px;line-height:28px;text-align:center;border-radius:50%;background:var(--gold);color:var(--ink);font-weight:700}
+.home-steps strong{display:block;margin-bottom:2px}
+.home-steps p{margin:0;font-size:14px;color:var(--muted);line-height:1.5}
+.home-h2{font-size:16px;margin:24px 0 10px}
+.home-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.home-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;font:inherit;color:var(--ink)}
+.home-card:hover{border-color:var(--accent-border);box-shadow:0 6px 18px rgba(10,124,120,.10)}
+.home-card strong{font-size:16px}
+.home-card span:not(.home-ico){font-size:14px;color:var(--muted);line-height:1.45}
+.home-ico{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;background:var(--accent-soft)}

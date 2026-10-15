@@ -1,4 +1,5 @@
 import { ELITE_LOGO_URI } from './elite_logo';
+import { landingHtml } from './landing';
 import * as XLSX from 'xlsx';
 import { renderGradebook } from './gradebook';
 import { renderRegister } from './register';
@@ -95,44 +96,22 @@ interface VerticalConfig{
 }
 
 const VERTICAL_META:Record<string,VerticalConfig>={
-  general:{
-    label:'✨ Everyday / Regular User',
-    shortName:'Everyday',
-    badge:'Simple · Clean · 1-Screen Workspace',
-    desc:'Everything in one place: upload messy files, merge a whole folder, or type what columns you want in plain words.',
-    defaultSample:'pivot',
-    tabs:[
-      {page:'workspace',label:'My Spreadsheet',iconName:'grid'},
-      {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
-    ],
-    cards:[
-      {title:'🎓 1-Click Demo: School SA-SAMS (2 Files → 1)',desc:'Watch it join Learner Bio + Subject Marks into 1 clean import sheet.',action:'sample:sasams_students'},
-      {title:'📊 1-Click Demo: Monthly Branch Totals',desc:'Watch it combine regional monthly sheets and calculate Totals automatically.',action:'sample:pivot'}
-    ],
-    samples:[
-      {val:'pivot',label:'Combine Monthly Sheets → Summary Table'},
-      {val:'sasams_students',label:'School SA-SAMS (2 Files → 1 Import Sheet)'},
-      {val:'direct',label:'Contact & Order List → Clean Excel Sheet'},
-    ],
-    builderPresetCmd:'Columns: Name, Email, Phone, Date, Category, Amount, Notes',
-    builderPresetLabel:'Everyday Tracker Sheet',
-    templateCategories:['Education / SA-SAMS','Business PA & Billing','Finance & Operations','HR & Payroll','Supply Chain & ERP']
-  },
   education:{
-    label:'🎓 School & District Office',
+    label:'Teacher',
     shortName:'School',
     badge:'Gradebook · Weighted marks · CAPS levels',
     desc:'Turn messy school marks into checked, shareable reports. Set weighted assessments, see term marks and CAPS levels, and download a clean Excel file. Your marks stay in this browser.',
     defaultSample:'sasams_students',
     tabs:[
-      {page:'gradebook',label:'My Gradebook',iconName:'grid'},
+      {page:'home',label:'Home',iconName:'school'},
+      {page:'gradebook',label:'Gradebook',iconName:'grid'},
       {page:'register',label:'Registers',iconName:'clipboard'},
-      {page:'cptd',label:'CPTD log',iconName:'shield'},
       {page:'planner',label:'Planner',iconName:'clock'},
       {page:'pacing',label:'Pacing',iconName:'chart'},
+      {page:'cptd',label:'CPTD',iconName:'shield'},
       {page:'helper',label:'Sheet Helper',iconName:'spark'},
-      {page:'workspace',label:'Import an existing file',iconName:'grid'},
-      {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
+      {page:'workspace',label:'Import a file',iconName:'upload'},
+      {page:'preferences',label:'Settings',iconName:'settings'}
     ],
     cards:[
       {title:'📋 1-Click Demo: SA-SAMS Student & Marks',desc:'Join SA-SAMS Learner/Parent Bio + Subject Marks into 1 ready-to-import sheet.',action:'sample:sasams_students'},
@@ -149,9 +128,11 @@ const VERTICAL_META:Record<string,VerticalConfig>={
 };
 
 function activeVertical():string{
-  if(user&&user.role!=='admin')return 'education';
-  return overview?.preferences?.vertical||'general';
+  return 'education';
 }
+
+// Pages reached from the Home page and the top-right corner, not the main tab row.
+const SECONDARY_PAGES=['workspace','preferences'];
 
 // Teacher accounts see only the core tabs. Quotes and Templates stay available to the owner.
 function visibleTabs(meta:VerticalConfig){
@@ -168,89 +149,7 @@ function friendlyText(raw:string):string{
 
 function loginPage(){
   user=null;job=null;csrf='';demoToken='';workspaceID='';document.body.className='light';
-  $('root').innerHTML=`<main class="login-minimal"><style>
-.login-minimal,body:has(.login-minimal){--bg:#F3FAF9;--panel:#FFFFFF;--line:#D3E8E5;--line-strong:#A6D0CA;--ink:#13293D;--muted:#4D6475;--accent:#0A7C78;--accent-hover:#076562;--accent-soft:#E0F4F1;--accent-border:#9ED8D1;--gold:#F5B82E;--gold-soft:#FFF4DB}
-body:has(.login-minimal){background:#F3FAF9 !important;background-image:none !important}
-.land-end .btn.primary{background:#FFFFFF;color:#0A7C78;box-shadow:none}
-.land-end .btn.primary:hover:not(:disabled){background:#E0F4F1}
-.login-minimal .btn.primary{box-shadow:0 6px 16px rgba(10,124,120,.25)}
-.land{max-width:860px;margin:0 auto;text-align:left;color:var(--ink)}
-.land h1{color:var(--ink);font-size:clamp(28px,4.2vw,40px);line-height:1.15;margin:14px 0 12px}
-.land-lede{font-size:17px;line-height:1.55;color:var(--muted);margin:0 0 18px}
-.land-note{font-size:14px;color:var(--muted);margin:10px 0 0}
-.land-cta{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;font-size:16px;width:100%;max-width:440px}
-.land-block{margin:44px 0 0}
-.land-block h2{font-size:22px;margin:0 0 10px}
-.land-block p{font-size:16px;line-height:1.6;color:var(--ink);margin:0;max-width:720px}
-.land-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:18px}
-.land-step{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--accent);border-radius:12px;padding:18px}
-.land-step b{display:inline-block;width:30px;height:30px;line-height:30px;text-align:center;border-radius:50%;background:var(--gold);color:var(--ink);font-weight:700;margin-bottom:8px}
-.land-step h3{font-size:16px;margin:0 0 6px}
-.land-step p{font-size:14.5px;margin:0}
-.land-shot{margin:18px 0 0}
-.land-shot img{width:100%;height:auto;border:1px solid var(--line);border-radius:12px;display:block}
-.land-shot figcaption{font-size:13px;color:var(--muted);margin-top:8px}
-.land-trust{display:flex;flex-wrap:wrap;gap:8px 10px;margin-top:18px}
-.land-trust span{background:var(--accent-soft);color:var(--accent-hover);border:1px solid var(--accent-border);border-radius:999px;padding:7px 12px;font-size:14px;font-weight:600}
-.land-faq details{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-top:10px}
-.land-faq summary{cursor:pointer;font-weight:600}
-.land-faq p{margin:8px 0 0;font-size:15px}
-.land-end{margin:44px 0 10px;padding:24px;background:linear-gradient(135deg,var(--accent) 0%,#0B5E7A 100%);color:#fff;border-radius:14px;text-align:left}.land-end .land-note{color:#E6F7F5}.land-end h2{color:#fff}
-.land-end h2{font-size:22px;margin:0 0 6px}
-</style>
-<div class="land" id="top">
-  ${logo()}
-  <h1>Turn messy school marks into checked, shareable reports.</h1>
-  <p class="land-lede">Build a weighted gradebook, see term marks and CAPS levels, and download a clean Excel file. Your marks stay in this browser.</p>
-  ${boot.demo_mode?`<button class="btn primary land-cta" data-launch-vert="education"><span>${icon('school')} Open My Gradebook</span>${icon('arrow')}</button>
-  <p class="land-note">Free for 2 weeks, then R79 a month. Try the sample class first.</p>`:''}
-  <p class="land-note"><a href="#get-started">Create an account or sign in</a></p>
-  <section class="land-block"><h2>Weights added up wrong?</h2><p>Points-based weighting is the usual cause. A 6/10 test and an 80/100 exam only count as you set them when each mark becomes a percentage first. Elite Sheets does that, then checks that weights total 100% before anything exports.</p></section>
-  <figure class="land-shot"><img src="/static/landing-hero.jpg" alt="A smiling teacher checks a neat spreadsheet with a green tick on his laptop" loading="lazy"><figcaption>Illustration, not a real customer or testimonial.</figcaption></figure>
-  <section class="land-block"><h2>How it works</h2><div class="land-steps">
-    <div class="land-step"><b>1</b><h3>Add learners and assessments</h3><p>Name each test or exam and give it a weight. Type learner numbers or initials.</p></div>
-    <div class="land-step"><b>2</b><h3>Check the list</h3><p>Missing marks, wrong totals and weights that do not add to 100% are flagged before export.</p></div>
-    <div class="land-step"><b>3</b><h3>Download Excel</h3><p>Get a Marks sheet with term marks and CAPS levels, and a Checks sheet with what was found.</p></div>
-  </div></section>
-  <figure class="land-shot"><img src="/static/landing-gradebook.png" alt="Gradebook with sample learner numbers, assessment weights, term marks and CAPS levels" loading="lazy"><figcaption>Sample class. Learners are shown by number only.</figcaption></figure>
-  <section class="land-block" id="features"><h2>Everything for the school year, in one place</h2>
-  <div class="land-steps">
-    <div class="land-step"><b>1</b><h3>Gradebook</h3><p>Weighted assessments, term marks, CAPS levels, checks before export, and Excel or CSV download.</p></div>
-    <div class="land-step"><b>2</b><h3>Registers</h3><p>Daily marks (present, absent, late), monthly absentee rate, flags for three days in a row and repeated absence, and a signed monthly Excel export.</p></div>
-    <div class="land-step"><b>3</b><h3>CPTD log</h3><p>Record your PD points by type across your three-year cycle, with reporting windows and an Excel summary. A personal record only; nothing is submitted to SACE.</p></div>
-    <div class="land-step"><b>4</b><h3>Planner</h3><p>Timetable, term dates, a weekly calendar and in-app reminders, with browser notifications if you allow them.</p></div>
-    <div class="land-step"><b>5</b><h3>Pacing</h3><p>Plan your scheme of work on school days, tick lessons as taught, and move the plan when a day is lost.</p></div>
-    <div class="land-step"><b>6</b><h3>Sheet Helper</h3><p>Drafts of CAPS-aligned lesson plans, class tests with memos, and assignments with rubrics. Mark totals are checked in code. Ask follow-up questions or request changes in the same chat. You review every draft before you use it.</p></div>
-  </div></section>
-  <div class="land-trust"><span>Free for 2 weeks</span><span>R79 a month after that</span><span>Excel and CSV export</span><span>Marks stay in this browser</span></div>
-</div>
-<section class="sign-card" id="get-started">${logo()}<h2 style="margin:0 0 8px">Get started</h2><p class="land-note" style="margin-top:0">Sign in to your account or create a free one.</p>
-  <details class="divider-details"><summary>Create a free account (Sign Up)</summary>
-    <form id="signup-form">
-      <div class="field-row">
-        <div><label for="signup-name">Your Name</label><input id="signup-name" required minlength="2" placeholder="e.g. Thabo Mokoena"></div>
-        <div><label for="signup-org">Workspace or Organization Name</label><input id="signup-org" required minlength="2" placeholder="e.g. Personal / My Workspace"></div>
-      </div>
-      <div class="field-row">
-        <div><label for="signup-email">Email</label><input id="signup-email" type="email" required placeholder="you@example.com"></div>
-        <div><label for="signup-password">Password (8+ characters)</label><input id="signup-password" type="password" required minlength="8" placeholder="Password"></div>
-      </div>
-      <button class="btn primary" style="width:100%;margin-top:14px" id="sign-up-btn">Create Account & Open Workspace${icon('arrow')}</button>
-    </form>
-  </details>
-  <details class="divider-details" ${boot.demo_mode?'':'open'}><summary>Sign in to an existing account</summary><form id="login-form"><label for="login-email">Email</label><input id="login-email" type="email" autocomplete="username" required placeholder="you@example.com"><label for="login-password">Password</label><input id="login-password" type="password" autocomplete="current-password" required placeholder="Password"><button class="btn primary" style="width:100%;margin-top:16px" id="sign-in">Sign in${icon('arrow')}</button></form></details>
-  </section>
-<div class="land land-faq" style="margin-top:8px">
-  <section class="land-block"><h2>Questions teachers ask</h2>
-  <details><summary>Is my data safe?</summary><p>Gradebook marks are saved in this browser and are not sent to our server. Export the Excel file to keep a copy.</p></details>
-  <details><summary>What if I clear my browser data?</summary><p>Clearing site data removes the saved marks. Export before you clear it, or before you switch computers.</p></details>
-  <details><summary>Does Sheet Helper see my learners?</summary><p>No. It receives only the grade, CAPS subject, topic and mark totals you enter. Learner names, numbers and marks never go to the AI service.</p></details>
-  <details><summary>Is the CPTD log sent to SACE?</summary><p>No. It is your personal record. You still report your PD points through SACE yourself.</p></details>
-  <details><summary>Does it work with SA-SAMS?</summary><p>Elite Sheets does not connect to SA-SAMS. You export the checked marks and copy them across yourself.</p></details>
-  <details><summary>What does it cost?</summary><p>Free for 2 weeks, then R79 a month.</p></details></section>
-  <div class="land-end"><h2>Check your next mark sheet in minutes</h2><p class="land-note" style="margin-top:0">Start with the sample class, then use your own learners.</p>${boot.demo_mode?`<button class="btn primary land-cta" data-launch-vert="education" style="margin-top:12px"><span>${icon('school')} Open My Gradebook</span>${icon('arrow')}</button>`:''}</div>
-  <div class="signin-powered-wrap">${productCredit()}</div>
-</div></main>`;
+  $('root').innerHTML=landingHtml(logo(),productCredit(),Boolean(boot.demo_mode));
 
   $('login-form').addEventListener('submit',e=>{e.preventDefault();void busy($('sign-in'),async()=>{const r=await api('/api/auth/login',{email:$<HTMLInputElement>('login-email').value,password:$<HTMLInputElement>('login-password').value});$<HTMLInputElement>('login-password').value='';await signedIn(r)})});
   $('signup-form').addEventListener('submit',e=>{e.preventDefault();void busy($('sign-up-btn'),async()=>{
@@ -264,7 +163,7 @@ body:has(.login-minimal){background:#F3FAF9 !important;background-image:none !im
     });
     $<HTMLInputElement>('signup-password').value='';
     await signedIn(r);
-    toast(`Welcome! Opened your ${VERTICAL_META[vert]?.label||'Everyday'} workspace.`);
+    toast('Welcome to Elite Sheets. Start with your gradebook.');
   })});
   if(boot.demo_mode){
     document.querySelectorAll<HTMLButtonElement>('[data-launch-vert]').forEach(b=>b.addEventListener('click',()=>void demoLogin('operator',b.dataset.launchVert!)));
@@ -272,7 +171,7 @@ body:has(.login-minimal){background:#F3FAF9 !important;background-image:none !im
   }
 }
 
-async function demoLogin(role:string,vertical?:string){const r=await api('/api/auth/demo',vertical?{role,vertical}:{role});await signedIn(r)}
+async function demoLogin(role:string,vertical?:string){const r=await api('/api/auth/demo',vertical?{role,vertical}:{role});await signedIn(r);if(vertical)await showPage('gradebook')}
 // Batch 3: if this browser holds unsaved grid edits, reopen that sheet so they can be restored.
 async function xlOfferPending(){
   const pend=xlReadPending();
@@ -282,34 +181,20 @@ async function xlOfferPending(){
     if(j?.report?.rows){job=j;xlRestoreCheckedFor='';}
   }catch{xlClearPending()}
 }
-async function signedIn(r:any){user=r.user;csrf=r.csrf;demoToken=r.demo_token||'';workspaceID=user!.role==='admin'&&boot.demo_mode?'demo-a':user!.tenant_id;await refresh();currentPage=user!.role==='admin'?'admin':'gradebook';job=null;await xlOfferPending();shell();await showPage(currentPage);if(user!.role!=='admin')notifyDueReminders()}
+async function signedIn(r:any){user=r.user;csrf=r.csrf;demoToken=r.demo_token||'';workspaceID=user!.role==='admin'&&boot.demo_mode?'demo-a':user!.tenant_id;await refresh();currentPage=user!.role==='admin'?'admin':'home';job=null;await xlOfferPending();shell();await showPage(currentPage);if(user!.role!=='admin')notifyDueReminders()}
 async function refresh(){if(!user)return;if(user.role==='admin'){customers=(await api('/api/admin/customers')).items;if(!workspaceID||workspaceID==='platform')workspaceID=customers[0]?.id||''}if(workspaceID&&workspaceID!=='platform')overview=await api('/api/overview');else overview={workspace:{name:'Platform administration'},jobs:[],stats:{jobs:0,released:0,held:0,knowledge:0},ai:{enabled:false},preferences:{theme:'light',density:'comfortable',vertical:'general'}};applyPreferences()}
 function applyPreferences(){document.body.className=(('light')+(overview.preferences?.density==='compact'?' compact':'')).trim()}
 
 function shell(){
   if(!user){updateTabbar();return}
   const vert=activeVertical();
-  const vMeta=VERTICAL_META[vert]||VERTICAL_META.general;
-  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${visibleTabs(vMeta).map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right">${user.role==='admin'?`<select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)}</option>`).join('')}</select>`:''}${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}<button id="help" class="btn small">${icon('info')}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Elite Sheets</strong> · Calm, everyday spreadsheet helper</div>${productCredit()}</footer></div>`;
+  const vMeta=VERTICAL_META[vert]||VERTICAL_META.education;
+  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Main navigation">${visibleTabs(vMeta).filter(t=>!SECONDARY_PAGES.includes(t.page)).map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right">${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}${visibleTabs(vMeta).filter(t=>SECONDARY_PAGES.includes(t.page)).map(t=>`<button class="btn small" data-page="${t.page}" title="${escapeHTML(t.label)}">${icon(t.iconName as any)}<span>${escapeHTML(t.label)}</span></button>`).join('')}<button id="help" class="btn small">${icon('info')}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Elite Sheets</strong> · Teacher gradebook, registers and planning</div>${productCredit()}</footer></div>`;
   bindMobileMenu();
   document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach(b=>b.addEventListener('click',()=>void showPage(b.dataset.page!)));
   $('logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
   $('mobile-logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
   $('help').addEventListener('click',showHelp);
-  $('vertical-picker')?.addEventListener('change',()=>void(async()=>{
-    const newVert=$<HTMLSelectElement>('vertical-picker').value;
-    const curPrefs=overview.preferences||{theme:'light',density:'comfortable',explanations:'detailed',auto_checks:true};
-    await api('/api/preferences',{...curPrefs,vertical:newVert},'PUT');
-    job=null;
-    await refresh();
-    const nextTabs=(VERTICAL_META[newVert]||VERTICAL_META.general).tabs;
-    if(!nextTabs.some(t=>t.page===currentPage)&&currentPage!=='admin'){
-      currentPage='workspace';
-    }
-    shell();
-    await showPage(currentPage);
-    toast(`Switched to ${VERTICAL_META[newVert]?.label||newVert}`);
-  })());
   ensureTabbar();
   if($('workspace-picker'))$('workspace-picker').addEventListener('change',()=>void(async()=>{workspaceID=$<HTMLSelectElement>('workspace-picker').value;job=null;await refresh();shell();await showPage(currentPage)})());
 }
@@ -320,7 +205,8 @@ async function showPage(page:string){
   updateTabbar();
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',(b as HTMLElement).dataset.page===page));
   try{
-    if(page==='workspace')studio();
+    if(page==='home')homePage();
+    else if(page==='workspace')studio();
     else if(page==='builder')builderPage();
     else if(page==='gradebook')renderGradebook($('page'),toast);
     else if(page==='register')renderRegister($('page'),toast);
@@ -390,11 +276,37 @@ function sheetMissingSummary():string{
   return `<div>Here is what is still missing on this sheet:</div><ul class="helper-missing">${items.join('')}</ul><div>${verdict}</div>`;
 }
 
+// Home: the teacher's starting point. Three steps for the gradebook, then one card per tool.
+function homePage(){
+  const tools=[
+    {page:'gradebook',icon:'grid',title:'Gradebook',text:'Weighted tests and exams, term marks, CAPS levels, checks, and an Excel download.'},
+    {page:'register',icon:'clipboard',title:'Registers',text:'Daily class registers, monthly absentee rate, and a signed monthly Excel export.'},
+    {page:'planner',icon:'clock',title:'Planner',text:'Timetable, term dates, a weekly calendar and reminders.'},
+    {page:'pacing',icon:'chart',title:'Pacing',text:'Plan your scheme of work on school days and move it when a day is lost.'},
+    {page:'cptd',icon:'shield',title:'CPTD log',text:'PD points by type across your three-year cycle. A personal record; nothing is sent to SACE.'},
+    {page:'helper',icon:'spark',title:'Sheet Helper',text:'Draft CAPS-aligned lesson plans, class tests with memos, and assignments. You review every draft.'},
+    {page:'workspace',icon:'upload',title:'Import a file',text:'Open an existing mark sheet, check it, and download a cleaned copy.'},
+  ];
+  $('page').innerHTML=`<div class="page-heading"><div><h1>Home</h1><p class="home-lede">Start with your gradebook. Everything else is optional.</p></div></div>
+  <section class="home-start" aria-label="Get started">
+    <h2>Get started in three steps</h2>
+    <ol class="home-steps">
+      <li><b>1</b><div><strong>Create a class</strong><p>Name it and add learners by number or initials.</p></div></li>
+      <li><b>2</b><div><strong>Add assessments and marks</strong><p>Give each test or exam a weight. The weights must total 100%.</p></div></li>
+      <li><b>3</b><div><strong>Check, then download</strong><p>Fix anything flagged, then download the Excel file.</p></div></li>
+    </ol>
+    <button class="btn primary" data-page="gradebook">${icon('grid')}Open my gradebook</button>
+  </section>
+  <h2 class="home-h2">Your tools</h2>
+  <div class="home-grid">${tools.map(t=>`<button class="home-card" data-page="${t.page}"><span class="home-ico">${icon(t.icon as any)}</span><strong>${t.title}</strong><span>${t.text}</span></button>`).join('')}</div>`;
+  document.querySelectorAll<HTMLButtonElement>('#page [data-page]').forEach(b=>b.addEventListener('click',()=>void showPage(b.dataset.page!)));
+}
+
 function studio(){
   const r=job?.report;
   const release=r?.status==='RELEASED';
   const vert=activeVertical();
-  const vMeta=VERTICAL_META[vert]||VERTICAL_META.general;
+  const vMeta=VERTICAL_META[vert]||VERTICAL_META.education;
   const questions=r?r.questions:(job?.plan.questions||[]);
   const hasMissingNorthFeb=questions.some(q=>q.text.includes('North / Feb'));
   const hasUnmappedQty=questions.some(q=>q.text.includes('Qty'));
@@ -424,28 +336,20 @@ function studio(){
 
   // Spacious, calm 3-button toolbar tailored to the active mode
   let toolbarButtonsHtml='';
-  if(vert==='education'){
-    toolbarButtonsHtml=`
+  toolbarButtonsHtml=`
       <button class="btn small" data-clean="smart_fix_contacts">🪪 Fix SA IDs & Phones</button>
       <button class="btn small" data-clean="caps_levels">🎓 Pass Levels (1–7)</button>
       <button class="btn small" data-clean="deduplicate">🧹 Remove Duplicates</button>
     `;
-  }else{
-    toolbarButtonsHtml=`
-      <button class="btn small" data-clean="smart_fix_contacts">✨ Clean Names, Phones & IDs</button>
-      <button class="btn small" data-clean="add_total_row">➕ Add Total Row</button>
-      <button class="btn small" data-clean="deduplicate">🧹 Remove Duplicates</button>
-    `;
-  }
 
   $('page').innerHTML=`
   <div class="simple-studio">
-    <section class="chat-card" aria-label="Import an existing file">
+    <section class="chat-card" aria-label="Import a file">
       <div class="chat-top">
         <div class="chat-top-title">
           <span class="bot-avatar">${icon('spark')}</span>
           <div>
-            <h1>Import an existing file</h1>
+            <h1>Import a file</h1>
             <small>${job?escapeHTML(job.title):'Open a spreadsheet to check and export it'}</small>
           </div>
         </div>
@@ -591,7 +495,6 @@ function studio(){
 
   if(job){
     if($('run-job'))$('run-job').addEventListener('click',()=>void doRun());
-    if($('confirm-correction'))$('confirm-correction').addEventListener('click',()=>void confirmCorrection());
     if($('download-output'))$('download-output').addEventListener('click',()=>openSaveDialog());
     if($('share-output'))$('share-output').addEventListener('click',()=>openShareDialog());
     xlBindAfterRender();
@@ -1069,7 +972,7 @@ function handleBuilderChatCommand(promptText:string):string{
 function builderPage(){
   const tab=currentBuilderTab();
   const vert=activeVertical();
-  const vMeta=VERTICAL_META[vert]||VERTICAL_META.general;
+  const vMeta=VERTICAL_META[vert]||VERTICAL_META.education;
   const {title,tabs,activeTab,chat,pasteOpen}=builderState;
   const {headers,rows}=tab;
 
@@ -1444,7 +1347,7 @@ function creditMeterHtml(c:any){
   return `${note}<section class="credit-meter${warn?' cm-warn':''}" aria-label="Credit meter"><div class="cm-head"><strong>Credits this month</strong><span class="cm-left">${c.left} left</span></div><div class="cm-bar" role="progressbar" aria-label="Credits used this month" aria-valuemin="0" aria-valuemax="${c.included}" aria-valuenow="${c.used}"><span style="width:${pct}%"></span></div><p class="cm-note">${c.used} of ${c.included} used · resets on ${resetDate}${c.left<=0?' · you are out of credits; buy a top-up or wait for the reset':''}</p><p class="cm-note">A sheet job uses ${c.costs.sheet_job} credits, a Helper message ${c.costs.helper_message}, and a share email ${c.costs.share_email}.</p></section>`;
 }
 async function preferencesPage(){
-  const p=overview.preferences||{theme:'light',density:'comfortable',explanations:'detailed',auto_checks:true,vertical:'general'};
+  const p=overview.preferences||{theme:'light',density:'comfortable',explanations:'detailed',auto_checks:true};
   const vert=p.vertical||'general';
   let creditInfo:any=null;try{creditInfo=await api('/api/credits',undefined,'GET');}catch{creditInfo=null;}
   let payInfo:any=null;try{payInfo=await api('/api/billing/me',undefined,'GET');}catch{payInfo=null;}
@@ -1453,11 +1356,11 @@ async function preferencesPage(){
   if(billingResult==='success')setTimeout(()=>toast('Thank you. We are confirming your payment; it can take a minute to show.'),300);
   if(billingResult==='cancelled')setTimeout(()=>toast('Payment cancelled. Nothing was charged.'),300);
   $('page').innerHTML=`
-  <div class="page-heading"><h1>Past Files & Workspace Settings</h1></div>
+  <div class="page-heading"><h1>Settings</h1></div>
   ${payHtml}${creditMeterHtml(creditInfo)}
   <div class="settings-grid">
     <section class="settings-panel">
-      <h2>Your Past Spreadsheets (${overview.jobs?.length||0})</h2>
+      <h2>Saved imports (${overview.jobs?.length||0})</h2>
       <p style="margin-top:4px;font-size:13px">Reopen any spreadsheet you worked on recently or remove old files.</p>
       <div class="jobs-table" style="margin-top:12px" tabindex="0" aria-label="Past spreadsheets">
         <table>
@@ -1474,9 +1377,7 @@ async function preferencesPage(){
     </section>
 
     <form id="preferences-form" class="settings-panel">
-      <h2>Workspace & Appearance</h2>
-      <label for="pref-vertical">Workspace Mode</label>
-      <select id="pref-vertical">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)} — ${escapeHTML(v.badge)}</option>`).join('')}</select>
+      <h2>Preferences</h2>
       <label for="density">Table Row Spacing</label>
       <select id="density"><option value="comfortable">Comfortable</option><option value="compact" ${p.density==='compact'?'selected':''}>Compact</option></select>
       <label for="explanations">Helper Reply Style</label>
@@ -1486,24 +1387,15 @@ async function preferencesPage(){
     </form>
   </div>
 
-  <details class="quiet-details" style="margin-top:20px">
-    <summary>Advanced & Technical Details (Optional — Saved Column Rules & Audit Logs)</summary>
-    <div class="quiet-body">
-      <div class="quiet-buttons">
-        ${job?`<button id="edit-plan" class="btn small">${icon('edit')}Inspect Current Mapping JSON</button><button id="download-evidence" class="btn small" ${job.report?'':'disabled'}>${icon('download')}Download Technical Audit JSON</button>`:''}
-      </div>
-    </div>
-  </details>`;
+`;
 
   document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach(b=>b.addEventListener('click',()=>void loadJob(b.dataset.open!)));
   document.querySelectorAll<HTMLButtonElement>('[data-delete]').forEach(b=>b.addEventListener('click',()=>{
     openModal('Remove this file?',`<p>Remove this spreadsheet from your saved list.</p><button id="confirm-delete" class="btn danger" style="margin-top:14px">Remove file</button>`);
     $('confirm-delete').addEventListener('click',()=>void busy($('confirm-delete'),async()=>{await api(`/api/jobs/${b.dataset.delete}`,{},'DELETE');closeModal();if(job?.id===b.dataset.delete)job=null;await refresh();shell();await showPage('preferences')}));
   }));
-  if($('edit-plan'))$('edit-plan').addEventListener('click',editPlan);
-  if($('download-evidence'))$('download-evidence').addEventListener('click',()=>void download('evidence'));
 
-  $('preferences-form').addEventListener('submit',e=>{e.preventDefault();void busy($('save-preferences'),async()=>{await api('/api/preferences',{theme:'light',density:$<HTMLSelectElement>('density').value,explanations:$<HTMLSelectElement>('explanations').value,auto_checks:$<HTMLInputElement>('auto-checks').checked,vertical:$<HTMLSelectElement>('pref-vertical').value},'PUT');await refresh();applyPreferences();shell();await showPage('preferences');toast('Your settings were saved!')})});
+  $('preferences-form').addEventListener('submit',e=>{e.preventDefault();void busy($('save-preferences'),async()=>{await api('/api/preferences',{theme:'light',density:$<HTMLSelectElement>('density').value,explanations:$<HTMLSelectElement>('explanations').value,auto_checks:$<HTMLInputElement>('auto-checks').checked},'PUT');await refresh();applyPreferences();shell();await showPage('preferences');toast('Your settings were saved!')})});
 }
 
 // Admin credits: balances, flags, grants, limits, pauses, undo, bulk grant, margin, CSV export, history, plan settings.
@@ -2188,14 +2080,10 @@ function ensureTabbar(){
       }else if(b.dataset.tpage){void showPage(b.dataset.tpage);window.scrollTo({top:0})}
     });
   }
-  bar.innerHTML=(user?.role==='admin'?`<button class="m-tab" data-mtab="chat" type="button"><span class="m-ico" aria-hidden="true">${icon('chat')}</span>Helper</button>`+
-    `<button class="m-tab" data-mtab="sheet" type="button"><span class="m-ico" aria-hidden="true">${icon('grid')}</span>Sheet</button>`:`<button class="m-tab" data-tpage="workspace" type="button"><span class="m-ico" aria-hidden="true">${icon('sheet')}</span>School file</button>`)+
-    (user?.role==='admin'?`<button class="m-tab" data-tpage="templates" type="button"><span class="m-ico" aria-hidden="true">${icon('layers')}</span>Templates</button>`:'')+
-    (user?.role!=='admin'?`<button class="m-tab" data-tpage="gradebook" type="button"><span class="m-ico" aria-hidden="true">${icon('book')}</span>Gradebook</button>`:'')+
-    (user?.role!=='admin'?`<button class="m-tab" data-tpage="register" type="button"><span class="m-ico" aria-hidden="true">${icon('clipboard')}</span>Registers</button>`:'')+
-    (user?.role!=='admin'?`<button class="m-tab" data-tpage="cptd" type="button"><span class="m-ico" aria-hidden="true">${icon('shield')}</span>CPTD</button>`:'')+
-    (user?.role!=='admin'?`<button class="m-tab" data-tpage="planner" type="button"><span class="m-ico" aria-hidden="true">${icon('clock')}</span>Planner</button>`:'')+
-    `<button class="m-tab" data-tpage="preferences" type="button"><span class="m-ico" aria-hidden="true">${icon('settings')}</span>Files</button>`;
+  const items:Array<[string,string,string]>=user?.role==='admin'
+    ?[['admin','shield','Admin'],['preferences','settings','Settings']]
+    :[['home','school','Home'],['gradebook','grid','Gradebook'],['register','clipboard','Registers'],['planner','clock','Planner'],['preferences','settings','Settings']];
+  bar.innerHTML=items.map(([p,ic,l])=>`<button class="m-tab" data-tpage="${p}" type="button"><span class="m-ico" aria-hidden="true">${icon(ic as any)}</span>${l}</button>`).join('');
   updateTabbar();
 }
 
