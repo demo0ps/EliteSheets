@@ -1,4 +1,4 @@
-# Brief: SheetQMS spreadsheet transformation tool
+# Brief: Elite Sheets spreadsheet transformation tool
 
 Updated: 2026-10-13
 Phase: v0.2 online/serverless customer workspace and guided QMS chat verified in development; live cloud deployment and real-data acceptance open.
@@ -61,7 +61,7 @@ For this chat, share only synthetic or explicitly approved non-sensitive example
 
 | Default | Value | Switch / location | Replace when |
 |---|---|---|---|
-| Provisional internal tool name | SheetQMS | UI / package label | Owner selects a name. |
+| Provisional internal tool name | Elite Sheets | UI / package label | Owner selects a name. |
 | Local runtime | Python 3.11+ and browser; loopback by default | launcher host default 127.0.0.1 | Owner requests another controlled deployment. |
 | Supported files | .xlsx template; .xlsx and UTF-8 .csv sources | workbook parser format allowlist | Representative files justify a verified additional format. |
 | File limits | 20 MiB/file, 50 MiB/batch, 10 sources; 20k rows/sheet, 200 columns, 1M cells/workbook | parser and import limits | Actual workload requires measured changes. |

@@ -1,5 +1,12 @@
 import { ELITE_LOGO_URI } from './elite_logo';
 import * as XLSX from 'xlsx';
+import { renderGradebook } from './gradebook';
+import { renderRegister } from './register';
+import { renderCPTD } from './cptd';
+import { renderPlanner, notifyDueReminders } from './planner-ui';
+import { renderPacing } from './pacing';
+import { renderHelper } from './helper';
+import { loadPlanner } from './planner';
 interface User{id:string;name:string;email:string;role:string;tenant_id:string}
 interface Q{ id:string;text:string;evidence:string;kind:string }
 interface Check{id:string;name:string;passed:boolean;detail:string}
@@ -96,21 +103,16 @@ const VERTICAL_META:Record<string,VerticalConfig>={
     defaultSample:'pivot',
     tabs:[
       {page:'workspace',label:'My Spreadsheet',iconName:'grid'},
-      {page:'quotes',label:'Quotes & Invoices',iconName:'dollar'},
-      {page:'templates',label:'Templates',iconName:'layers'},
       {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
     ],
     cards:[
       {title:'🎓 1-Click Demo: School SA-SAMS (2 Files → 1)',desc:'Watch it join Learner Bio + Subject Marks into 1 clean import sheet.',action:'sample:sasams_students'},
-      {title:'📂 1-Click Demo: Merge a Whole Folder',desc:'Watch it combine 3 files into 1 Master Sheet, fix SA IDs & flag duplicates.',action:'sample:district_batch'},
       {title:'📊 1-Click Demo: Monthly Branch Totals',desc:'Watch it combine regional monthly sheets and calculate Totals automatically.',action:'sample:pivot'}
     ],
     samples:[
       {val:'pivot',label:'Combine Monthly Sheets → Summary Table'},
       {val:'sasams_students',label:'School SA-SAMS (2 Files → 1 Import Sheet)'},
-      {val:'district_batch',label:'Merge a Whole Folder of Files into 1 Sheet'},
       {val:'direct',label:'Contact & Order List → Clean Excel Sheet'},
-      {val:'chat_map',label:'Match Different Column Names in 1 Click'}
     ],
     builderPresetCmd:'Columns: Name, Email, Phone, Date, Category, Amount, Notes',
     builderPresetLabel:'Everyday Tracker Sheet',
@@ -119,12 +121,17 @@ const VERTICAL_META:Record<string,VerticalConfig>={
   education:{
     label:'🎓 School & District Office',
     shortName:'School',
-    badge:'SA-SAMS · Class Lists · Marks',
-    desc:'Combine SA-SAMS student & subject mark sheets, fix 13-digit SA IDs (including missing 0s for 2000–2009), calculate Pass Levels (1–7), and merge school folders.',
+    badge:'Gradebook · Weighted marks · CAPS levels',
+    desc:'Turn messy school marks into checked, shareable reports. Set weighted assessments, see term marks and CAPS levels, and download a clean Excel file. Your marks stay in this browser.',
     defaultSample:'sasams_students',
     tabs:[
-      {page:'workspace',label:'My School Spreadsheet',iconName:'grid'},
-      {page:'templates',label:'School Templates',iconName:'layers'},
+      {page:'gradebook',label:'My Gradebook',iconName:'grid'},
+      {page:'register',label:'Registers',iconName:'clipboard'},
+      {page:'cptd',label:'CPTD log',iconName:'shield'},
+      {page:'planner',label:'Planner',iconName:'clock'},
+      {page:'pacing',label:'Pacing',iconName:'chart'},
+      {page:'helper',label:'Sheet Helper',iconName:'spark'},
+      {page:'workspace',label:'Import an existing file',iconName:'grid'},
       {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
     ],
     cards:[
@@ -134,90 +141,21 @@ const VERTICAL_META:Record<string,VerticalConfig>={
     ],
     samples:[
       {val:'sasams_students',label:'SA-SAMS 2-File Student & Subject Marks'},
-      {val:'district_batch',label:'Multi-School Folder Merge (Check SA IDs & Duplicates)'}
     ],
     builderPresetCmd:'Create a SA-SAMS student & tuition sheet',
     builderPresetLabel:'Class & Tuition Register',
     templateCategories:['Education / SA-SAMS']
   },
-  sme_pa:{
-    label:'💼 Small Business & PA',
-    shortName:'Business',
-    badge:'Quotes · Invoices · Clients',
-    desc:'Create branded Quotes & Tax Invoices in plain words, paste WhatsApp or Email client lists into Excel, and clean customer names, phones, and IDs.',
-    defaultSample:'direct',
-    tabs:[
-      {page:'workspace',label:'My Business Spreadsheet',iconName:'grid'},
-      {page:'quotes',label:'Quotes & Invoices',iconName:'dollar'},
-      {page:'templates',label:'Business Templates',iconName:'layers'},
-      {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
-    ],
-    cards:[
-      {title:'🧾 1-Click Demo: Create Quote / Tax Invoice',desc:'Type what you are charging in plain words and download a clean PDF or Excel invoice.',action:'page:quotes'},
-      {title:'✨ 1-Click Demo: Clean Client & Order List',desc:'Load a client or order sheet to fix names, +27 phone numbers, emails & ID numbers.',action:'sample:direct'},
-      {title:'📋 1-Click Demo: Booking Form to Table',desc:'Turn customer booking forms into a clean, structured Excel table.',action:'sample:form'}
-    ],
-    samples:[
-      {val:'direct',label:'Client & Order List → Clean Excel Sheet'},
-      {val:'form',label:'Customer Booking Form → Clean Table'}
-    ],
-    builderPresetCmd:'Columns: Client ID, Full Name, SA ID Number, Phone, Email, Amount Due, Paid',
-    builderPresetLabel:'Client & Payment List',
-    templateCategories:['Business PA & Billing']
-  },
-  finance_hr:{
-    label:'📊 Finance, Bookkeeping & Payroll',
-    shortName:'Finance',
-    badge:'Monthly Totals · Payroll · Reconcile',
-    desc:'Combine monthly or branch figures with automatic Totals, spot missing numbers before export, check staff payroll SA IDs, and compare two sheets.',
-    defaultSample:'pivot',
-    tabs:[
-      {page:'workspace',label:'My Finance Spreadsheet',iconName:'grid'},
-      {page:'templates',label:'Finance Templates',iconName:'layers'},
-      {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
-    ],
-    cards:[
-      {title:'📊 1-Click Demo: Combine Monthly Figures',desc:'Merge regional or monthly sheets into one summary table with automatic Totals.',action:'sample:pivot'},
-      {title:'🔍 1-Click Demo: Spot Missing Figures',desc:'Catch blank monthly figures automatically and fill them in chat before downloading.',action:'sample:hold'},
-      {title:'👥 1-Click Demo: Expense & VAT Sheet',desc:'Create a monthly expense or payroll sheet with automatic VAT & Total columns.',action:'builder:expense'}
-    ],
-    samples:[
-      {val:'pivot',label:'Combine Branch Sheets → Monthly Summary Table'},
-      {val:'hold',label:'Spot Missing Monthly Figure → Fill in Chat'}
-    ],
-    builderPresetCmd:'Create a monthly expense tracker',
-    builderPresetLabel:'Expense & VAT Sheet',
-    templateCategories:['Finance & Operations','HR & Payroll']
-  },
-  supply_chain:{
-    label:'📦 Stock, Inventory & Suppliers',
-    shortName:'Stock',
-    badge:'Supplier Lists · SKUs · Warehouses',
-    desc:'Match supplier price lists and CSVs to your stock sheet in 1 click, merge warehouse folders into 1 Master Stock file, and calculate stock values.',
-    defaultSample:'chat_map',
-    tabs:[
-      {page:'workspace',label:'My Stock Spreadsheet',iconName:'grid'},
-      {page:'templates',label:'Stock Templates',iconName:'layers'},
-      {page:'preferences',label:'Past Files & Settings',iconName:'settings'}
-    ],
-    cards:[
-      {title:'📦 1-Click Demo: Match Supplier Columns',desc:'Match different supplier column names (like "Boxes" → "Qty") in 1 click.',action:'sample:chat_map'},
-      {title:'📂 1-Click Demo: Merge Warehouse Folder',desc:'Upload or demo a folder of depot sheets combined into 1 Master file.',action:'sample:district_batch'},
-      {title:'🧮 1-Click Demo: Stock Count & Value Sheet',desc:'Start an inventory count sheet with automatic Total Value = Qty × Unit Price.',action:'builder:inventory'}
-    ],
-    samples:[
-      {val:'chat_map',label:'Match Supplier "Boxes" Column → Stock "Qty"'},
-      {val:'direct',label:'Supplier CSV → Standard Stock Template'},
-      {val:'unpivot',label:'Wide Warehouse Sheet → Normalized Rows'}
-    ],
-    builderPresetCmd:'Create a warehouse inventory stock sheet',
-    builderPresetLabel:'Warehouse Stock Sheet',
-    templateCategories:['Supply Chain & ERP']
-  }
 };
 
 function activeVertical():string{
+  if(user&&user.role!=='admin')return 'education';
   return overview?.preferences?.vertical||'general';
+}
+
+// Teacher accounts see only the core tabs. Quotes and Templates stay available to the owner.
+function visibleTabs(meta:VerticalConfig){
+  return meta.tabs;
 }
 
 function friendlyText(raw:string):string{
@@ -230,32 +168,69 @@ function friendlyText(raw:string):string{
 
 function loginPage(){
   user=null;job=null;csrf='';demoToken='';workspaceID='';document.body.className='light';
-  $('root').innerHTML=`<main class="login-minimal"><section class="sign-card">${logo()}<h1>Your calm, everyday spreadsheet helper.</h1><p>Clean up messy files, combine spreadsheets, or create a brand-new sheet in plain everyday words — no complicated formulas needed.</p>${boot.demo_mode?`<div class="demo-actions">
-    <button class="btn primary" data-launch-vert="general" style="padding:16px 20px;font-size:16px;justify-content:space-between"><span>✨ Start as Regular / Everyday User</span>${icon('arrow')}</button>
-  </div>
-  <details class="divider-details"><summary>Optional: Or open a specialized industry workspace (Schools, Business, Finance, Stock)</summary>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
-      <button class="btn small" data-launch-vert="education" style="justify-content:flex-start;text-align:left;padding:10px 12px"><div><strong style="display:block">🎓 Schools & SA-SAMS</strong><small style="color:var(--muted)">Class Lists, IDs & Marks</small></div></button>
-      <button class="btn small" data-launch-vert="sme_pa" style="justify-content:flex-start;text-align:left;padding:10px 12px"><div><strong style="display:block">💼 Small Business & PA</strong><small style="color:var(--muted)">Quotes & Invoices</small></div></button>
-      <button class="btn small" data-launch-vert="finance_hr" style="justify-content:flex-start;text-align:left;padding:10px 12px"><div><strong style="display:block">📊 Finance & Payroll</strong><small style="color:var(--muted)">Monthly Totals & Staff</small></div></button>
-      <button class="btn small" data-launch-vert="supply_chain" style="justify-content:flex-start;text-align:left;padding:10px 12px"><div><strong style="display:block">📦 Stock & Suppliers</strong><small style="color:var(--muted)">Inventory & Warehouses</small></div></button>
-    </div>
-    <button id="demo-admin" class="btn small" style="width:100%;margin-top:10px">${icon('settings')}Platform Admin Settings</button>
-  </details>`:''}
+  $('root').innerHTML=`<main class="login-minimal"><style>
+.login-minimal,body:has(.login-minimal){--bg:#F3FAF9;--panel:#FFFFFF;--line:#D3E8E5;--line-strong:#A6D0CA;--ink:#13293D;--muted:#4D6475;--accent:#0A7C78;--accent-hover:#076562;--accent-soft:#E0F4F1;--accent-border:#9ED8D1;--gold:#F5B82E;--gold-soft:#FFF4DB}
+body:has(.login-minimal){background:#F3FAF9 !important;background-image:none !important}
+.land-end .btn.primary{background:#FFFFFF;color:#0A7C78;box-shadow:none}
+.land-end .btn.primary:hover:not(:disabled){background:#E0F4F1}
+.login-minimal .btn.primary{box-shadow:0 6px 16px rgba(10,124,120,.25)}
+.land{max-width:860px;margin:0 auto;text-align:left;color:var(--ink)}
+.land h1{color:var(--ink);font-size:clamp(28px,4.2vw,40px);line-height:1.15;margin:14px 0 12px}
+.land-lede{font-size:17px;line-height:1.55;color:var(--muted);margin:0 0 18px}
+.land-note{font-size:14px;color:var(--muted);margin:10px 0 0}
+.land-cta{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;font-size:16px;width:100%;max-width:440px}
+.land-block{margin:44px 0 0}
+.land-block h2{font-size:22px;margin:0 0 10px}
+.land-block p{font-size:16px;line-height:1.6;color:var(--ink);margin:0;max-width:720px}
+.land-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:18px}
+.land-step{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--accent);border-radius:12px;padding:18px}
+.land-step b{display:inline-block;width:30px;height:30px;line-height:30px;text-align:center;border-radius:50%;background:var(--gold);color:var(--ink);font-weight:700;margin-bottom:8px}
+.land-step h3{font-size:16px;margin:0 0 6px}
+.land-step p{font-size:14.5px;margin:0}
+.land-shot{margin:18px 0 0}
+.land-shot img{width:100%;height:auto;border:1px solid var(--line);border-radius:12px;display:block}
+.land-shot figcaption{font-size:13px;color:var(--muted);margin-top:8px}
+.land-trust{display:flex;flex-wrap:wrap;gap:8px 10px;margin-top:18px}
+.land-trust span{background:var(--accent-soft);color:var(--accent-hover);border:1px solid var(--accent-border);border-radius:999px;padding:7px 12px;font-size:14px;font-weight:600}
+.land-faq details{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-top:10px}
+.land-faq summary{cursor:pointer;font-weight:600}
+.land-faq p{margin:8px 0 0;font-size:15px}
+.land-end{margin:44px 0 10px;padding:24px;background:linear-gradient(135deg,var(--accent) 0%,#0B5E7A 100%);color:#fff;border-radius:14px;text-align:left}.land-end .land-note{color:#E6F7F5}.land-end h2{color:#fff}
+.land-end h2{font-size:22px;margin:0 0 6px}
+</style>
+<div class="land" id="top">
+  ${logo()}
+  <h1>Turn messy school marks into checked, shareable reports.</h1>
+  <p class="land-lede">Build a weighted gradebook, see term marks and CAPS levels, and download a clean Excel file. Your marks stay in this browser.</p>
+  ${boot.demo_mode?`<button class="btn primary land-cta" data-launch-vert="education"><span>${icon('school')} Open My Gradebook</span>${icon('arrow')}</button>
+  <p class="land-note">Free for 2 weeks, then R79 a month. Try the sample class first.</p>`:''}
+  <p class="land-note"><a href="#get-started">Create an account or sign in</a></p>
+  <section class="land-block"><h2>Weights added up wrong?</h2><p>Points-based weighting is the usual cause. A 6/10 test and an 80/100 exam only count as you set them when each mark becomes a percentage first. Elite Sheets does that, then checks that weights total 100% before anything exports.</p></section>
+  <figure class="land-shot"><img src="/static/landing-hero.jpg" alt="A smiling teacher checks a neat spreadsheet with a green tick on his laptop" loading="lazy"><figcaption>Illustration, not a real customer or testimonial.</figcaption></figure>
+  <section class="land-block"><h2>How it works</h2><div class="land-steps">
+    <div class="land-step"><b>1</b><h3>Add learners and assessments</h3><p>Name each test or exam and give it a weight. Type learner numbers or initials.</p></div>
+    <div class="land-step"><b>2</b><h3>Check the list</h3><p>Missing marks, wrong totals and weights that do not add to 100% are flagged before export.</p></div>
+    <div class="land-step"><b>3</b><h3>Download Excel</h3><p>Get a Marks sheet with term marks and CAPS levels, and a Checks sheet with what was found.</p></div>
+  </div></section>
+  <figure class="land-shot"><img src="/static/landing-gradebook.png" alt="Gradebook with sample learner numbers, assessment weights, term marks and CAPS levels" loading="lazy"><figcaption>Sample class. Learners are shown by number only.</figcaption></figure>
+  <section class="land-block" id="features"><h2>Everything for the school year, in one place</h2>
+  <div class="land-steps">
+    <div class="land-step"><b>1</b><h3>Gradebook</h3><p>Weighted assessments, term marks, CAPS levels, checks before export, and Excel or CSV download.</p></div>
+    <div class="land-step"><b>2</b><h3>Registers</h3><p>Daily marks (present, absent, late), monthly absentee rate, flags for three days in a row and repeated absence, and a signed monthly Excel export.</p></div>
+    <div class="land-step"><b>3</b><h3>CPTD log</h3><p>Record your PD points by type across your three-year cycle, with reporting windows and an Excel summary. A personal record only; nothing is submitted to SACE.</p></div>
+    <div class="land-step"><b>4</b><h3>Planner</h3><p>Timetable, term dates, a weekly calendar and in-app reminders, with browser notifications if you allow them.</p></div>
+    <div class="land-step"><b>5</b><h3>Pacing</h3><p>Plan your scheme of work on school days, tick lessons as taught, and move the plan when a day is lost.</p></div>
+    <div class="land-step"><b>6</b><h3>Sheet Helper</h3><p>Drafts of CAPS-aligned lesson plans, class tests with memos, and assignments with rubrics. Mark totals are checked in code. Ask follow-up questions or request changes in the same chat. You review every draft before you use it.</p></div>
+  </div></section>
+  <div class="land-trust"><span>Free for 2 weeks</span><span>R79 a month after that</span><span>Excel and CSV export</span><span>Marks stay in this browser</span></div>
+</div>
+<section class="sign-card" id="get-started">${logo()}<h2 style="margin:0 0 8px">Get started</h2><p class="land-note" style="margin-top:0">Sign in to your account or create a free one.</p>
   <details class="divider-details"><summary>Create a free account (Sign Up)</summary>
     <form id="signup-form">
       <div class="field-row">
         <div><label for="signup-name">Your Name</label><input id="signup-name" required minlength="2" placeholder="e.g. Thabo Mokoena"></div>
         <div><label for="signup-org">Workspace or Organization Name</label><input id="signup-org" required minlength="2" placeholder="e.g. Personal / My Workspace"></div>
       </div>
-      <label for="signup-vertical">Workspace Mode (you can change this anytime)</label>
-      <select id="signup-vertical">
-        <option value="general" selected>✨ Everyday / Regular User (General Spreadsheets — Default)</option>
-        <option value="education">🎓 School & District Office (SA-SAMS, Student Lists & Marks)</option>
-        <option value="sme_pa">💼 Small Business & PA (Quotes, Tax Invoices & Client Lists)</option>
-        <option value="finance_hr">📊 Finance, Bookkeeping & Payroll (Monthly Summaries & Staff)</option>
-        <option value="supply_chain">📦 Stock, Inventory & Suppliers (Supplier Sheets & Warehouses)</option>
-      </select>
       <div class="field-row">
         <div><label for="signup-email">Email</label><input id="signup-email" type="email" required placeholder="you@example.com"></div>
         <div><label for="signup-password">Password (8+ characters)</label><input id="signup-password" type="password" required minlength="8" placeholder="Password"></div>
@@ -264,11 +239,22 @@ function loginPage(){
     </form>
   </details>
   <details class="divider-details" ${boot.demo_mode?'':'open'}><summary>Sign in to an existing account</summary><form id="login-form"><label for="login-email">Email</label><input id="login-email" type="email" autocomplete="username" required placeholder="you@example.com"><label for="login-password">Password</label><input id="login-password" type="password" autocomplete="current-password" required placeholder="Password"><button class="btn primary" style="width:100%;margin-top:16px" id="sign-in">Sign in${icon('arrow')}</button></form></details>
-  <div class="signin-powered-wrap">${productCredit()}</div></section></main>`;
+  </section>
+<div class="land land-faq" style="margin-top:8px">
+  <section class="land-block"><h2>Questions teachers ask</h2>
+  <details><summary>Is my data safe?</summary><p>Gradebook marks are saved in this browser and are not sent to our server. Export the Excel file to keep a copy.</p></details>
+  <details><summary>What if I clear my browser data?</summary><p>Clearing site data removes the saved marks. Export before you clear it, or before you switch computers.</p></details>
+  <details><summary>Does Sheet Helper see my learners?</summary><p>No. It receives only the grade, CAPS subject, topic and mark totals you enter. Learner names, numbers and marks never go to the AI service.</p></details>
+  <details><summary>Is the CPTD log sent to SACE?</summary><p>No. It is your personal record. You still report your PD points through SACE yourself.</p></details>
+  <details><summary>Does it work with SA-SAMS?</summary><p>Elite Sheets does not connect to SA-SAMS. You export the checked marks and copy them across yourself.</p></details>
+  <details><summary>What does it cost?</summary><p>Free for 2 weeks, then R79 a month.</p></details></section>
+  <div class="land-end"><h2>Check your next mark sheet in minutes</h2><p class="land-note" style="margin-top:0">Start with the sample class, then use your own learners.</p>${boot.demo_mode?`<button class="btn primary land-cta" data-launch-vert="education" style="margin-top:12px"><span>${icon('school')} Open My Gradebook</span>${icon('arrow')}</button>`:''}</div>
+  <div class="signin-powered-wrap">${productCredit()}</div>
+</div></main>`;
 
   $('login-form').addEventListener('submit',e=>{e.preventDefault();void busy($('sign-in'),async()=>{const r=await api('/api/auth/login',{email:$<HTMLInputElement>('login-email').value,password:$<HTMLInputElement>('login-password').value});$<HTMLInputElement>('login-password').value='';await signedIn(r)})});
   $('signup-form').addEventListener('submit',e=>{e.preventDefault();void busy($('sign-up-btn'),async()=>{
-    const vert=$<HTMLSelectElement>('signup-vertical').value;
+    const vert='education';
     const r=await api('/api/auth/signup',{
       name:$<HTMLInputElement>('signup-org').value.trim(),
       display_name:$<HTMLInputElement>('signup-name').value.trim(),
@@ -296,21 +282,21 @@ async function xlOfferPending(){
     if(j?.report?.rows){job=j;xlRestoreCheckedFor='';}
   }catch{xlClearPending()}
 }
-async function signedIn(r:any){user=r.user;csrf=r.csrf;demoToken=r.demo_token||'';workspaceID=user!.role==='admin'&&boot.demo_mode?'demo-a':user!.tenant_id;await refresh();currentPage=user!.role==='admin'?'admin':'workspace';job=null;await xlOfferPending();shell();await showPage(currentPage)}
+async function signedIn(r:any){user=r.user;csrf=r.csrf;demoToken=r.demo_token||'';workspaceID=user!.role==='admin'&&boot.demo_mode?'demo-a':user!.tenant_id;await refresh();currentPage=user!.role==='admin'?'admin':'gradebook';job=null;await xlOfferPending();shell();await showPage(currentPage);if(user!.role!=='admin')notifyDueReminders()}
 async function refresh(){if(!user)return;if(user.role==='admin'){customers=(await api('/api/admin/customers')).items;if(!workspaceID||workspaceID==='platform')workspaceID=customers[0]?.id||''}if(workspaceID&&workspaceID!=='platform')overview=await api('/api/overview');else overview={workspace:{name:'Platform administration'},jobs:[],stats:{jobs:0,released:0,held:0,knowledge:0},ai:{enabled:false},preferences:{theme:'light',density:'comfortable',vertical:'general'}};applyPreferences()}
-function applyPreferences(){document.body.className=((overview.preferences?.theme==='dark'?'dark':'light')+(overview.preferences?.density==='compact'?' compact':'')).trim()}
+function applyPreferences(){document.body.className=(('light')+(overview.preferences?.density==='compact'?' compact':'')).trim()}
 
 function shell(){
   if(!user){updateTabbar();return}
   const vert=activeVertical();
   const vMeta=VERTICAL_META[vert]||VERTICAL_META.general;
-  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${vMeta.tabs.map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)}</option>`).join('')}</select>${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}<button id="help" class="btn small">${icon('info')}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Elite Sheets</strong> · Calm, everyday spreadsheet helper</div>${productCredit()}</footer></div>`;
+  $('root').innerHTML=`<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${visibleTabs(vMeta).map(t=>`<button class="nav-btn" data-page="${t.page}">${icon(t.iconName as any)}${escapeHTML(t.label)}</button>`).join('')}${user.role==='admin'?`<button class="nav-btn" data-page="admin">${icon('shield')}Admin</button>`:''}</nav></div><div class="topbar-right">${user.role==='admin'?`<select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)}</option>`).join('')}</select>`:''}${user.role==='admin'&&customers.length?`<select id="workspace-picker" aria-label="Customer workspace">${customers.map(c=>`<option value="${c.id}" ${c.id===workspaceID?'selected':''}>${escapeHTML(c.name)}</option>`).join('')}</select>`:''}<button id="help" class="btn small">${icon('info')}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon('logout')}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon('logout')}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Elite Sheets</strong> · Calm, everyday spreadsheet helper</div>${productCredit()}</footer></div>`;
   bindMobileMenu();
   document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach(b=>b.addEventListener('click',()=>void showPage(b.dataset.page!)));
   $('logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
   $('mobile-logout').addEventListener('click',()=>void(async()=>{await api('/api/auth/logout',{});loginPage()})());
   $('help').addEventListener('click',showHelp);
-  $('vertical-picker').addEventListener('change',()=>void(async()=>{
+  $('vertical-picker')?.addEventListener('change',()=>void(async()=>{
     const newVert=$<HTMLSelectElement>('vertical-picker').value;
     const curPrefs=overview.preferences||{theme:'light',density:'comfortable',explanations:'detailed',auto_checks:true};
     await api('/api/preferences',{...curPrefs,vertical:newVert},'PUT');
@@ -318,7 +304,7 @@ function shell(){
     await refresh();
     const nextTabs=(VERTICAL_META[newVert]||VERTICAL_META.general).tabs;
     if(!nextTabs.some(t=>t.page===currentPage)&&currentPage!=='admin'){
-      currentPage=newVert==='sme_pa'?'quotes':'workspace';
+      currentPage='workspace';
     }
     shell();
     await showPage(currentPage);
@@ -336,10 +322,13 @@ async function showPage(page:string){
   try{
     if(page==='workspace')studio();
     else if(page==='builder')builderPage();
-    else if(page==='quotes')quotesPage();
-    else if(page==='templates')await templatesPage();
+    else if(page==='gradebook')renderGradebook($('page'),toast);
+    else if(page==='register')renderRegister($('page'),toast);
+    else if(page==='cptd')renderCPTD($('page'),toast);
+    else if(page==='planner')renderPlanner($('page'),toast);
+    else if(page==='pacing')renderPacing($('page'),toast,loadPlanner().terms);
+    else if(page==='helper')renderHelper($('page'),api,toast);
     else if(page==='jobs')jobHistory();
-    else if(page==='knowledge')await knowledgePage();
     else if(page==='preferences')await preferencesPage();
     else if(page==='admin')await adminPage();
   }catch(e){toast(e instanceof Error?e.message:String(e),true)}
@@ -432,7 +421,6 @@ function studio(){
     }
   }
   const srcColHeaders:string[]=Array.from(srcColSet);
-  const hasAudit=Boolean((job as any)?.batch_audit||headers.includes('SA ID Status')||headers.includes('Duplicate Status'));
 
   // Spacious, calm 3-button toolbar tailored to the active mode
   let toolbarButtonsHtml='';
@@ -440,43 +428,25 @@ function studio(){
     toolbarButtonsHtml=`
       <button class="btn small" data-clean="smart_fix_contacts">🪪 Fix SA IDs & Phones</button>
       <button class="btn small" data-clean="caps_levels">🎓 Pass Levels (1–7)</button>
-      ${hasAudit?`<button class="btn small primary" id="view-batch-audit">📋 Summary Report</button>`:`<button class="btn small" data-clean="deduplicate">🧹 Remove Duplicates</button>`}
-    `;
-  }else if(vert==='sme_pa'){
-    toolbarButtonsHtml=`
-      <button class="btn small" data-clean="smart_fix_contacts">✨ Fix Names & Phones</button>
-      <button class="btn small" data-clean="add_total_row">➕ Add Total Row</button>
       <button class="btn small" data-clean="deduplicate">🧹 Remove Duplicates</button>
-    `;
-  }else if(vert==='finance_hr'){
-    toolbarButtonsHtml=`
-      <button class="btn small" data-clean="add_total_row">➕ Add Total Row</button>
-      <button class="btn small" data-clean="smart_fix_contacts">🪪 Check Staff IDs</button>
-      <button class="btn small cyan" id="open-in-studio">⚖️ Compare / Summarize →</button>
-    `;
-  }else if(vert==='supply_chain'){
-    toolbarButtonsHtml=`
-      <button class="btn small" data-clean="trim_text">🧹 Clean Text & SKUs</button>
-      <button class="btn small" data-clean="deduplicate">✨ Remove Duplicate SKUs</button>
-      <button class="btn small" data-clean="add_total_row">➕ Add Total Row</button>
     `;
   }else{
     toolbarButtonsHtml=`
       <button class="btn small" data-clean="smart_fix_contacts">✨ Clean Names, Phones & IDs</button>
       <button class="btn small" data-clean="add_total_row">➕ Add Total Row</button>
-      ${hasAudit?`<button class="btn small primary" id="view-batch-audit">📋 Summary Report</button>`:`<button class="btn small" data-clean="deduplicate">🧹 Remove Duplicates</button>`}
+      <button class="btn small" data-clean="deduplicate">🧹 Remove Duplicates</button>
     `;
   }
 
   $('page').innerHTML=`
   <div class="simple-studio">
-    <section class="chat-card" aria-label="Sheet Helper">
+    <section class="chat-card" aria-label="Import an existing file">
       <div class="chat-top">
         <div class="chat-top-title">
           <span class="bot-avatar">${icon('spark')}</span>
           <div>
-            <h1>Sheet Helper</h1>
-            <small>${job?escapeHTML(job.title):'Ask me anything in plain words'}</small>
+            <h1>Import an existing file</h1>
+            <small>${job?escapeHTML(job.title):'Open a spreadsheet to check and export it'}</small>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -494,7 +464,6 @@ function studio(){
             ${boot.demo_mode?`<div class="picker-row"><select id="sample-case" aria-label="Try an example">${vMeta.samples.map((s,idx)=>`<option value="${s.val}">Demo ${idx+1}: ${escapeHTML(s.label)}</option>`).join('')}</select><button id="load-example" class="btn primary small">Load Demo</button></div>`:''}
             <div class="upload-grid" style="grid-template-columns:1fr 1fr 1fr">
               <label class="upload-box" for="source-files">${icon('upload')}<strong>Your Sheet(s)</strong><small>.XLSX, .XLS or .CSV</small><input id="source-files" type="file" multiple accept=".xlsx,.xls,.csv" aria-label="Upload source spreadsheets"></label>
-              <label class="upload-box" for="folder-files">${icon('folder')}<strong>Entire Folder</strong><small>Merge all files</small><input id="folder-files" type="file" webkitdirectory directory multiple aria-label="Upload entire folder of spreadsheets"></label>
               <label class="upload-box" for="target-file">${icon('grid')}<strong>Template</strong><small>Optional</small><input id="target-file" type="file" accept=".xlsx,.xls,.csv" aria-label="Upload destination template"></label>
             </div>
             <div id="file-list" class="file-list"></div>
@@ -503,16 +472,7 @@ function studio(){
         </details>
       </div>
 
-      <div class="messages" id="messages" tabindex="0" aria-label="Helper conversation" aria-live="polite">
-        ${job?job.chat.map(m=>`<article class="msg ${m.role==='user'?'user':''}"><span class="msg-sender">${m.role==='user'?'You':'Helper'}</span><div class="bubble">${escapeHTML(friendlyText(m.text))}</div></article>`).join('')+localNotesHtml():`<article class="msg"><span class="msg-sender">Helper</span><div class="bubble">Hi! Click <b>Open / Upload File</b> above to load a spreadsheet, or type what columns you want me to build right below.<div style="margin-top:10px"><button id="start-guide-inline" class="btn small cyan">${icon('info')}Show Me Where to Click (Interactive Guide)</button></div></div></article>`}
-      </div>
-
-      ${job?`<div class="quick-action-bar">${job.proposal?`<button id="confirm-correction" class="btn primary">${icon('check')}Yes, apply: ${escapeHTML(job.proposal.description)}</button>`:''}${!r||!release?`<button id="run-job" class="btn ${r?'':'primary'}">${icon('check')}${r?'Update Sheet':'Fill My Sheet'}</button>`:''}<div class="quick-chips"><button class="chip" id="ask-missing" type="button">🔍 What's missing?</button>${hasMissingNorthFeb&&!job.proposal?`<button class="chip" data-chat="18">Reply: 18</button><button class="chip" data-chat="North Feb is 18">North Feb is 18</button>`:''}${customMissing&&!hasMissingNorthFeb&&!job.proposal?`<button class="chip" data-chat="${escapeHTML(customMissing.entity)} ${escapeHTML(customMissing.category)} is 18">Set ${escapeHTML(customMissing.entity)} / ${escapeHTML(customMissing.category)} = 18</button>`:''}${hasUnmappedQty&&!customUnmapped?.length&&!job.proposal?`<button class="chip" data-chat="yes">Yes, put Boxes in Qty</button>`:''}${customUnmapped?.length&&customUnused?.length&&!job.proposal?customUnused.slice(0,2).map(sc=>`<button class="chip" data-chat="put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}">Put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}</button>`).join(''):''}${r&&!release?`<button class="chip" data-chat="What is blocking this output?">What is missing?</button>`:''}${release&&headers.includes('Jan')&&headers.includes('Feb')?`<button class="chip" data-chat="swap Jan and Feb">Swap Jan & Feb</button><button class="chip" data-chat="replace the first row with row 2">Swap row 1 & row 2</button>`:''}</div></div>`:`<div class="quick-action-bar"><div class="quick-chips"><button class="chip" data-chat="${escapeHTML(vMeta.builderPresetCmd)}">✨ Build ${escapeHTML(vMeta.builderPresetLabel)}</button><button class="chip" data-chat="Create a SA-SAMS student & tuition sheet">🎓 Student & Tuition Sheet</button></div></div>`}
-
-      <form id="chat-form" class="chat-compose">
-        <textarea id="chat-text" rows="1" aria-label="Message the Sheet Helper" placeholder="${chatPlaceholder(!!job)}"></textarea>
-        <button id="send-chat" class="btn primary small" type="submit" aria-label="Send message">${icon('send')}</button>
-      </form>
+      ${job?`<div class="quick-action-bar"><button id="run-job" class="btn primary">${icon('check')}${r?'Update Sheet':'Fill My Sheet'}</button></div>`:''}
     </section>
 
     <section class="result-card" id="output-table-area" aria-label="Your Spreadsheet">
@@ -547,18 +507,12 @@ function studio(){
         job=await api<Job>(`/api/jobs/${job.id}/run`,{});
       }
       await refresh();shell();await showPage('workspace');
-    }else if(act==='page:quotes'){
-      await showPage('quotes');
     }else if(act==='page:builder'){
       await showPage('builder');
     }else if(act==='upload:open'){
       const d=$('upload-drawer-box') as HTMLDetailsElement|null;
       if(d)d.open=true;
       $('source-files')?.click();
-    }else if(act==='folder:open'){
-      const d=$('upload-drawer-box') as HTMLDetailsElement|null;
-      if(d)d.open=true;
-      $('folder-files')?.click();
     }else if(act.startsWith('builder:')){
       const sub=act.split(':')[1];
       if(sub==='paste'){
@@ -586,9 +540,8 @@ function studio(){
 
   let stagedSources:File[]=[];
   const renderStagedFiles=()=>{
-    const fld=$<HTMLInputElement>('folder-files').files;
     const target=$<HTMLInputElement>('target-file').files;
-    const validFolderFiles=Array.from(fld||[]).filter(f=>/\.(xlsx|xls|csv)$/i.test(f.name));
+    const validFolderFiles:File[]=[];
     const stateChip=`<span class="file-state waiting">Ready to open</span>`;
     const srcRows=stagedSources.map((f,idx)=>`<li class="file-status-row"><span class="file-status-name">${escapeHTML(f.name)}</span>${stateChip}<button type="button" class="file-remove" data-rm-src="${idx}" aria-label="Remove ${escapeHTML(f.name)}">Remove</button></li>`).join('');
     const otherRows=[...validFolderFiles,...Array.from(target||[])].map(f=>`<li class="file-status-row"><span class="file-status-name">${escapeHTML((f as any).webkitRelativePath||f.name)}</span>${stateChip}</li>`).join('');
@@ -608,19 +561,12 @@ function studio(){
     }
     renderStagedFiles();
   });
-  $('folder-files').addEventListener('change',renderStagedFiles);
   $('target-file').addEventListener('change',renderStagedFiles);
   $('inspect-files').addEventListener('click',()=>void busy($('inspect-files'),async()=>{
     const f=new FormData();
     const targetFiles=$<HTMLInputElement>('target-file').files;
-    const fldFiles=Array.from($<HTMLInputElement>('folder-files').files||[]).filter(fl=>/\.(xlsx|xls|csv)$/i.test(fl.name));
     if(targetFiles?.length)f.append('target',targetFiles[0]);
-    if(fldFiles.length){
-      for(const file of fldFiles)f.append('sources',file);
-      f.append('request_id',uid());
-      f.append('title','Folder Batch Master Consolidation');
-      job=await api<Job>('/api/jobs/batch-folder',f);
-    }else{
+    {
       let filesToSend=[...stagedSources];
       const prevFiles:File[]=(window as any).__lastUploadedSources||[];
       // If the user uploaded 1 file earlier (e.g. Bio sheet) and now uploads 1 more file (e.g. Mark Schedule) while that job is open, combine them!
@@ -642,7 +588,6 @@ function studio(){
     await refresh();shell();await showPage('workspace');
   }));
 
-  if($('view-batch-audit'))$('view-batch-audit').addEventListener('click',()=>showBatchAuditModal());
 
   if(job){
     if($('run-job'))$('run-job').addEventListener('click',()=>void doRun());
@@ -681,7 +626,6 @@ function studio(){
       toast('Opened in Sheet Creator!');
     });
   }
-  wireChat();
 }
 
 interface SheetTab{
@@ -790,47 +734,6 @@ function percentageToCapsLevelClient(val:any):{level:number|null;desc:string;at_
   if(pct>=40)return {level:3,desc:'Level 3 (Moderate)',at_risk:false};
   if(pct>=30)return {level:2,desc:'Level 2 (Elementary — At Risk)',at_risk:true};
   return {level:1,desc:'Level 1 (Not Achieved — At Risk)',at_risk:true};
-}
-
-function showBatchAuditModal(){
-  const r=job?.report;
-  const rows=r?.rows||[];
-  const ba=(job as any)?.batch_audit||{};
-  let validIds=ba.valid_sa_ids||0,repairedIds=ba.repaired_sa_ids||0,foreignIds=ba.foreign_or_permit_ids||0,invalidIds=ba.invalid_sa_ids||0,dupRows=ba.cross_file_duplicates||0;
-  if(!ba.total_rows&&rows.length){
-    for(const row of rows){
-      const st=String(row['SA ID Status']||'');
-      if(st==='Valid SA ID')validIds++;
-      else if(st.startsWith('Repaired SA ID'))repairedIds++;
-      else if(st.startsWith('Foreign'))foreignIds++;
-      else if(st.startsWith('Invalid'))invalidIds++;
-      const ds=String(row['Duplicate Status']||'');
-      if(ds.startsWith('Duplicate'))dupRows++;
-    }
-  }
-  const filesMerged=ba.files_merged||(job?.profiles?.sources?.length||1);
-  const totalRows=ba.total_rows||rows.length;
-  openModal('Elite Sheets — Data Quality Summary Report',`
-    <div style="display:grid;gap:12px">
-      <p style="margin:0;color:var(--muted)">Before-vs-After Data Quality Summary for schools, district offices, consultants, and business compliance:</p>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${filesMerged}</strong><small style="display:block;color:var(--muted)">Files Consolidated</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${totalRows}</strong><small style="display:block;color:var(--muted)">Total Master Rows</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${validIds + repairedIds}</strong><small style="display:block;color:var(--muted)">Verified 13-Digit SA IDs</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${repairedIds}</strong><small style="display:block;color:var(--muted)">Leading-Zero IDs Restored (Born 2000–2009)</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${foreignIds}</strong><small style="display:block;color:var(--muted)">Foreign / Study Permit IDs</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${invalidIds}</strong><small style="display:block;color:var(--muted)">Checksum Issues Flagged</small></div>
-      </div>
-      <div class="check ${dupRows>0?'fail':''}">
-        <strong>${dupRows>0?`! ${dupRows} Cross-File Duplicate Record(s) Flagged`:'✓ 0 Cross-File Duplicates Found'}</strong>
-        <small>All rows are preserved in your Master Sheet with <b>Source File</b>, <b>Duplicate Status</b>, and <b>SA ID Status</b> columns so no data is silently lost.</small>
-      </div>
-      <div style="margin-top:6px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <small style="color:var(--muted)">Generated by <b>Elite Sheets</b></small>
-        ${productCredit()}
-      </div>
-    </div>
-  `);
 }
 
 function runSaIdAndContactSmartFixOnTab(tab:SheetTab):number{
@@ -1173,7 +1076,7 @@ function builderPage(){
   $('page').innerHTML=`<div class="simple-studio">
     <section class="chat-card" aria-label="Sheet Creator Helper">
       <div class="chat-top">
-        <div class="chat-top-title"><span class="bot-avatar">${icon('spark')}</span><div><h1>Sheet Helper</h1><small>Start blank, paste text, or tell me what columns to make</small></div></div>
+        <div class="chat-top-title"><span class="bot-avatar">${icon('spark')}</span><div><h1>Sheet Builder</h1><small>Start blank, paste text, or tell me what columns to make</small></div></div>
         <button id="builder-new-blank" class="btn small">${icon('plus')}Start Blank</button>
       </div>
       <div class="picker-bar">
@@ -1516,307 +1419,6 @@ let quoteState={
   ]
 };
 
-function quotesPage(){
-  const s=quoteState;
-  const subtotal=s.items.reduce((sum,it)=>sum+(Number(it.qty)||0)*(Number(it.price)||0),0);
-  const vatAmt=Math.round(subtotal*(s.vatRate/100)*100)/100;
-  const grandTotal=Math.round((subtotal+vatAmt)*100)/100;
-
-  $('page').innerHTML=`<div class="page-heading"><div><h1>Quotes & Invoices (Business PA)</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Tell your PA what to quote in plain words, or edit your branded Quotation / Tax Invoice below and download as Excel (.XLSX) or Printable PDF.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="quote-add-item" class="btn small">${icon('plus')}Add Line Item</button><button id="quote-print" class="btn small">${icon('file')}Printable Quote / PDF</button><button id="quote-to-transform" class="btn small cyan">${icon('shield')}Open in Transform</button><button id="quote-download" class="btn small success">${icon('download')}Download Branded XLSX</button></div></div>
-  <section class="feature-banner">
-    <form id="quote-pa-form" class="prompt-row">
-      <input id="quote-pa-input" placeholder="Tell your PA in plain words (e.g. 'Invoice for Horizon Academy: 1200 Student Imports at 30 each and 1 Setup Fee at 3000')…">
-      <button type="submit" class="btn primary small">${icon('spark')}Fill Quote with PA</button>
-    </form>
-  </section>
-  <div class="settings-grid" style="margin-bottom:16px">
-    <section class="settings-panel">
-      <h2>Document & Your Business</h2>
-      <div class="field-row">
-        <div><label for="q-type">Document Type</label><select id="q-type"><option value="QUOTATION" ${s.docType==='QUOTATION'?'selected':''}>Quotation</option><option value="TAX INVOICE" ${s.docType==='TAX INVOICE'?'selected':''}>Tax Invoice</option></select></div>
-        <div><label for="q-num">Document #</label><input id="q-num" value="${escapeHTML(s.docNumber)}"></div>
-      </div>
-      <label for="q-comp">Your Business Name</label><input id="q-comp" value="${escapeHTML(s.companyName)}">
-      <label for="q-comp-contact">Your Email / Phone / Bank Details</label><input id="q-comp-contact" value="${escapeHTML(s.companyContact)}">
-    </section>
-    <section class="settings-panel">
-      <h2>Client & Tax Settings</h2>
-      <label for="q-client">Client / School / Company Name</label><input id="q-client" value="${escapeHTML(s.clientName)}">
-      <label for="q-client-contact">Client Email / Reference</label><input id="q-client-contact" value="${escapeHTML(s.clientContact)}">
-      <div class="field-row">
-        <div><label for="q-curr">Currency</label><select id="q-curr"><option value="R" ${s.currency==='R'?'selected':''}>ZAR (R)</option><option value="$" ${s.currency==='$'?'selected':''}>USD ($)</option><option value="£" ${s.currency==='£'?'selected':''}>GBP (£)</option></select></div>
-        <div><label for="q-vat">VAT / Tax (%)</label><input id="q-vat" type="number" min="0" max="50" value="${s.vatRate}"></div>
-      </div>
-    </section>
-  </div>
-  <section class="result-card">
-    <div class="result-head"><div><h2>${escapeHTML(s.docType)} · ${escapeHTML(s.docNumber)}</h2><small>Prepared for ${escapeHTML(s.clientName)}</small></div><span class="badge good">Total: ${escapeHTML(s.currency)} ${grandTotal.toLocaleString()}</span></div>
-    <div class="table-scroll" tabindex="0" aria-label="Quotation line items">
-      <table>
-        <thead><tr><th>Item Code</th><th>Service / Product Description</th><th>Qty</th><th>Unit Price (${escapeHTML(s.currency)})</th><th>Line Total (${escapeHTML(s.currency)})</th><th style="width:48px"></th></tr></thead>
-        <tbody>
-          ${s.items.map((it,idx)=>{
-            const lineTot=Math.round((Number(it.qty)||0)*(Number(it.price)||0)*100)/100;
-            return `<tr>
-              <td><input class="cell-input q-item-code" data-idx="${idx}" value="${escapeHTML(it.code)}" aria-label="Item code ${idx+1}"></td>
-              <td><input class="cell-input q-item-desc" data-idx="${idx}" value="${escapeHTML(it.description)}" aria-label="Description ${idx+1}"></td>
-              <td><input class="cell-input q-item-qty" data-idx="${idx}" type="number" value="${it.qty}" aria-label="Quantity ${idx+1}"></td>
-              <td><input class="cell-input q-item-price" data-idx="${idx}" type="number" step="0.01" value="${it.price}" aria-label="Unit price ${idx+1}"></td>
-              <td><strong>${escapeHTML(s.currency)} ${lineTot.toLocaleString()}</strong></td>
-              <td><button class="icon-button" data-del-qitem="${idx}" aria-label="Remove item ${idx+1}">${icon('trash')}</button></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  </section>
-  <div class="quote-summary-box">
-    <div class="quote-totals">
-      <div>Subtotal<strong>${escapeHTML(s.currency)} ${subtotal.toLocaleString()}</strong></div>
-      <div>VAT (${s.vatRate}%)<strong>${escapeHTML(s.currency)} ${vatAmt.toLocaleString()}</strong></div>
-      <div>Grand Total<strong>${escapeHTML(s.currency)} ${grandTotal.toLocaleString()}</strong></div>
-    </div>
-  </div>`;
-
-  const syncQuoteDom=()=>{
-    s.docType=$<HTMLSelectElement>('q-type').value as any;
-    s.docNumber=$<HTMLInputElement>('q-num').value.trim()||'QUO-001';
-    s.companyName=$<HTMLInputElement>('q-comp').value.trim();
-    s.companyContact=$<HTMLInputElement>('q-comp-contact').value.trim();
-    s.clientName=$<HTMLInputElement>('q-client').value.trim();
-    s.clientContact=$<HTMLInputElement>('q-client-contact').value.trim();
-    s.currency=$<HTMLSelectElement>('q-curr').value;
-    s.vatRate=Number($<HTMLInputElement>('q-vat').value)||0;
-    const codes=document.querySelectorAll<HTMLInputElement>('.q-item-code');
-    const descs=document.querySelectorAll<HTMLInputElement>('.q-item-desc');
-    const qtys=document.querySelectorAll<HTMLInputElement>('.q-item-qty');
-    const prices=document.querySelectorAll<HTMLInputElement>('.q-item-price');
-    s.items=Array.from(codes).map((_,i)=>({
-      code:codes[i].value.trim()||`ITEM-${i+1}`,
-      description:descs[i].value.trim()||'Service',
-      qty:Number(qtys[i].value)||0,
-      price:Number(prices[i].value)||0
-    }));
-  };
-
-  ['q-type','q-curr','q-vat'].forEach(id=>$(id).addEventListener('change',()=>{syncQuoteDom();quotesPage()}));
-  document.querySelectorAll('.q-item-qty,.q-item-price').forEach(el=>el.addEventListener('change',()=>{syncQuoteDom();quotesPage()}));
-
-  $('quote-pa-form').addEventListener('submit',e=>{
-    e.preventDefault();
-    syncQuoteDom();
-    const txt=$<HTMLInputElement>('quote-pa-input').value.trim();
-    if(!txt)return;
-    if(/invoice/i.test(txt)){s.docType='TAX INVOICE';s.docNumber=s.docNumber.replace(/^QUO/,'INV')}
-    else if(/quote|quotation/i.test(txt)){s.docType='QUOTATION';s.docNumber=s.docNumber.replace(/^INV/,'QUO')}
-    const clientM=txt.match(/(?:for|to)\s+([A-Z][A-Za-z0-9\s&.-]+?)(?::|,|\s+\d)/);
-    if(clientM)s.clientName=clientM[1].trim();
-    const itemRegex=/(\d+)\s+([A-Za-z][A-Za-z0-9\s-]{2,40}?)\s+(?:at|@|for)\s+[R$£]?(\d+(?:\.\d+)?)/gi;
-    const parsedItems:typeof s.items=[];
-    let m:RegExpExecArray|null;
-    let idx=1;
-    while((m=itemRegex.exec(txt))!==null){
-      parsedItems.push({code:`ITEM-0${idx++}`,description:m[2].trim(),qty:Number(m[1]),price:Number(m[3])});
-    }
-    if(parsedItems.length)s.items=parsedItems;
-    quotesPage();
-    toast('PA updated your quotation details and line items!');
-  });
-
-  $('quote-add-item').addEventListener('click',()=>{
-    syncQuoteDom();
-    s.items.push({code:`ITEM-0${s.items.length+1}`,description:'Additional Service / Product',qty:1,price:500});
-    quotesPage();
-  });
-  document.querySelectorAll<HTMLButtonElement>('[data-del-qitem]').forEach(b=>b.addEventListener('click',()=>{
-    syncQuoteDom();
-    s.items.splice(Number(b.dataset.delQitem),1);
-    quotesPage();
-  }));
-
-  const buildQuoteTableRows=()=>{
-    syncQuoteDom();
-    const headers=['Document #','Client','Item Code','Description','Qty','Unit Price','VAT','Line Total'];
-    const rows:Record<string,any>[]=s.items.map(it=>{
-      const sub=(Number(it.qty)||0)*(Number(it.price)||0);
-      const vat=Math.round(sub*(s.vatRate/100)*100)/100;
-      return {
-        'Document #':s.docNumber,
-        'Client':s.clientName,
-        'Item Code':it.code,
-        'Description':it.description,
-        'Qty':it.qty,
-        'Unit Price':it.price,
-        'VAT':vat,
-        'Line Total':Math.round((sub+vat)*100)/100
-      };
-    });
-    return {headers,rows};
-  };
-
-  $('quote-download').addEventListener('click',()=>{
-    const {headers,rows}=buildQuoteTableRows();
-    const blob=buildXlsxBlob(s.docType==='TAX INVOICE'?'Tax_Invoice':'Quotation',headers,rows);
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;
-    a.download=`${s.docNumber}-${s.clientName.replace(/\s+/g,'-')}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast('Downloaded branded Excel (.xlsx) quote!');
-  });
-
-  $('quote-to-transform').addEventListener('click',()=>void busy($('quote-to-transform'),async()=>{
-    const {headers,rows}=buildQuoteTableRows();
-    job=await api<Job>('/api/jobs/from-builder',{title:`${s.docNumber}-${s.clientName}.xlsx`,sheet:'Quote_Invoice',headers,rows,request_id:uid()});
-    await refresh();shell();await showPage('workspace');
-    toast('Opened your quote in Transform!');
-  }));
-
-  $('quote-print').addEventListener('click',()=>{
-    syncQuoteDom();
-    openModal(`${s.docType} · ${s.docNumber}`,`
-      <div style="padding:12px;border:1px solid var(--line);border-radius:10px">
-        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;border-bottom:1px solid var(--line);padding-bottom:12px">
-          <div><h3 style="font-size:18px">${escapeHTML(s.companyName)}</h3><p style="font-size:12px;color:var(--muted)">${escapeHTML(s.companyContact)}</p></div>
-          <div style="text-align:right"><strong>${escapeHTML(s.docType)} #${escapeHTML(s.docNumber)}</strong><p style="font-size:12px;color:var(--muted)">Date: ${escapeHTML(s.date)}</p></div>
-        </div>
-        <div style="margin:12px 0"><small style="color:var(--muted)">PREPARED FOR:</small><div><strong>${escapeHTML(s.clientName)}</strong> (${escapeHTML(s.clientContact)})</div></div>
-        <div class="table-scroll"><table><thead><tr><th>Code</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>${s.items.map(it=>`<tr><td>${escapeHTML(it.code)}</td><td>${escapeHTML(it.description)}</td><td>${it.qty}</td><td>${escapeHTML(s.currency)} ${it.price}</td><td>${escapeHTML(s.currency)} ${((Number(it.qty)||0)*(Number(it.price)||0)).toLocaleString()}</td></tr>`).join('')}</tbody></table></div>
-        <div style="margin-top:14px;text-align:right">
-          <div>Subtotal: <b>${escapeHTML(s.currency)} ${subtotal.toLocaleString()}</b></div>
-          <div>VAT (${s.vatRate}%): <b>${escapeHTML(s.currency)} ${vatAmt.toLocaleString()}</b></div>
-          <div style="font-size:16px;margin-top:4px">Grand Total: <b>${escapeHTML(s.currency)} ${grandTotal.toLocaleString()}</b></div>
-        </div>
-        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-          <button id="print-modal-btn" class="btn primary small">Print / Save as PDF</button>
-          ${productCredit()}
-        </div>
-      </div>
-    `);
-    $('print-modal-btn').addEventListener('click',()=>window.print());
-  });
-}
-
-async function templatesPage(){
-  const vert=activeVertical();
-  const vMeta=VERTICAL_META[vert]||VERTICAL_META.general;
-  const res=await api('/api/templates',undefined,'GET');
-  const allItems:any[]=res.items||[];
-  const items=allItems.filter(t=>!t.builtin||vMeta.templateCategories.includes(t.category));
-  $('page').innerHTML=`<div class="page-heading"><div><h1>${escapeHTML(vMeta.shortName)} Templates</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Pick a ready-made ${escapeHTML(vMeta.shortName.toLowerCase())} template below, download a blank Excel (.XLSX) file, or save your own template.</p></div><button id="new-template-btn" class="btn primary small">${icon('plus')}Save Custom Template</button></div>
-  <div class="knowledge-grid">
-    ${items.map((t,idx)=>`<article class="knowledge-card">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
-        <span class="badge ${t.builtin?'good':'purple'}">${escapeHTML(t.category||(t.builtin?'Ready-Made':'Custom'))}</span>
-        <small style="color:var(--muted)">${t.headers.length} columns</small>
-      </div>
-      <h3>${escapeHTML(t.name)}</h3>
-      <p style="margin-top:6px;font-size:13px">${escapeHTML(t.description||'')}</p>
-      <div class="file-list" style="margin-top:10px">${t.headers.map((h:string)=>`<span class="file-chip">${escapeHTML(h)}</span>`).join('')}</div>
-      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn small primary" data-use-tpl="${idx}">${icon('spark')}Open Template</button>
-        <button class="btn small" data-dl-tpl="${idx}">${icon('download')}Download Blank Excel (.XLSX)</button>
-      </div>
-    </article>`).join('')}
-  </div>`;
-
-  document.querySelectorAll<HTMLButtonElement>('[data-use-tpl]').forEach(b=>b.addEventListener('click',()=>void busy(b,async()=>{
-    const t=items[Number(b.dataset.useTpl)];
-    if(t.id==='sasams_student_import'&&boot.demo_mode){
-      job=await api<Job>('/api/demo/jobs',{case:'sasams_students',request_id:uid()});
-      job=await api<Job>(`/api/jobs/${job.id}/run`,{});
-    }else{
-      job=await api<Job>('/api/jobs/from-builder',{title:`${t.name}.xlsx`,sheet:t.sheet||'Output',headers:t.headers,rows:t.sample_rows||[],request_id:uid()});
-    }
-    await refresh();shell();await showPage('workspace');
-    toast(`Opened template: ${t.name}`);
-  })));
-
-  document.querySelectorAll<HTMLButtonElement>('[data-dl-tpl]').forEach(b=>b.addEventListener('click',()=>{
-    const t=items[Number(b.dataset.dlTpl)];
-    const blob=buildXlsxBlob(t.sheet||'Template',t.headers,[]);
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;
-    a.download=`${t.name.replace(/\s+/g,'-')}-Template.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast(`Downloaded blank template: ${t.name}`);
-  }));
-
-  $('new-template-btn').addEventListener('click',()=>{
-    openModal('Save Your Own Template',`
-      <form id="custom-tpl-form">
-        <label for="tpl-name">Template Name</label>
-        <input id="tpl-name" required placeholder="e.g. Term 2 Class List">
-        <label for="tpl-cat">Category</label>
-        <input id="tpl-cat" value="${escapeHTML(vMeta.templateCategories[0]||'Custom')}" placeholder="e.g. School / Business">
-        <label for="tpl-headers">Column Names (comma-separated) — or upload an Excel/CSV file below</label>
-        <input id="tpl-headers" required placeholder="e.g. ID, First Name, Last Name, Phone, Amount">
-        <label for="tpl-file">Or copy columns from an existing Excel (.XLSX / .XLS) / CSV file (optional)</label>
-        <input id="tpl-file" type="file" accept=".xlsx,.xls,.csv">
-        <button type="submit" id="save-tpl-submit" class="btn primary" style="margin-top:14px">Save Template</button>
-      </form>
-    `);
-    $<HTMLInputElement>('tpl-file').addEventListener('change',async()=>{
-      const f=$<HTMLInputElement>('tpl-file').files?.[0];
-      if(!f)return;
-      const parsed=await parseUploadedFile(f);
-      if(parsed.headers.length){
-        $<HTMLInputElement>('tpl-headers').value=parsed.headers.join(', ');
-        if(!$<HTMLInputElement>('tpl-name').value)$<HTMLInputElement>('tpl-name').value=f.name.replace(/\.(xlsx|xls|csv)$/i,'');
-      }
-    });
-    $('custom-tpl-form').addEventListener('submit',e=>{
-      e.preventDefault();
-      void busy($('save-tpl-submit'),async()=>{
-        const name=$<HTMLInputElement>('tpl-name').value.trim();
-        const category=$<HTMLInputElement>('tpl-cat').value.trim()||vMeta.templateCategories[0]||'Custom';
-        const headers=$<HTMLInputElement>('tpl-headers').value.split(',').map(s=>s.trim()).filter(Boolean);
-        await api('/api/templates',{name,category,headers},'POST');
-        closeModal();
-        await templatesPage();
-        toast(`Saved "${name}" to your templates!`);
-      });
-    });
-  });
-}
-
-function wireChat(){
-  const messages=$('messages');
-  messages.scrollTop=messages.scrollHeight;
-  $('chat-form').addEventListener('submit',e=>{e.preventDefault();void sendChat()});
-  $<HTMLTextAreaElement>('chat-text').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void sendChat()}});
-  document.querySelectorAll<HTMLButtonElement>('[data-chat]').forEach(b=>b.addEventListener('click',()=>{$<HTMLTextAreaElement>('chat-text').value=b.dataset.chat!;void sendChat()}));
-  if($('confirm-correction'))$('confirm-correction').addEventListener('click',()=>void busy($('confirm-correction'),async()=>{
-    job=await api<Job>(`/api/jobs/${job!.id}/confirm`,{proposal_id:job!.proposal.id,request_id:uid()});
-    await refresh();shell();await showPage('workspace');
-    toast(job!.state==='RELEASED'?'Done! Your Excel file is ready to download.':'Saved — check the chat for next steps.');
-  }));
-}
-
-async function sendChat(){
-  const text=$<HTMLTextAreaElement>('chat-text').value.trim();
-  if(!text)return;
-  if(job&&/\b(missing|incomplete|blank|empty|what('s| is)? (still )?(left|wrong|not done))\b/i.test(text)){
-    $<HTMLTextAreaElement>('chat-text').value='';
-    addHelperNote(text,sheetMissingSummary());
-    return;
-  }
-  await busy($('send-chat'),async()=>{
-    if(!job){
-      handleBuilderChatCommand(text);
-      const tab=currentBuilderTab();
-      job=await api<Job>('/api/jobs/from-builder',{title:builderState.title||'Created-Sheet.xlsx',sheet:tab.name||'Sheet1',headers:tab.headers,rows:tab.rows,request_id:uid()});
-      await refresh();shell();await showPage('workspace');
-      return;
-    }
-    job=await api<Job>(`/api/jobs/${job!.id}/chat`,{text,request_id:uid()});
-    await refresh();shell();await showPage('workspace');
-  });
-}
-
 async function doRun(){
   if(!job)return;
   await busy($('run-job'),async()=>{
@@ -1832,10 +1434,6 @@ function jobHistory(){
   void preferencesPage();
 }
 
-async function knowledgePage(){
-  await preferencesPage();
-}
-
 // Credit meter: shows credits left this month on the Past Files & Settings page.
 function creditMeterHtml(c:any){
   if(!c||typeof c.included!=='number'||!c.costs)return '';
@@ -1848,7 +1446,6 @@ function creditMeterHtml(c:any){
 async function preferencesPage(){
   const p=overview.preferences||{theme:'light',density:'comfortable',explanations:'detailed',auto_checks:true,vertical:'general'};
   const vert=p.vertical||'general';
-  const savedRules=(await api('/api/knowledge',undefined,'GET')).items||[];
   let creditInfo:any=null;try{creditInfo=await api('/api/credits',undefined,'GET');}catch{creditInfo=null;}
   let payInfo:any=null;try{payInfo=await api('/api/billing/me',undefined,'GET');}catch{payInfo=null;}
   const payHtml=payInfo&&payInfo.can_pay?`<section class="pay-monthly"><p class="cm-note">Monthly plan: R${payInfo.fee} including VAT. You pay on Yoco's secure page; we never see your card.</p><button class="btn primary" type="button" data-pay-monthly>Pay R${payInfo.fee} for this month</button></section>`:'';
@@ -1880,8 +1477,6 @@ async function preferencesPage(){
       <h2>Workspace & Appearance</h2>
       <label for="pref-vertical">Workspace Mode</label>
       <select id="pref-vertical">${Object.entries(VERTICAL_META).map(([k,v])=>`<option value="${k}" ${k===vert?'selected':''}>${escapeHTML(v.label)} — ${escapeHTML(v.badge)}</option>`).join('')}</select>
-      <label for="theme">Screen Theme</label>
-      <select id="theme"><option value="light" ${p.theme!=='dark'?'selected':''}>Warm Paper & Calm Sage (Default)</option><option value="dark" ${p.theme==='dark'?'selected':''}>Dark Mode</option></select>
       <label for="density">Table Row Spacing</label>
       <select id="density"><option value="comfortable">Comfortable</option><option value="compact" ${p.density==='compact'?'selected':''}>Compact</option></select>
       <label for="explanations">Helper Reply Style</label>
@@ -1897,10 +1492,6 @@ async function preferencesPage(){
       <div class="quiet-buttons">
         ${job?`<button id="edit-plan" class="btn small">${icon('edit')}Inspect Current Mapping JSON</button><button id="download-evidence" class="btn small" ${job.report?'':'disabled'}>${icon('download')}Download Technical Audit JSON</button>`:''}
       </div>
-      <h3 style="font-size:14px;margin-top:10px">Automatically Remembered Column Rules (${savedRules.length})</h3>
-      <div class="knowledge-grid" style="margin-top:8px">
-        ${savedRules.map((k:any,i:number)=>`<article class="knowledge-card"><h4>${escapeHTML(k.template_name)}</h4><p style="font-size:12px">${k.headers.length} columns remembered</p><button class="btn small" style="margin-top:8px" data-pattern="${i}">View Technical Rule</button></article>`).join('')||'<p style="font-size:13px">Finish a spreadsheet and your column matches will be remembered here automatically.</p>'}
-      </div>
     </div>
   </details>`;
 
@@ -1909,11 +1500,10 @@ async function preferencesPage(){
     openModal('Remove this file?',`<p>Remove this spreadsheet from your saved list.</p><button id="confirm-delete" class="btn danger" style="margin-top:14px">Remove file</button>`);
     $('confirm-delete').addEventListener('click',()=>void busy($('confirm-delete'),async()=>{await api(`/api/jobs/${b.dataset.delete}`,{},'DELETE');closeModal();if(job?.id===b.dataset.delete)job=null;await refresh();shell();await showPage('preferences')}));
   }));
-  document.querySelectorAll<HTMLButtonElement>('[data-pattern]').forEach(b=>b.addEventListener('click',()=>openModal('Saved Rule Details',`<pre>${escapeHTML(JSON.stringify(savedRules[Number(b.dataset.pattern)].plan,null,2))}</pre>`)));
   if($('edit-plan'))$('edit-plan').addEventListener('click',editPlan);
   if($('download-evidence'))$('download-evidence').addEventListener('click',()=>void download('evidence'));
 
-  $('preferences-form').addEventListener('submit',e=>{e.preventDefault();void busy($('save-preferences'),async()=>{await api('/api/preferences',{theme:$<HTMLSelectElement>('theme').value,density:$<HTMLSelectElement>('density').value,explanations:$<HTMLSelectElement>('explanations').value,auto_checks:$<HTMLInputElement>('auto-checks').checked,vertical:$<HTMLSelectElement>('pref-vertical').value},'PUT');await refresh();applyPreferences();shell();await showPage('preferences');toast('Your settings were saved!')})});
+  $('preferences-form').addEventListener('submit',e=>{e.preventDefault();void busy($('save-preferences'),async()=>{await api('/api/preferences',{theme:'light',density:$<HTMLSelectElement>('density').value,explanations:$<HTMLSelectElement>('explanations').value,auto_checks:$<HTMLInputElement>('auto-checks').checked,vertical:$<HTMLSelectElement>('pref-vertical').value},'PUT');await refresh();applyPreferences();shell();await showPage('preferences');toast('Your settings were saved!')})});
 }
 
 // Admin credits: balances, flags, grants, limits, pauses, undo, bulk grant, margin, CSV export, history, plan settings.
@@ -2090,8 +1680,8 @@ async function adminPage(){
   adminSettings=await api('/api/admin/settings');
   customers=(await api('/api/admin/customers')).items;
   const s=adminSettings;
-  $('page').innerHTML=`<div class="page-heading"><h1>Admin Settings</h1><span class="badge purple">Platform Admin</span></div><div id="credit-admin" class="credit-admin"><p class="cm-note">Loading credits…</p></div><form id="admin-form"><div class="settings-grid"><section class="settings-panel"><h2>Budgets & Quotas</h2><div class="field-row"><div><label for="platform-budget">Platform monthly ceiling (USD)</label><input id="platform-budget" inputmode="decimal" value="${escapeHTML(s.platform_budget_usd)}"></div><div><label for="ai-budget">Monthly AI allowance (USD)</label><input id="ai-budget" inputmode="decimal" value="${escapeHTML(s.monthly_budget_usd)}"></div></div><div class="field-row"><div><label for="input-price">Input price / 1M tokens (USD)</label><input id="input-price" inputmode="decimal" value="${escapeHTML(s.input_price_per_million_usd)}"></div><div><label for="output-price">Output price / 1M tokens (USD)</label><input id="output-price" inputmode="decimal" value="${escapeHTML(s.output_price_per_million_usd)}"></div></div><label for="pricing-url">Pricing source URL</label><input id="pricing-url" type="url" value="${escapeHTML(s.pricing_source_url)}" placeholder="https://…"><label for="pricing-date">Date verified</label><input id="pricing-date" type="date" value="${escapeHTML(s.pricing_verified_date)}"><div class="field-row"><div><label for="max-tokens">Max output tokens</label><input id="max-tokens" type="number" min="256" max="12000" value="${s.max_output_tokens}"></div><div><label for="storage-limit">Storage / customer (MiB)</label><input id="storage-limit" type="number" min="50" max="10000" value="${s.max_storage_mib_per_customer}"></div></div><label for="jobs-limit">Max jobs / customer</label><input id="jobs-limit" type="number" min="5" max="1000" value="${s.max_jobs_per_customer}"></section><section class="settings-panel"><h2>AI Provider & Shared Key</h2><label for="provider">Provider</label><select id="provider"><option value="openai_compatible">OpenAI-compatible</option><option value="anthropic" ${s.provider==='anthropic'?'selected':''}>Anthropic</option></select><label for="base-url">Base URL</label><input id="base-url" type="url" value="${escapeHTML(s.base_url)}" placeholder="https://api.openai.com/v1"><label for="model">Model ID</label><input id="model" value="${escapeHTML(s.model)}" placeholder="gpt-4o-mini"><label for="api-key">Shared API key (write-only)</label><input id="api-key" type="password" autocomplete="off" ${boot.demo_mode?'disabled':''} placeholder="${boot.demo_mode?'Disabled in preview':'Paste key in deployed app'}"><label class="toggle"><input id="clear-key" type="checkbox" ${boot.demo_mode?'disabled':''}>Remove stored key</label><label class="toggle"><input id="ai-enabled" type="checkbox" ${s.enabled?'checked':''} ${boot.demo_mode?'disabled':''}>Enable external AI requests</label><label class="toggle"><input id="auto-learn" type="checkbox" ${s.auto_learn?'checked':''}>Auto-save mappings after QMS passes</label></section></div><div class="settings-actions"><button id="save-admin" class="btn primary">Save settings${icon('check')}</button></div></form><div class="section-heading"><h2>Customer Accounts (${customers.length})</h2><button id="new-customer" class="btn small">${icon('plus')}Add customer</button></div><div class="customer-table" tabindex="0" aria-label="Customer workspaces"><table><thead><tr><th>Customer</th><th>Users</th><th>Status</th><th>Created</th></tr></thead><tbody>${customers.map(c=>`<tr><td><strong>${escapeHTML(c.name)}</strong></td><td>${c.users}</td><td><span class="badge good">Active</span></td><td>${new Date(c.created).toLocaleDateString()}</td></tr>`).join('')||'<tr><td colspan="4" class="table-empty">No customers yet.</td></tr>'}</tbody></table></div>`;
-  $('admin-form').addEventListener('submit',e=>{e.preventDefault();void busy($('save-admin'),async()=>{const read=(id:string)=>$<HTMLInputElement>(id).value;const key=read('api-key');$<HTMLInputElement>('api-key').value='';const body={enabled:$<HTMLInputElement>('ai-enabled').checked,provider:$<HTMLSelectElement>('provider').value,base_url:read('base-url').trim(),model:read('model').trim(),monthly_budget_usd:read('ai-budget'),platform_budget_usd:read('platform-budget'),input_price_per_million_usd:read('input-price'),output_price_per_million_usd:read('output-price'),pricing_source_url:read('pricing-url').trim(),pricing_verified_date:read('pricing-date'),max_output_tokens:Number(read('max-tokens')),timeout_seconds:75,auto_learn:$<HTMLInputElement>('auto-learn').checked,api_key:key||null,clear_key:$<HTMLInputElement>('clear-key').checked,max_storage_mib_per_customer:Number(read('storage-limit')),max_jobs_per_customer:Number(read('jobs-limit'))};adminSettings=await api('/api/admin/settings',body,'PUT');await refresh();await adminPage();toast('Settings saved. No AI request was made.')})});
+  $('page').innerHTML=`<div class="page-heading"><h1>Admin Settings</h1><span class="badge purple">Platform Admin</span></div><div id="credit-admin" class="credit-admin"><p class="cm-note">Loading credits…</p></div><form id="admin-form"><div class="settings-grid"><section class="settings-panel"><h2>Limits</h2><div class="field-row"><div><label for="storage-limit">Storage / customer (MiB)</label><input id="storage-limit" type="number" min="50" max="10000" value="${escapeHTML(String(s.max_storage_mib_per_customer))}"></div><div><label for="jobs-limit">Max jobs / customer</label><input id="jobs-limit" type="number" min="5" max="1000" value="${escapeHTML(String(s.max_jobs_per_customer))}"></div></div></section></div><div class="settings-actions"><button id="save-admin" class="btn primary">Save settings${icon('check')}</button></div></form><div class="section-heading"><h2>Customer Accounts (${customers.length})</h2><button id="new-customer" class="btn small">${icon('plus')}Add customer</button></div><div class="customer-table" tabindex="0" aria-label="Customer workspaces"><table><thead><tr><th>Customer</th><th>Users</th><th>Status</th><th>Created</th></tr></thead><tbody>${customers.map(c=>`<tr><td><strong>${escapeHTML(c.name)}</strong></td><td>${c.users}</td><td><span class="badge good">Active</span></td><td>${new Date(c.created).toLocaleDateString()}</td></tr>`).join('')||'<tr><td colspan="4" class="table-empty">No customers yet.</td></tr>'}</tbody></table></div>`;
+  $('admin-form').addEventListener('submit',e=>{e.preventDefault();void busy($('save-admin'),async()=>{const read=(id:string)=>$<HTMLInputElement>(id).value;const body={max_storage_mib_per_customer:Number(read('storage-limit')),max_jobs_per_customer:Number(read('jobs-limit'))};adminSettings=await api('/api/admin/settings',body,'PUT');await refresh();await adminPage();toast('Settings saved.')})});
   $('new-customer').addEventListener('click',createCustomer);
   await loadCreditAdmin();
 }
@@ -2111,13 +1701,6 @@ function inspectSource(id:string){
   const p=job?.profiles.sources.find((x:any)=>x.id===id);
   if(!p)return;
   openModal('Source · '+p.name,p.sheets.map((s:any)=>`<h3>${escapeHTML(s.name)}</h3><div class="table-scroll"><table><thead><tr>${s.headers.map((h:string)=>`<th>${escapeHTML(h)}</th>`).join('')}</tr></thead><tbody>${s.preview.map((row:any[])=>`<tr>${row.map(v=>`<td>${escapeHTML(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join(''));
-}
-
-function approveAI(){
-  if(!job)return;
-  openModal('AI Interpretation',`<p>Send sampled cells and rules to the configured AI provider?</p><label class="toggle"><input id="ai-consent" type="checkbox">I approve this request</label><button id="confirm-ai" class="btn primary" disabled>Run AI</button>`);
-  $<HTMLInputElement>('ai-consent').addEventListener('change',()=>{$<HTMLButtonElement>('confirm-ai').disabled=!$<HTMLInputElement>('ai-consent').checked});
-  $('confirm-ai').addEventListener('click',()=>void busy($('confirm-ai'),async()=>{job=await api<Job>(`/api/jobs/${job!.id}/analyse`,{consent_to_external_processing:true,request_id:uid()});closeModal();await refresh();shell();await showPage('workspace')}));
 }
 
 // ===== Excel-style editable grid (Elite Sheets batch 1) =====
@@ -2408,6 +1991,7 @@ function installGridListeners(){
     else if(t.closest?.('#xl-discard')){xlClearPending();xlNetBanner(null)}
     else if(t.closest?.('#ask-missing')){addHelperNote("What's missing?",sheetMissingSummary())}
   });
+  window.addEventListener('elite-nav',e=>{const page=(e as CustomEvent).detail as string;if(user)void showPage(page)});
   window.addEventListener('online',()=>{if(xlHasUnsaved&&job?.report?.rows){xlRetryCount=0;clearTimeout(xlRetryTimer);void xlSave()}});
   document.addEventListener('dblclick',e=>{const td=cellOf(e.target);if(td&&!xlEditing)xlStartEdit(Number(td.dataset.r),Number(td.dataset.c))});
   document.addEventListener('keydown',e=>{if((e.target as HTMLElement)?.closest?.('#xl-wrap'))xlKey(e)});
@@ -2521,9 +2105,7 @@ function openShareDialog(){
       <button id="share-revoke" class="btn small" type="button">Turn off this link</button>
     </div>
     <hr>
-    <label for="share-email"><strong>Email the link</strong></label>
-    <div class="share-row"><input id="share-email" type="email" placeholder="name@school.co.za" autocomplete="off"><button id="share-send" class="btn small" type="button">Send email</button></div>
-    <p class="muted">The email contains a link only, never the file itself.</p>`);
+`);
   let shareId:string|null=null;
   const days=()=>Number((document.querySelector('input[name="share-days"]:checked') as HTMLInputElement).value);
   $('share-create').addEventListener('click',async()=>{
@@ -2545,11 +2127,7 @@ function openShareDialog(){
     try{await api(`/api/jobs/${jobId}/shares/${shareId}`,{},'DELETE');shareId=null;$('share-result').hidden=true;toast('That link is now turned off.')}
     catch(e){toast(e instanceof Error?e.message:String(e),true)}
   });
-  $('share-send').addEventListener('click',async()=>{
-    const to=($('share-email') as HTMLInputElement).value.trim();
-    try{await api(`/api/jobs/${jobId}/share/email`,{to,days:days()});toast(`Link sent to ${to}.`)}
-    catch(e){toast(e instanceof Error?e.message:String(e),true)}
-  });
+
 }
 
 // File naming: one box in the workspace header, reused by the save pop-up.
@@ -2610,10 +2188,14 @@ function ensureTabbar(){
       }else if(b.dataset.tpage){void showPage(b.dataset.tpage);window.scrollTo({top:0})}
     });
   }
-  bar.innerHTML=`<button class="m-tab" data-mtab="chat" type="button"><span class="m-ico" aria-hidden="true">💬</span>Helper</button>`+
-    `<button class="m-tab" data-mtab="sheet" type="button"><span class="m-ico" aria-hidden="true">📊</span>Sheet</button>`+
-    `<button class="m-tab" data-tpage="templates" type="button"><span class="m-ico" aria-hidden="true">🗂️</span>Templates</button>`+
-    `<button class="m-tab" data-tpage="preferences" type="button"><span class="m-ico" aria-hidden="true">⚙️</span>Files</button>`;
+  bar.innerHTML=(user?.role==='admin'?`<button class="m-tab" data-mtab="chat" type="button"><span class="m-ico" aria-hidden="true">${icon('chat')}</span>Helper</button>`+
+    `<button class="m-tab" data-mtab="sheet" type="button"><span class="m-ico" aria-hidden="true">${icon('grid')}</span>Sheet</button>`:`<button class="m-tab" data-tpage="workspace" type="button"><span class="m-ico" aria-hidden="true">${icon('sheet')}</span>School file</button>`)+
+    (user?.role==='admin'?`<button class="m-tab" data-tpage="templates" type="button"><span class="m-ico" aria-hidden="true">${icon('layers')}</span>Templates</button>`:'')+
+    (user?.role!=='admin'?`<button class="m-tab" data-tpage="gradebook" type="button"><span class="m-ico" aria-hidden="true">${icon('book')}</span>Gradebook</button>`:'')+
+    (user?.role!=='admin'?`<button class="m-tab" data-tpage="register" type="button"><span class="m-ico" aria-hidden="true">${icon('clipboard')}</span>Registers</button>`:'')+
+    (user?.role!=='admin'?`<button class="m-tab" data-tpage="cptd" type="button"><span class="m-ico" aria-hidden="true">${icon('shield')}</span>CPTD</button>`:'')+
+    (user?.role!=='admin'?`<button class="m-tab" data-tpage="planner" type="button"><span class="m-ico" aria-hidden="true">${icon('clock')}</span>Planner</button>`:'')+
+    `<button class="m-tab" data-tpage="preferences" type="button"><span class="m-ico" aria-hidden="true">${icon('settings')}</span>Files</button>`;
   updateTabbar();
 }
 

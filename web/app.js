@@ -191,6 +191,12 @@
       return x.charCodeAt(0) & 255;
     });
   };
+  function s2ab(s) {
+    if (typeof ArrayBuffer === "undefined") return s2a(s);
+    var buf = new ArrayBuffer(s.length), view = new Uint8Array(buf);
+    for (var i = 0; i != s.length; ++i) view[i] = s.charCodeAt(i) & 255;
+    return buf;
+  }
   function a2s(data) {
     if (Array.isArray(data)) return data.map(function(c) {
       return String.fromCharCode(c);
@@ -198,6 +204,10 @@
     var o = [];
     for (var i = 0; i < data.length; ++i) o[i] = String.fromCharCode(data[i]);
     return o.join("");
+  }
+  function a2u(data) {
+    if (typeof Uint8Array === "undefined") throw new Error("Unsupported");
+    return new Uint8Array(data);
   }
   function ab2a(data) {
     if (typeof ArrayBuffer == "undefined") throw new Error("Unsupported");
@@ -1617,6 +1627,10 @@
     table_fmt[idx] = fmt;
     return idx;
   }
+  function SSF_load_table(tbl) {
+    for (var i = 0; i != 392; ++i)
+      if (tbl[i] !== void 0) SSF_load(tbl[i], i);
+  }
   function make_ssf() {
     table_fmt = SSF_init_table();
   }
@@ -2294,7 +2308,7 @@
       rebuild_cfb(cfb);
       switch (_opts.fileType) {
         case "zip":
-          return write_zip(cfb, _opts);
+          return write_zip2(cfb, _opts);
       }
       var L = (function(cfb2) {
         var mini_size = 0, fat_size = 0;
@@ -3048,7 +3062,7 @@
       if (_usz != usz) warn_or_throw(wrn, "Bad uncompressed size: " + usz + " != " + _usz);
       cfb_add(o, name, data, { unsafe: true, mt: date });
     }
-    function write_zip(cfb, options) {
+    function write_zip2(cfb, options) {
       var _opts = options || {};
       var out = [], cdirs = [];
       var o = new_buf(1);
@@ -3397,6 +3411,68 @@
     return exports;
   })();
   var _fs = void 0;
+  function blobify(data) {
+    if (typeof data === "string") return s2ab(data);
+    if (Array.isArray(data)) return a2u(data);
+    return data;
+  }
+  function write_dl(fname, payload, enc) {
+    if (typeof _fs !== "undefined" && _fs.writeFileSync) return enc ? _fs.writeFileSync(fname, payload, enc) : _fs.writeFileSync(fname, payload);
+    if (typeof Deno !== "undefined") {
+      if (enc && typeof payload == "string") switch (enc) {
+        case "utf8":
+          payload = new TextEncoder(enc).encode(payload);
+          break;
+        case "binary":
+          payload = s2ab(payload);
+          break;
+        /* TODO: binary equivalent */
+        default:
+          throw new Error("Unsupported encoding " + enc);
+      }
+      return Deno.writeFileSync(fname, payload);
+    }
+    var data = enc == "utf8" ? utf8write(payload) : payload;
+    if (typeof IE_SaveFile !== "undefined") return IE_SaveFile(data, fname);
+    if (typeof Blob !== "undefined") {
+      var blob = new Blob([blobify(data)], { type: "application/octet-stream" });
+      if (typeof navigator !== "undefined" && navigator.msSaveBlob) return navigator.msSaveBlob(blob, fname);
+      if (typeof saveAs !== "undefined") return saveAs(blob, fname);
+      if (typeof URL !== "undefined" && typeof document !== "undefined" && document.createElement && URL.createObjectURL) {
+        var url = URL.createObjectURL(blob);
+        if (typeof chrome === "object" && typeof (chrome.downloads || {}).download == "function") {
+          if (URL.revokeObjectURL && typeof setTimeout !== "undefined") setTimeout(function() {
+            URL.revokeObjectURL(url);
+          }, 6e4);
+          return chrome.downloads.download({ url, filename: fname, saveAs: true });
+        }
+        var a = document.createElement("a");
+        if (a.download != null) {
+          a.download = fname;
+          a.href = url;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          if (URL.revokeObjectURL && typeof setTimeout !== "undefined") setTimeout(function() {
+            URL.revokeObjectURL(url);
+          }, 6e4);
+          return url;
+        }
+      }
+    }
+    if (typeof $ !== "undefined" && typeof File !== "undefined" && typeof Folder !== "undefined") try {
+      var out = File(fname);
+      out.open("w");
+      out.encoding = "binary";
+      if (Array.isArray(payload)) payload = a2s(payload);
+      out.write(payload);
+      out.close();
+      return payload;
+    } catch (e) {
+      if (!e.message || !e.message.match(/onstruct/)) throw e;
+    }
+    throw new Error("cannot save file " + fname);
+  }
   function read_binary(path) {
     if (typeof _fs !== "undefined") return _fs.readFileSync(path);
     if (typeof Deno !== "undefined") return Deno.readFileSync(path);
@@ -3417,9 +3493,27 @@
     for (var i = 0; i < ks.length; ++i) if (Object.prototype.hasOwnProperty.call(o, ks[i])) o2.push(ks[i]);
     return o2;
   }
+  function evert_key(obj, key) {
+    var o = [], K = keys(obj);
+    for (var i = 0; i !== K.length; ++i) if (o[obj[K[i]][key]] == null) o[obj[K[i]][key]] = K[i];
+    return o;
+  }
   function evert(obj) {
     var o = [], K = keys(obj);
     for (var i = 0; i !== K.length; ++i) o[obj[K[i]]] = K[i];
+    return o;
+  }
+  function evert_num(obj) {
+    var o = [], K = keys(obj);
+    for (var i = 0; i !== K.length; ++i) o[obj[K[i]]] = parseInt(K[i], 10);
+    return o;
+  }
+  function evert_arr(obj) {
+    var o = [], K = keys(obj);
+    for (var i = 0; i !== K.length; ++i) {
+      if (o[obj[K[i]]] == null) o[obj[K[i]]] = [];
+      o[obj[K[i]]].push(K[i]);
+    }
     return o;
   }
   var basedate = /* @__PURE__ */ new Date(1899, 11, 30, 0, 0, 0);
@@ -3680,6 +3774,9 @@
       CFB.utils.cfb_add(zip, path, content);
     } else zip.file(path, content);
   }
+  function zip_new() {
+    return CFB.utils.cfb_new();
+  }
   function zip_read(d, o) {
     switch (o.type) {
       case "base64":
@@ -3764,6 +3861,18 @@
     };
   })();
   var decregex = /[&<>'"]/g;
+  var charegex = /[\u0000-\u0008\u000b-\u001f]/g;
+  function escapexml(text) {
+    var s = text + "";
+    return s.replace(decregex, function(y) {
+      return rencoding[y];
+    }).replace(charegex, function(s2) {
+      return "_x" + ("000" + s2.charCodeAt(0).toString(16)).slice(-4) + "_";
+    });
+  }
+  function escapexmltag(text) {
+    return escapexml(text).replace(/ /g, "_x0020_");
+  }
   var htmlcharegex = /[\u0000-\u001f]/g;
   function escapehtml(text) {
     var s = text + "";
@@ -3771,6 +3880,14 @@
       return rencoding[y];
     }).replace(/\n/g, "<br/>").replace(htmlcharegex, function(s2) {
       return "&#x" + ("000" + s2.charCodeAt(0).toString(16)).slice(-4) + ";";
+    });
+  }
+  function escapexlml(text) {
+    var s = text + "";
+    return s.replace(decregex, function(y) {
+      return rencoding[y];
+    }).replace(htmlcharegex, function(s2) {
+      return "&#x" + s2.charCodeAt(0).toString(16).toUpperCase() + ";";
     });
   }
   var xlml_fixstr = /* @__PURE__ */ (function() {
@@ -3782,6 +3899,9 @@
       return str.replace(entregex, entrepl);
     };
   })();
+  function xlml_unfixstr(str) {
+    return str.replace(/(\r\n|[\r\n])/g, "&#10;");
+  }
   function parsexmlbool(value) {
     switch (value) {
       case 1:
@@ -3935,6 +4055,9 @@
     return res;
   }
   var wtregex = /(^\s|\s$|\n)/;
+  function writetag(f, g) {
+    return "<" + f + (g.match(wtregex) ? ' xml:space="preserve"' : "") + ">" + g + "</" + f + ">";
+  }
   function wxt_helper(h) {
     return keys(h).map(function(k) {
       return " " + k + '="' + h[k] + '"';
@@ -3942,6 +4065,28 @@
   }
   function writextag(f, g, h) {
     return "<" + f + (h != null ? wxt_helper(h) : "") + (g != null ? (g.match(wtregex) ? ' xml:space="preserve"' : "") + ">" + g + "</" + f : "/") + ">";
+  }
+  function write_w3cdtf(d, t) {
+    try {
+      return d.toISOString().replace(/\.\d*/, "");
+    } catch (e) {
+      if (t) throw e;
+    }
+    return "";
+  }
+  function write_vt(s, xlsx) {
+    switch (typeof s) {
+      case "string":
+        var o = writextag("vt:lpwstr", escapexml(s));
+        if (xlsx) o = o.replace(/&quot;/g, "_x0022_");
+        return o;
+      case "number":
+        return writextag((s | 0) == s ? "vt:i4" : "vt:r8", escapexml(String(s)));
+      case "boolean":
+        return writextag("vt:bool", s ? "true" : "false");
+    }
+    if (s instanceof Date) return writextag("vt:filetime", write_w3cdtf(s));
+    throw new Error("Unable to serialize " + s);
   }
   function xlml_normalize(d) {
     if (has_buf && /*::typeof Buffer !== "undefined" && d != null && d instanceof Buffer &&*/
@@ -3974,6 +4119,15 @@
     "http://schemas.microsoft.com/office/excel/2006/main",
     "http://schemas.microsoft.com/office/excel/2006/2"
   ];
+  var XLMLNS = {
+    "o": "urn:schemas-microsoft-com:office:office",
+    "x": "urn:schemas-microsoft-com:office:excel",
+    "ss": "urn:schemas-microsoft-com:office:spreadsheet",
+    "dt": "uuid:C2F41010-65B3-11d1-A29F-00AA00C14882",
+    "mv": "http://macVmlSchemaUri",
+    "v": "urn:schemas-microsoft-com:vml",
+    "html": "http://www.w3.org/TR/REC-html40"
+  };
   function read_double_le(b, idx) {
     var s = 1 - 2 * (b[idx + 7] >>> 7);
     var e = ((b[idx + 7] & 127) << 4) + (b[idx + 6] >>> 4 & 15);
@@ -4457,6 +4611,34 @@
     };
     return { next, push, end, _bufs: bufs };
   }
+  function write_record(ba, type, payload, length) {
+    var t = +type, l;
+    if (isNaN(t)) return;
+    if (!length) length = XLSBRecordEnum[t].p || (payload || []).length || 0;
+    l = 1 + (t >= 128 ? 1 : 0) + 1;
+    if (length >= 128) ++l;
+    if (length >= 16384) ++l;
+    if (length >= 2097152) ++l;
+    var o = ba.next(l);
+    if (t <= 127) o.write_shift(1, t);
+    else {
+      o.write_shift(1, (t & 127) + 128);
+      o.write_shift(1, t >> 7);
+    }
+    for (var i = 0; i != 4; ++i) {
+      if (length >= 128) {
+        o.write_shift(1, (length & 127) + 128);
+        length >>= 7;
+      } else {
+        o.write_shift(1, length);
+        break;
+      }
+    }
+    if (
+      /*:: length != null &&*/
+      length > 0 && is_buf(payload)
+    ) ba.push(payload);
+  }
   function shift_cell_xls(cell, tgt, opts) {
     var out = dup(cell);
     if (tgt.s) {
@@ -4705,12 +4887,33 @@
   function parse_Int32LE(data) {
     return data.read_shift(4, "i");
   }
+  function write_UInt32LE(x, o) {
+    if (!o) o = new_buf(4);
+    o.write_shift(4, x);
+    return o;
+  }
   function parse_XLWideString(data) {
     var cchCharacters = data.read_shift(4);
     return cchCharacters === 0 ? "" : data.read_shift(cchCharacters, "dbcs");
   }
+  function write_XLWideString(data, o) {
+    var _null = false;
+    if (o == null) {
+      _null = true;
+      o = new_buf(4 + 2 * data.length);
+    }
+    o.write_shift(4, data.length);
+    if (data.length > 0) o.write_shift(0, data, "dbcs");
+    return _null ? o.slice(0, o.l) : o;
+  }
   function parse_StrRun(data) {
     return { ich: data.read_shift(2), ifnt: data.read_shift(2) };
+  }
+  function write_StrRun(run, o) {
+    if (!o) o = new_buf(4);
+    o.write_shift(2, run.ich || 0);
+    o.write_shift(2, run.ifnt || 0);
+    return o;
   }
   function parse_RichStr(data, length) {
     var start = data.l;
@@ -4726,7 +4929,29 @@
     data.l = start + length;
     return z;
   }
+  function write_RichStr(str, o) {
+    var _null = false;
+    if (o == null) {
+      _null = true;
+      o = new_buf(15 + 4 * str.t.length);
+    }
+    o.write_shift(1, 0);
+    write_XLWideString(str.t, o);
+    return _null ? o.slice(0, o.l) : o;
+  }
   var parse_BrtCommentText = parse_RichStr;
+  function write_BrtCommentText(str, o) {
+    var _null = false;
+    if (o == null) {
+      _null = true;
+      o = new_buf(23 + 4 * str.t.length);
+    }
+    o.write_shift(1, 1);
+    write_XLWideString(str.t, o);
+    o.write_shift(4, 1);
+    write_StrRun({ ich: 0, ifnt: 0 }, o);
+    return _null ? o.slice(0, o.l) : o;
+  }
   function parse_XLSBCell(data) {
     var col = data.read_shift(4);
     var iStyleRef = data.read_shift(2);
@@ -4734,25 +4959,62 @@
     data.l++;
     return { c: col, iStyleRef };
   }
+  function write_XLSBCell(cell, o) {
+    if (o == null) o = new_buf(8);
+    o.write_shift(-4, cell.c);
+    o.write_shift(3, cell.iStyleRef || cell.s);
+    o.write_shift(1, 0);
+    return o;
+  }
   function parse_XLSBShortCell(data) {
     var iStyleRef = data.read_shift(2);
     iStyleRef += data.read_shift(1) << 16;
     data.l++;
     return { c: -1, iStyleRef };
   }
+  function write_XLSBShortCell(cell, o) {
+    if (o == null) o = new_buf(4);
+    o.write_shift(3, cell.iStyleRef || cell.s);
+    o.write_shift(1, 0);
+    return o;
+  }
   var parse_XLSBCodeName = parse_XLWideString;
+  var write_XLSBCodeName = write_XLWideString;
   function parse_XLNullableWideString(data) {
     var cchCharacters = data.read_shift(4);
     return cchCharacters === 0 || cchCharacters === 4294967295 ? "" : data.read_shift(cchCharacters, "dbcs");
   }
+  function write_XLNullableWideString(data, o) {
+    var _null = false;
+    if (o == null) {
+      _null = true;
+      o = new_buf(127);
+    }
+    o.write_shift(4, data.length > 0 ? data.length : 4294967295);
+    if (data.length > 0) o.write_shift(0, data, "dbcs");
+    return _null ? o.slice(0, o.l) : o;
+  }
   var parse_XLNameWideString = parse_XLWideString;
   var parse_RelID = parse_XLNullableWideString;
+  var write_RelID = write_XLNullableWideString;
   function parse_RkNumber(data) {
     var b = data.slice(data.l, data.l + 4);
     var fX100 = b[0] & 1, fInt = b[0] & 2;
     data.l += 4;
     var RK = fInt === 0 ? __double([0, 0, 0, 0, b[0] & 252, b[1], b[2], b[3]], 0) : __readInt32LE(b, 0) >> 2;
     return fX100 ? RK / 100 : RK;
+  }
+  function write_RkNumber(data, o) {
+    if (o == null) o = new_buf(4);
+    var fX100 = 0, fInt = 0, d100 = data * 100;
+    if (data == (data | 0) && data >= -(1 << 29) && data < 1 << 29) {
+      fInt = 1;
+    } else if (d100 == (d100 | 0) && d100 >= -(1 << 29) && d100 < 1 << 29) {
+      fInt = 1;
+      fX100 = 1;
+    }
+    if (fInt) o.write_shift(-4, ((fX100 ? d100 : data) << 2) + (fX100 + 2));
+    else throw new Error("unsupported RkNumber " + data);
   }
   function parse_RfX(data) {
     var cell = { s: {}, e: {} };
@@ -4762,10 +5024,22 @@
     cell.e.c = data.read_shift(4);
     return cell;
   }
+  function write_RfX(r, o) {
+    if (!o) o = new_buf(16);
+    o.write_shift(4, r.s.r);
+    o.write_shift(4, r.e.r);
+    o.write_shift(4, r.s.c);
+    o.write_shift(4, r.e.c);
+    return o;
+  }
   var parse_UncheckedRfX = parse_RfX;
+  var write_UncheckedRfX = write_RfX;
   function parse_Xnum(data) {
     if (data.length - data.l < 8) throw "XLS Xnum Buffer underflow";
     return data.read_shift(8, "f");
+  }
+  function write_Xnum(data, o) {
+    return (o || new_buf(8)).write_shift(8, data, "f");
   }
   function parse_BrtColor(data) {
     var out = {};
@@ -4796,6 +5070,41 @@
     if (nTS != 0) out.tint = nTS > 0 ? nTS / 32767 : nTS / 32768;
     return out;
   }
+  function write_BrtColor(color, o) {
+    if (!o) o = new_buf(8);
+    if (!color || color.auto) {
+      o.write_shift(4, 0);
+      o.write_shift(4, 0);
+      return o;
+    }
+    if (color.index != null) {
+      o.write_shift(1, 2);
+      o.write_shift(1, color.index);
+    } else if (color.theme != null) {
+      o.write_shift(1, 6);
+      o.write_shift(1, color.theme);
+    } else {
+      o.write_shift(1, 5);
+      o.write_shift(1, 0);
+    }
+    var nTS = color.tint || 0;
+    if (nTS > 0) nTS *= 32767;
+    else if (nTS < 0) nTS *= 32768;
+    o.write_shift(2, nTS);
+    if (!color.rgb || color.theme != null) {
+      o.write_shift(2, 0);
+      o.write_shift(1, 0);
+      o.write_shift(1, 0);
+    } else {
+      var rgb = color.rgb || "FFFFFF";
+      if (typeof rgb == "number") rgb = ("000000" + rgb.toString(16)).slice(-6);
+      o.write_shift(1, parseInt(rgb.slice(0, 2), 16));
+      o.write_shift(1, parseInt(rgb.slice(2, 4), 16));
+      o.write_shift(1, parseInt(rgb.slice(4, 6), 16));
+      o.write_shift(1, 255);
+    }
+    return o;
+  }
   function parse_FontFlags(data) {
     var d = data.read_shift(1);
     data.l++;
@@ -4810,6 +5119,13 @@
       fExtend: d & 128
     };
     return out;
+  }
+  function write_FontFlags(font, o) {
+    if (!o) o = new_buf(2);
+    var grbit = (font.italic ? 2 : 0) | (font.strike ? 8 : 0) | (font.outline ? 16 : 0) | (font.shadow ? 32 : 0) | (font.condense ? 64 : 0) | (font.extend ? 128 : 0);
+    o.write_shift(1, grbit);
+    o.write_shift(1, 0);
+    return o;
   }
   function parse_ClipboardFormatOrString(o, w) {
     var ClipFmt = { 2: "BITMAP", 3: "METAFILEPICT", 8: "DIB", 14: "ENHMETAFILE" };
@@ -5413,6 +5729,55 @@
     "image/png": "TODO",
     "sheet": "js"
   };
+  var CT_LIST = {
+    workbooks: {
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+      xlsm: "application/vnd.ms-excel.sheet.macroEnabled.main+xml",
+      xlsb: "application/vnd.ms-excel.sheet.binary.macroEnabled.main",
+      xlam: "application/vnd.ms-excel.addin.macroEnabled.main+xml",
+      xltx: "application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml"
+    },
+    strs: {
+      /* Shared Strings */
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml",
+      xlsb: "application/vnd.ms-excel.sharedStrings"
+    },
+    comments: {
+      /* Comments */
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml",
+      xlsb: "application/vnd.ms-excel.comments"
+    },
+    sheets: {
+      /* Worksheet */
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
+      xlsb: "application/vnd.ms-excel.worksheet"
+    },
+    charts: {
+      /* Chartsheet */
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.chartsheet+xml",
+      xlsb: "application/vnd.ms-excel.chartsheet"
+    },
+    dialogs: {
+      /* Dialogsheet */
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.dialogsheet+xml",
+      xlsb: "application/vnd.ms-excel.dialogsheet"
+    },
+    macros: {
+      /* Macrosheet (Excel 4.0 Macros) */
+      xlsx: "application/vnd.ms-excel.macrosheet+xml",
+      xlsb: "application/vnd.ms-excel.macrosheet"
+    },
+    metadata: {
+      /* Metadata (Stock/Geography and Dynamic Array) */
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml",
+      xlsb: "application/vnd.ms-excel.sheetMetadata"
+    },
+    styles: {
+      /* Styles */
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml",
+      xlsb: "application/vnd.ms-excel.styles"
+    }
+  };
   function new_ct() {
     return {
       workbooks: [],
@@ -5466,6 +5831,78 @@
     ct.defaults = ctext;
     delete ct.calcchains;
     return ct;
+  }
+  function write_ct(ct, opts) {
+    var type2ct = evert_arr(ct2type);
+    var o = [], v;
+    o[o.length] = XML_HEADER;
+    o[o.length] = writextag("Types", null, {
+      "xmlns": XMLNS.CT,
+      "xmlns:xsd": XMLNS.xsd,
+      "xmlns:xsi": XMLNS.xsi
+    });
+    o = o.concat([
+      ["xml", "application/xml"],
+      ["bin", "application/vnd.ms-excel.sheet.binary.macroEnabled.main"],
+      ["vml", "application/vnd.openxmlformats-officedocument.vmlDrawing"],
+      ["data", "application/vnd.openxmlformats-officedocument.model+data"],
+      /* from test files */
+      ["bmp", "image/bmp"],
+      ["png", "image/png"],
+      ["gif", "image/gif"],
+      ["emf", "image/x-emf"],
+      ["wmf", "image/x-wmf"],
+      ["jpg", "image/jpeg"],
+      ["jpeg", "image/jpeg"],
+      ["tif", "image/tiff"],
+      ["tiff", "image/tiff"],
+      ["pdf", "application/pdf"],
+      ["rels", "application/vnd.openxmlformats-package.relationships+xml"]
+    ].map(function(x) {
+      return writextag("Default", null, { "Extension": x[0], "ContentType": x[1] });
+    }));
+    var f1 = function(w) {
+      if (ct[w] && ct[w].length > 0) {
+        v = ct[w][0];
+        o[o.length] = writextag("Override", null, {
+          "PartName": (v[0] == "/" ? "" : "/") + v,
+          "ContentType": CT_LIST[w][opts.bookType] || CT_LIST[w]["xlsx"]
+        });
+      }
+    };
+    var f2 = function(w) {
+      (ct[w] || []).forEach(function(v2) {
+        o[o.length] = writextag("Override", null, {
+          "PartName": (v2[0] == "/" ? "" : "/") + v2,
+          "ContentType": CT_LIST[w][opts.bookType] || CT_LIST[w]["xlsx"]
+        });
+      });
+    };
+    var f3 = function(t) {
+      (ct[t] || []).forEach(function(v2) {
+        o[o.length] = writextag("Override", null, {
+          "PartName": (v2[0] == "/" ? "" : "/") + v2,
+          "ContentType": type2ct[t][0]
+        });
+      });
+    };
+    f1("workbooks");
+    f2("sheets");
+    f2("charts");
+    f3("themes");
+    ["strs", "styles"].forEach(f1);
+    ["coreprops", "extprops", "custprops"].forEach(f3);
+    f3("vba");
+    f3("comments");
+    f3("threadedcomments");
+    f3("drawings");
+    f2("metadata");
+    f3("people");
+    if (o.length > 2) {
+      o[o.length] = "</Types>";
+      o[1] = o[1].replace("/>", ">");
+    }
+    return o.join("");
   }
   var RELS = {
     WB: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
@@ -5527,6 +5964,37 @@
     rels["!id"] = hash;
     return rels;
   }
+  function write_rels(rels) {
+    var o = [XML_HEADER, writextag("Relationships", null, {
+      //'xmlns:ns0': XMLNS.RELS,
+      "xmlns": XMLNS.RELS
+    })];
+    keys(rels["!id"]).forEach(function(rid) {
+      o[o.length] = writextag("Relationship", null, rels["!id"][rid]);
+    });
+    if (o.length > 2) {
+      o[o.length] = "</Relationships>";
+      o[1] = o[1].replace("/>", ">");
+    }
+    return o.join("");
+  }
+  function add_rels(rels, rId, f, type, relobj, targetmode) {
+    if (!relobj) relobj = {};
+    if (!rels["!id"]) rels["!id"] = {};
+    if (!rels["!idx"]) rels["!idx"] = 1;
+    if (rId < 0) for (rId = rels["!idx"]; rels["!id"]["rId" + rId]; ++rId) {
+    }
+    rels["!idx"] = rId + 1;
+    relobj.Id = "rId" + rId;
+    relobj.Type = type;
+    relobj.Target = f;
+    if (targetmode) relobj.TargetMode = targetmode;
+    else if ([RELS.HLINK, RELS.XPATH, RELS.XMISS].indexOf(relobj.Type) > -1) relobj.TargetMode = "External";
+    if (rels["!id"][relobj.Id]) throw new Error("Cannot rewrite rId " + rId);
+    rels["!id"][relobj.Id] = relobj;
+    rels[("/" + relobj.Target).replace("//", "/")] = relobj;
+    return rId;
+  }
   var CT_ODS = "application/vnd.oasis.opendocument.spreadsheet";
   function parse_manifest(d, opts) {
     var str = xlml_normalize(d);
@@ -5551,6 +6019,42 @@
       default:
         if (opts && opts.WTF) throw Rn;
     }
+  }
+  function write_manifest(manifest) {
+    var o = [XML_HEADER];
+    o.push('<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">\n');
+    o.push('  <manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>\n');
+    for (var i = 0; i < manifest.length; ++i) o.push('  <manifest:file-entry manifest:full-path="' + manifest[i][0] + '" manifest:media-type="' + manifest[i][1] + '"/>\n');
+    o.push("</manifest:manifest>");
+    return o.join("");
+  }
+  function write_rdf_type(file, res, tag) {
+    return [
+      '  <rdf:Description rdf:about="' + file + '">\n',
+      '    <rdf:type rdf:resource="http://docs.oasis-open.org/ns/office/1.2/meta/' + (tag || "odf") + "#" + res + '"/>\n',
+      "  </rdf:Description>\n"
+    ].join("");
+  }
+  function write_rdf_has(base, file) {
+    return [
+      '  <rdf:Description rdf:about="' + base + '">\n',
+      '    <ns0:hasPart xmlns:ns0="http://docs.oasis-open.org/ns/office/1.2/meta/pkg#" rdf:resource="' + file + '"/>\n',
+      "  </rdf:Description>\n"
+    ].join("");
+  }
+  function write_rdf(rdf) {
+    var o = [XML_HEADER];
+    o.push('<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n');
+    for (var i = 0; i != rdf.length; ++i) {
+      o.push(write_rdf_type(rdf[i][0], rdf[i][1]));
+      o.push(write_rdf_has("", rdf[i][0]));
+    }
+    o.push(write_rdf_type("", "Document", "pkg"));
+    o.push("</rdf:RDF>");
+    return o.join("");
+  }
+  function write_meta_ods() {
+    return '<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xlink="http://www.w3.org/1999/xlink" office:version="1.2"><office:meta><meta:generator>SheetJS ' + XLSX.version + "</meta:generator></office:meta></office:document-meta>";
   }
   var CORE_PROPS = [
     ["cp:category", "Category"],
@@ -5588,6 +6092,41 @@
     }
     return p;
   }
+  function cp_doit(f, g, h, o, p) {
+    if (p[f] != null || g == null || g === "") return;
+    p[f] = g;
+    g = escapexml(g);
+    o[o.length] = h ? writextag(f, g, h) : writetag(f, g);
+  }
+  function write_core_props(cp, _opts) {
+    var opts = _opts || {};
+    var o = [XML_HEADER, writextag("cp:coreProperties", null, {
+      //'xmlns': XMLNS.CORE_PROPS,
+      "xmlns:cp": XMLNS.CORE_PROPS,
+      "xmlns:dc": XMLNS.dc,
+      "xmlns:dcterms": XMLNS.dcterms,
+      "xmlns:dcmitype": XMLNS.dcmitype,
+      "xmlns:xsi": XMLNS.xsi
+    })], p = {};
+    if (!cp && !opts.Props) return o.join("");
+    if (cp) {
+      if (cp.CreatedDate != null) cp_doit("dcterms:created", typeof cp.CreatedDate === "string" ? cp.CreatedDate : write_w3cdtf(cp.CreatedDate, opts.WTF), { "xsi:type": "dcterms:W3CDTF" }, o, p);
+      if (cp.ModifiedDate != null) cp_doit("dcterms:modified", typeof cp.ModifiedDate === "string" ? cp.ModifiedDate : write_w3cdtf(cp.ModifiedDate, opts.WTF), { "xsi:type": "dcterms:W3CDTF" }, o, p);
+    }
+    for (var i = 0; i != CORE_PROPS.length; ++i) {
+      var f = CORE_PROPS[i];
+      var v = opts.Props && opts.Props[f[1]] != null ? opts.Props[f[1]] : cp ? cp[f[1]] : null;
+      if (v === true) v = "1";
+      else if (v === false) v = "0";
+      else if (typeof v == "number") v = String(v);
+      if (v != null) cp_doit(f[0], v, null, o, p);
+    }
+    if (o.length > 2) {
+      o[o.length] = "</cp:coreProperties>";
+      o[1] = o[1].replace("/>", ">");
+    }
+    return o.join("");
+  }
   var EXT_PROPS = [
     ["Application", "Application", "string"],
     ["AppVersion", "AppVersion", "string"],
@@ -5600,6 +6139,14 @@
     ["ScaleCrop", "ScaleCrop", "bool"],
     ["HeadingPairs", "HeadingPairs", "raw"],
     ["TitlesOfParts", "TitlesOfParts", "raw"]
+  ];
+  var PseudoPropsPairs = [
+    "Worksheets",
+    "SheetNames",
+    "NamedRanges",
+    "DefinedNames",
+    "Chartsheets",
+    "ChartNames"
   ];
   function load_props_pairs(HP, TOP, props, opts) {
     var v = [];
@@ -5671,6 +6218,38 @@
     if (q.HeadingPairs && q.TitlesOfParts) load_props_pairs(q.HeadingPairs, q.TitlesOfParts, p, opts);
     return p;
   }
+  function write_ext_props(cp) {
+    var o = [], W = writextag;
+    if (!cp) cp = {};
+    cp.Application = "SheetJS";
+    o[o.length] = XML_HEADER;
+    o[o.length] = writextag("Properties", null, {
+      "xmlns": XMLNS.EXT_PROPS,
+      "xmlns:vt": XMLNS.vt
+    });
+    EXT_PROPS.forEach(function(f) {
+      if (cp[f[1]] === void 0) return;
+      var v;
+      switch (f[2]) {
+        case "string":
+          v = escapexml(String(cp[f[1]]));
+          break;
+        case "bool":
+          v = cp[f[1]] ? "true" : "false";
+          break;
+      }
+      if (v !== void 0) o[o.length] = W(f[0], v);
+    });
+    o[o.length] = W("HeadingPairs", W("vt:vector", W("vt:variant", "<vt:lpstr>Worksheets</vt:lpstr>") + W("vt:variant", W("vt:i4", String(cp.Worksheets))), { size: 2, baseType: "variant" }));
+    o[o.length] = W("TitlesOfParts", W("vt:vector", cp.SheetNames.map(function(s) {
+      return "<vt:lpstr>" + escapexml(s) + "</vt:lpstr>";
+    }).join(""), { size: cp.Worksheets, baseType: "lpstr" }));
+    if (o.length > 2) {
+      o[o.length] = "</Properties>";
+      o[1] = o[1].replace("/>", ">");
+    }
+    return o.join("");
+  }
   var custregex = /<[^>]+>[^<]*/g;
   function parse_cust_props(data, opts) {
     var p = {}, name = "";
@@ -5732,6 +6311,27 @@
     }
     return p;
   }
+  function write_cust_props(cp) {
+    var o = [XML_HEADER, writextag("Properties", null, {
+      "xmlns": XMLNS.CUST_PROPS,
+      "xmlns:vt": XMLNS.vt
+    })];
+    if (!cp) return o.join("");
+    var pid = 1;
+    keys(cp).forEach(function custprop(k) {
+      ++pid;
+      o[o.length] = writextag("property", write_vt(cp[k], true), {
+        "fmtid": "{D5CDD505-2E9C-101B-9397-08002B2CF9AE}",
+        "pid": pid,
+        "name": escapexml(k)
+      });
+    });
+    if (o.length > 2) {
+      o[o.length] = "</Properties>";
+      o[1] = o[1].replace("/>", ">");
+    }
+    return o.join("");
+  }
   var XLMLDocPropsMap = {
     Title: "Title",
     Subject: "Subject",
@@ -5772,9 +6372,86 @@
     tag = evert_XLMLDPM[tag] || tag;
     Props[tag] = val;
   }
+  function xlml_write_docprops(Props, opts) {
+    var o = [];
+    keys(XLMLDocPropsMap).map(function(m) {
+      for (var i = 0; i < CORE_PROPS.length; ++i) if (CORE_PROPS[i][1] == m) return CORE_PROPS[i];
+      for (i = 0; i < EXT_PROPS.length; ++i) if (EXT_PROPS[i][1] == m) return EXT_PROPS[i];
+      throw m;
+    }).forEach(function(p) {
+      if (Props[p[1]] == null) return;
+      var m = opts && opts.Props && opts.Props[p[1]] != null ? opts.Props[p[1]] : Props[p[1]];
+      switch (p[2]) {
+        case "date":
+          m = new Date(m).toISOString().replace(/\.\d*Z/, "Z");
+          break;
+      }
+      if (typeof m == "number") m = String(m);
+      else if (m === true || m === false) {
+        m = m ? "1" : "0";
+      } else if (m instanceof Date) m = new Date(m).toISOString().replace(/\.\d*Z/, "");
+      o.push(writetag(XLMLDocPropsMap[p[1]] || p[1], m));
+    });
+    return writextag("DocumentProperties", o.join(""), { xmlns: XLMLNS.o });
+  }
+  function xlml_write_custprops(Props, Custprops) {
+    var BLACKLIST = ["Worksheets", "SheetNames"];
+    var T = "CustomDocumentProperties";
+    var o = [];
+    if (Props) keys(Props).forEach(function(k) {
+      if (!Object.prototype.hasOwnProperty.call(Props, k)) return;
+      for (var i = 0; i < CORE_PROPS.length; ++i) if (k == CORE_PROPS[i][1]) return;
+      for (i = 0; i < EXT_PROPS.length; ++i) if (k == EXT_PROPS[i][1]) return;
+      for (i = 0; i < BLACKLIST.length; ++i) if (k == BLACKLIST[i]) return;
+      var m = Props[k];
+      var t = "string";
+      if (typeof m == "number") {
+        t = "float";
+        m = String(m);
+      } else if (m === true || m === false) {
+        t = "boolean";
+        m = m ? "1" : "0";
+      } else m = String(m);
+      o.push(writextag(escapexmltag(k), m, { "dt:dt": t }));
+    });
+    if (Custprops) keys(Custprops).forEach(function(k) {
+      if (!Object.prototype.hasOwnProperty.call(Custprops, k)) return;
+      if (Props && Object.prototype.hasOwnProperty.call(Props, k)) return;
+      var m = Custprops[k];
+      var t = "string";
+      if (typeof m == "number") {
+        t = "float";
+        m = String(m);
+      } else if (m === true || m === false) {
+        t = "boolean";
+        m = m ? "1" : "0";
+      } else if (m instanceof Date) {
+        t = "dateTime.tz";
+        m = m.toISOString();
+      } else m = String(m);
+      o.push(writextag(escapexmltag(k), m, { "dt:dt": t }));
+    });
+    return "<" + T + ' xmlns="' + XLMLNS.o + '">' + o.join("") + "</" + T + ">";
+  }
   function parse_FILETIME(blob) {
     var dwLowDateTime = blob.read_shift(4), dwHighDateTime = blob.read_shift(4);
     return new Date((dwHighDateTime / 1e7 * Math.pow(2, 32) + dwLowDateTime / 1e7 - 11644473600) * 1e3).toISOString().replace(/\.000/, "");
+  }
+  function write_FILETIME(time) {
+    var date = typeof time == "string" ? new Date(Date.parse(time)) : time;
+    var t = date.getTime() / 1e3 + 11644473600;
+    var l = t % Math.pow(2, 32), h = (t - l) / Math.pow(2, 32);
+    l *= 1e7;
+    h *= 1e7;
+    var w = l / Math.pow(2, 32) | 0;
+    if (w > 0) {
+      l = l % Math.pow(2, 32);
+      h += w;
+    }
+    var o = new_buf(8);
+    o.write_shift(4, l);
+    o.write_shift(4, h);
+    return o;
   }
   function parse_lpstr(blob, type, pad) {
     var start = blob.l;
@@ -5897,6 +6574,35 @@
       default:
         throw new Error("TypedPropertyValue unrecognized type " + type + " " + t);
     }
+  }
+  function write_TypedPropertyValue(type, value) {
+    var o = new_buf(4), p = new_buf(4);
+    o.write_shift(4, type == 80 ? 31 : type);
+    switch (type) {
+      case 3:
+        p.write_shift(-4, value);
+        break;
+      case 5:
+        p = new_buf(8);
+        p.write_shift(8, value, "f");
+        break;
+      case 11:
+        p.write_shift(4, value ? 1 : 0);
+        break;
+      case 64:
+        p = write_FILETIME(value);
+        break;
+      case 31:
+      case 80:
+        p = new_buf(4 + 2 * (value.length + 1) + (value.length % 2 ? 0 : 2));
+        p.write_shift(4, value.length + 1);
+        p.write_shift(0, value, "dbcs");
+        while (p.l != p.length) p.write_shift(1, 0);
+        break;
+      default:
+        throw new Error("TypedPropertyValue unrecognized type " + type + " " + value);
+    }
+    return bconcat([o, p]);
   }
   function parse_PropertySet(blob, PIDSI) {
     var start_addr = blob.l;
@@ -6040,6 +6746,86 @@
     blob.l = start_addr + size;
     return PropH;
   }
+  var XLSPSSkip = ["CodePage", "Thumbnail", "_PID_LINKBASE", "_PID_HLINKS", "SystemIdentifier", "FMTID"];
+  function guess_property_type(val) {
+    switch (typeof val) {
+      case "boolean":
+        return 11;
+      case "number":
+        return (val | 0) == val ? 3 : 5;
+      case "string":
+        return 31;
+      case "object":
+        if (val instanceof Date) return 64;
+        break;
+    }
+    return -1;
+  }
+  function write_PropertySet(entries, RE, PIDSI) {
+    var hdr = new_buf(8), piao = [], prop = [];
+    var sz = 8, i = 0;
+    var pr = new_buf(8), pio = new_buf(8);
+    pr.write_shift(4, 2);
+    pr.write_shift(4, 1200);
+    pio.write_shift(4, 1);
+    prop.push(pr);
+    piao.push(pio);
+    sz += 8 + pr.length;
+    if (!RE) {
+      pio = new_buf(8);
+      pio.write_shift(4, 0);
+      piao.unshift(pio);
+      var bufs = [new_buf(4)];
+      bufs[0].write_shift(4, entries.length);
+      for (i = 0; i < entries.length; ++i) {
+        var value = entries[i][0];
+        pr = new_buf(4 + 4 + 2 * (value.length + 1) + (value.length % 2 ? 0 : 2));
+        pr.write_shift(4, i + 2);
+        pr.write_shift(4, value.length + 1);
+        pr.write_shift(0, value, "dbcs");
+        while (pr.l != pr.length) pr.write_shift(1, 0);
+        bufs.push(pr);
+      }
+      pr = bconcat(bufs);
+      prop.unshift(pr);
+      sz += 8 + pr.length;
+    }
+    for (i = 0; i < entries.length; ++i) {
+      if (RE && !RE[entries[i][0]]) continue;
+      if (XLSPSSkip.indexOf(entries[i][0]) > -1 || PseudoPropsPairs.indexOf(entries[i][0]) > -1) continue;
+      if (entries[i][1] == null) continue;
+      var val = entries[i][1], idx = 0;
+      if (RE) {
+        idx = +RE[entries[i][0]];
+        var pinfo = PIDSI[idx];
+        if (pinfo.p == "version" && typeof val == "string") {
+          var arr = val.split(".");
+          val = (+arr[0] << 16) + (+arr[1] || 0);
+        }
+        pr = write_TypedPropertyValue(pinfo.t, val);
+      } else {
+        var T = guess_property_type(val);
+        if (T == -1) {
+          T = 31;
+          val = String(val);
+        }
+        pr = write_TypedPropertyValue(T, val);
+      }
+      prop.push(pr);
+      pio = new_buf(8);
+      pio.write_shift(4, !RE ? 2 + i : idx);
+      piao.push(pio);
+      sz += 8 + pr.length;
+    }
+    var w = 8 * (prop.length + 1);
+    for (i = 0; i < prop.length; ++i) {
+      piao[i].write_shift(4, w);
+      w += prop[i].length;
+    }
+    hdr.write_shift(4, sz);
+    hdr.write_shift(4, prop.length);
+    return bconcat([hdr].concat(piao).concat(prop));
+  }
   function parse_PropertySetStream(file, PIDSI, clsid) {
     var blob = file.content;
     if (!blob) return {};
@@ -6075,9 +6861,34 @@
     rval.FMTID = [FMTID0, FMTID1];
     return rval;
   }
+  function write_PropertySetStream(entries, clsid, RE, PIDSI, entries2, clsid2) {
+    var hdr = new_buf(entries2 ? 68 : 48);
+    var bufs = [hdr];
+    hdr.write_shift(2, 65534);
+    hdr.write_shift(2, 0);
+    hdr.write_shift(4, 842412599);
+    hdr.write_shift(16, CFB.utils.consts.HEADER_CLSID, "hex");
+    hdr.write_shift(4, entries2 ? 2 : 1);
+    hdr.write_shift(16, clsid, "hex");
+    hdr.write_shift(4, entries2 ? 68 : 48);
+    var ps0 = write_PropertySet(entries, RE, PIDSI);
+    bufs.push(ps0);
+    if (entries2) {
+      var ps1 = write_PropertySet(entries2, null, null);
+      hdr.write_shift(16, clsid2, "hex");
+      hdr.write_shift(4, 68 + ps0.length);
+      bufs.push(ps1);
+    }
+    return bconcat(bufs);
+  }
   function parsenoop2(blob, length) {
     blob.read_shift(length);
     return null;
+  }
+  function writezeroes(n, o) {
+    if (!o) o = new_buf(n);
+    for (var j = 0; j < n; ++j) o.write_shift(1, 0);
+    return o;
   }
   function parslurp(blob, length, cb) {
     var arr = [], target = blob.l + length;
@@ -6088,8 +6899,18 @@
   function parsebool(blob, length) {
     return blob.read_shift(length) === 1;
   }
+  function writebool(v, o) {
+    if (!o) o = new_buf(2);
+    o.write_shift(2, +!!v);
+    return o;
+  }
   function parseuint16(blob) {
     return blob.read_shift(2, "u");
+  }
+  function writeuint16(v, o) {
+    if (!o) o = new_buf(2);
+    o.write_shift(2, v);
+    return o;
   }
   function parseuint16a(blob, length) {
     return parslurp(blob, length, parseuint16);
@@ -6097,6 +6918,12 @@
   function parse_Bes(blob) {
     var v = blob.read_shift(1), t = blob.read_shift(1);
     return t === 1 ? v : v === 1;
+  }
+  function write_Bes(v, t, o) {
+    if (!o) o = new_buf(2);
+    o.write_shift(1, t == "e" ? +v : +!!v);
+    o.write_shift(1, t == "e" ? 1 : 0);
+    return o;
   }
   function parse_ShortXLUnicodeString(blob, length, opts) {
     var cch = blob.read_shift(opts && opts.biff >= 12 ? 2 : 1);
@@ -6138,6 +6965,17 @@
     current_codepage = cp;
     return z;
   }
+  function write_XLUnicodeRichExtendedString(xlstr) {
+    var str = xlstr.t || "", nfmts = 1;
+    var hdr = new_buf(3 + (nfmts > 1 ? 2 : 0));
+    hdr.write_shift(2, str.length);
+    hdr.write_shift(1, (nfmts > 1 ? 8 : 0) | 1);
+    if (nfmts > 1) hdr.write_shift(2, nfmts);
+    var otext = new_buf(2 * str.length);
+    otext.write_shift(2 * str.length, str, "utf16le");
+    var out = [hdr, otext];
+    return bconcat(out);
+  }
   function parse_XLUnicodeStringNoCch(blob, cch, opts) {
     var retval;
     if (opts) {
@@ -6168,6 +7006,13 @@
       return "";
     }
     return blob.read_shift(cch, opts.biff <= 4 || !blob.lens ? "cpstr" : "sbcs-cont");
+  }
+  function write_XLUnicodeString(str, opts, o) {
+    if (!o) o = new_buf(3 + 2 * str.length);
+    o.write_shift(2, str.length);
+    o.write_shift(1, 1);
+    o.write_shift(31, str, "utf16le");
+    return o;
   }
   function parse_ControlInfo(blob) {
     var flags = blob.read_shift(1);
@@ -6219,6 +7064,13 @@
     var o = len > 0 ? blob.read_shift(len, "utf16le").replace(chr0, "") : "";
     return o;
   }
+  function write_HyperlinkString(str, o) {
+    if (!o) o = new_buf(6 + str.length * 2);
+    o.write_shift(4, 1 + str.length);
+    for (var i = 0; i < str.length; ++i) o.write_shift(2, str.charCodeAt(i));
+    o.write_shift(2, 0);
+    return o;
+  }
   function parse_Hyperlink(blob, length) {
     var end = blob.l + length;
     var sVer = blob.read_shift(4);
@@ -6247,6 +7099,50 @@
     if (displayName) out.Tooltip = displayName;
     return out;
   }
+  function write_Hyperlink(hl) {
+    var out = new_buf(512), i = 0;
+    var Target = hl.Target;
+    if (Target.slice(0, 7) == "file://") Target = Target.slice(7);
+    var hashidx = Target.indexOf("#");
+    var F = hashidx > -1 ? 31 : 23;
+    switch (Target.charAt(0)) {
+      case "#":
+        F = 28;
+        break;
+      case ".":
+        F &= ~2;
+        break;
+    }
+    out.write_shift(4, 2);
+    out.write_shift(4, F);
+    var data = [8, 6815827, 6619237, 4849780, 83];
+    for (i = 0; i < data.length; ++i) out.write_shift(4, data[i]);
+    if (F == 28) {
+      Target = Target.slice(1);
+      write_HyperlinkString(Target, out);
+    } else if (F & 2) {
+      data = "e0 c9 ea 79 f9 ba ce 11 8c 82 00 aa 00 4b a9 0b".split(" ");
+      for (i = 0; i < data.length; ++i) out.write_shift(1, parseInt(data[i], 16));
+      var Pretarget = hashidx > -1 ? Target.slice(0, hashidx) : Target;
+      out.write_shift(4, 2 * (Pretarget.length + 1));
+      for (i = 0; i < Pretarget.length; ++i) out.write_shift(2, Pretarget.charCodeAt(i));
+      out.write_shift(2, 0);
+      if (F & 8) write_HyperlinkString(hashidx > -1 ? Target.slice(hashidx + 1) : "", out);
+    } else {
+      data = "03 03 00 00 00 00 00 00 c0 00 00 00 00 00 00 46".split(" ");
+      for (i = 0; i < data.length; ++i) out.write_shift(1, parseInt(data[i], 16));
+      var P = 0;
+      while (Target.slice(P * 3, P * 3 + 3) == "../" || Target.slice(P * 3, P * 3 + 3) == "..\\") ++P;
+      out.write_shift(2, P);
+      out.write_shift(4, Target.length - 3 * P + 1);
+      for (i = 0; i < Target.length - 3 * P; ++i) out.write_shift(1, Target.charCodeAt(i + 3 * P) & 255);
+      out.write_shift(1, 0);
+      out.write_shift(2, 65535);
+      out.write_shift(2, 57005);
+      for (i = 0; i < 6; ++i) out.write_shift(4, 0);
+    }
+    return out.slice(0, out.l);
+  }
   function parse_LongRGBA(blob) {
     var r = blob.read_shift(1), g = blob.read_shift(1), b = blob.read_shift(1), a = blob.read_shift(1);
     return [r, g, b, a];
@@ -6261,6 +7157,13 @@
     var col = blob.read_shift(2);
     var ixfe = blob.read_shift(2);
     return { r: rw, c: col, ixfe };
+  }
+  function write_XLSCell(R, C, ixfe, o) {
+    if (!o) o = new_buf(6);
+    o.write_shift(2, R);
+    o.write_shift(2, C);
+    o.write_shift(2, ixfe || 0);
+    return o;
   }
   function parse_frtHeader(blob) {
     var rt = blob.read_shift(2);
@@ -6298,6 +7201,14 @@
     var colFirst = blob.read_shift(2);
     var colLast = blob.read_shift(2);
     return { s: { c: colFirst, r: rwFirst }, e: { c: colLast, r: rwLast } };
+  }
+  function write_Ref8U(r, o) {
+    if (!o) o = new_buf(8);
+    o.write_shift(2, r.s.r);
+    o.write_shift(2, r.e.r);
+    o.write_shift(2, r.s.c);
+    o.write_shift(2, r.e.c);
+    return o;
   }
   function parse_RefU(blob) {
     var rwFirst = blob.read_shift(2);
@@ -6435,6 +7346,45 @@
     blob.read_shift(length);
     return o;
   }
+  function write_BOF(wb, t, o) {
+    var h = 1536, w = 16;
+    switch (o.bookType) {
+      case "biff8":
+        break;
+      case "biff5":
+        h = 1280;
+        w = 8;
+        break;
+      case "biff4":
+        h = 4;
+        w = 6;
+        break;
+      case "biff3":
+        h = 3;
+        w = 6;
+        break;
+      case "biff2":
+        h = 2;
+        w = 4;
+        break;
+      case "xla":
+        break;
+      default:
+        throw new Error("unsupported BIFF version");
+    }
+    var out = new_buf(w);
+    out.write_shift(2, h);
+    out.write_shift(2, t);
+    if (w > 4) out.write_shift(2, 29282);
+    if (w > 6) out.write_shift(2, 1997);
+    if (w > 8) {
+      out.write_shift(2, 49161);
+      out.write_shift(2, 1);
+      out.write_shift(2, 1798);
+      out.write_shift(2, 0);
+    }
+    return out;
+  }
   function parse_InterfaceHdr(blob, length) {
     if (length === 0) return 1200;
     if (blob.read_shift(2) !== 1200) {
@@ -6450,6 +7400,16 @@
     var UserName = parse_XLUnicodeString2(blob, 0, opts);
     blob.read_shift(length + l - blob.l);
     return UserName;
+  }
+  function write_WriteAccess(s, opts) {
+    var b8 = !opts || opts.biff == 8;
+    var o = new_buf(b8 ? 112 : 54);
+    o.write_shift(opts.biff == 8 ? 2 : 1, 7);
+    if (b8) o.write_shift(1, 0);
+    o.write_shift(4, 859007059);
+    o.write_shift(4, 5458548 | (b8 ? 0 : 536870912));
+    while (o.l < o.length) o.write_shift(1, b8 ? 0 : 32);
+    return o;
   }
   function parse_WsBool(blob, length, opts) {
     var flags = opts && opts.biff == 8 || length == 2 ? blob.read_shift(2) : (blob.l += length, 0);
@@ -6477,6 +7437,19 @@
     if (name.length === 0) name = "Sheet1";
     return { pos, hs: hidden, dt, name };
   }
+  function write_BoundSheet8(data, opts) {
+    var w = !opts || opts.biff >= 8 ? 2 : 1;
+    var o = new_buf(8 + w * data.name.length);
+    o.write_shift(4, data.pos);
+    o.write_shift(1, data.hs || 0);
+    o.write_shift(1, data.dt);
+    o.write_shift(1, data.name.length);
+    if (opts.biff >= 8) o.write_shift(1, 1);
+    o.write_shift(w * data.name.length, data.name, opts.biff < 8 ? "sbcs" : "utf16le");
+    var out = o.slice(0, o.l);
+    out.l = o.l;
+    return out;
+  }
   function parse_SST(blob, length) {
     var end = blob.l + length;
     var cnt = blob.read_shift(4);
@@ -6488,6 +7461,18 @@
     strs2.Count = cnt;
     strs2.Unique = ucnt;
     return strs2;
+  }
+  function write_SST(sst, opts) {
+    var header = new_buf(8);
+    header.write_shift(4, sst.Count);
+    header.write_shift(4, sst.Unique);
+    var strs2 = [];
+    for (var j = 0; j < sst.length; ++j) strs2[j] = write_XLUnicodeRichExtendedString(sst[j], opts);
+    var o = bconcat([header].concat(strs2));
+    o.parts = [header.length].concat(strs2.map(function(str) {
+      return str.length;
+    }));
+    return o;
   }
   function parse_ExtSST(blob, length) {
     var extsst = {};
@@ -6546,10 +7531,33 @@
       TabRatio: wTabRatio
     };
   }
+  function write_Window1() {
+    var o = new_buf(18);
+    o.write_shift(2, 0);
+    o.write_shift(2, 0);
+    o.write_shift(2, 29280);
+    o.write_shift(2, 17600);
+    o.write_shift(2, 56);
+    o.write_shift(2, 0);
+    o.write_shift(2, 0);
+    o.write_shift(2, 1);
+    o.write_shift(2, 500);
+    return o;
+  }
   function parse_Window2(blob, length, opts) {
     if (opts && opts.biff >= 2 && opts.biff < 5) return {};
     var f = blob.read_shift(2);
     return { RTL: f & 64 };
+  }
+  function write_Window2(view) {
+    var o = new_buf(18), f = 1718;
+    if (view && view.RTL) f |= 64;
+    o.write_shift(2, f);
+    o.write_shift(4, 0);
+    o.write_shift(4, 64);
+    o.write_shift(4, 0);
+    o.write_shift(4, 0);
+    return o;
   }
   function parse_Pane() {
   }
@@ -6572,10 +7580,30 @@
     o.name = parse_ShortXLUnicodeString(blob, 0, opts);
     return o;
   }
+  function write_Font(data, opts) {
+    var name = data.name || "Arial";
+    var b5 = opts && opts.biff == 5, w = b5 ? 15 + name.length : 16 + 2 * name.length;
+    var o = new_buf(w);
+    o.write_shift(2, (data.sz || 12) * 20);
+    o.write_shift(4, 0);
+    o.write_shift(2, 400);
+    o.write_shift(4, 0);
+    o.write_shift(2, 0);
+    o.write_shift(1, name.length);
+    if (!b5) o.write_shift(1, 1);
+    o.write_shift((b5 ? 1 : 2) * name.length, name, b5 ? "sbcs" : "utf16le");
+    return o;
+  }
   function parse_LabelSst(blob) {
     var cell = parse_XLSCell(blob);
     cell.isst = blob.read_shift(4);
     return cell;
+  }
+  function write_LabelSst(R, C, v, os) {
+    var o = new_buf(10);
+    write_XLSCell(R, C, os, o);
+    o.write_shift(4, v);
+    return o;
   }
   function parse_Label(blob, length, opts) {
     if (opts.biffguess && opts.biff == 2) opts.biff = 5;
@@ -6586,10 +7614,30 @@
     cell.val = str;
     return cell;
   }
+  function write_Label(R, C, v, os, opts) {
+    var b8 = !opts || opts.biff == 8;
+    var o = new_buf(6 + 2 + +b8 + (1 + b8) * v.length);
+    write_XLSCell(R, C, os, o);
+    o.write_shift(2, v.length);
+    if (b8) o.write_shift(1, 1);
+    o.write_shift((1 + b8) * v.length, v, b8 ? "utf16le" : "sbcs");
+    return o;
+  }
   function parse_Format(blob, length, opts) {
     var numFmtId = blob.read_shift(2);
     var fmtstr = parse_XLUnicodeString2(blob, 0, opts);
     return [numFmtId, fmtstr];
+  }
+  function write_Format(i, f, opts, o) {
+    var b5 = opts && opts.biff == 5;
+    if (!o) o = new_buf(b5 ? 3 + f.length : 5 + 2 * f.length);
+    o.write_shift(2, i);
+    o.write_shift(b5 ? 1 : 2, f.length);
+    if (!b5) o.write_shift(1, 1);
+    o.write_shift((b5 ? 1 : 2) * f.length, f, b5 ? "sbcs" : "utf16le");
+    var out = o.length > o.l ? o.slice(0, o.l) : o;
+    if (out.l == null) out.l = out.length;
+    return out;
   }
   var parse_BIFF2Format = parse_XLUnicodeString2;
   function parse_Dimensions(blob, length, opts) {
@@ -6599,6 +7647,16 @@
     var c = blob.read_shift(2), C = blob.read_shift(2);
     blob.l = end;
     return { s: { r, c }, e: { r: R, c: C } };
+  }
+  function write_Dimensions(range, opts) {
+    var w = opts.biff == 8 || !opts.biff ? 4 : 2;
+    var o = new_buf(2 * w + 6);
+    o.write_shift(w, range.s.r);
+    o.write_shift(w, range.e.r + 1);
+    o.write_shift(2, range.s.c);
+    o.write_shift(2, range.e.c + 1);
+    o.write_shift(2, 0);
+    return o;
   }
   function parse_RK(blob) {
     var rw = blob.read_shift(2), col = blob.read_shift(2);
@@ -6671,6 +7729,25 @@
     o.data = parse_CellStyleXF(blob, length, o.fStyle, opts);
     return o;
   }
+  function write_XF(data, ixfeP, opts, o) {
+    var b5 = opts && opts.biff == 5;
+    if (!o) o = new_buf(b5 ? 16 : 20);
+    o.write_shift(2, 0);
+    if (data.style) {
+      o.write_shift(2, data.numFmtId || 0);
+      o.write_shift(2, 65524);
+    } else {
+      o.write_shift(2, data.numFmtId || 0);
+      o.write_shift(2, ixfeP << 4);
+    }
+    var f = 0;
+    if (data.numFmtId > 0 && b5) f |= 1024;
+    o.write_shift(4, f);
+    o.write_shift(4, 0);
+    if (!b5) o.write_shift(4, 0);
+    o.write_shift(2, 0);
+    return o;
+  }
   function parse_Guts(blob) {
     blob.l += 4;
     var out = [blob.read_shift(2), blob.read_shift(2)];
@@ -6678,6 +7755,13 @@
     if (out[1] !== 0) out[1]--;
     if (out[0] > 7 || out[1] > 7) throw new Error("Bad Gutters: " + out.join("|"));
     return out;
+  }
+  function write_Guts(guts) {
+    var o = new_buf(8);
+    o.write_shift(4, 0);
+    o.write_shift(2, guts[0] ? guts[0] + 1 : 0);
+    o.write_shift(2, guts[1] ? guts[1] + 1 : 0);
+    return o;
   }
   function parse_BoolErr(blob, length, opts) {
     var cell = parse_XLSCell(blob, 6);
@@ -6687,12 +7771,24 @@
     cell.t = val === true || val === false ? "b" : "e";
     return cell;
   }
+  function write_BoolErr(R, C, v, os, opts, t) {
+    var o = new_buf(8);
+    write_XLSCell(R, C, os, o);
+    write_Bes(v, t, o);
+    return o;
+  }
   function parse_Number(blob, length, opts) {
     if (opts.biffguess && opts.biff == 2) opts.biff = 5;
     var cell = parse_XLSCell(blob, 6);
     var xnum = parse_Xnum(blob, 8);
     cell.val = xnum;
     return cell;
+  }
+  function write_Number(R, C, v, os) {
+    var o = new_buf(14);
+    write_XLSCell(R, C, os, o);
+    write_Xnum(v, o);
+    return o;
   }
   var parse_XLHeaderFooter = parse_OptXLUnicodeString;
   function parse_SupBook(blob, length, opts) {
@@ -6836,6 +7932,12 @@
     while (cmcs--) merges.push(parse_Ref8U(blob, length));
     return merges;
   }
+  function write_MergeCells(merges) {
+    var o = new_buf(2 + merges.length * 8);
+    o.write_shift(2, merges.length);
+    for (var i = 0; i < merges.length; ++i) write_Ref8U(merges[i], o);
+    return o;
+  }
   function parse_Obj(blob, length, opts) {
     if (opts && opts.biff < 8) return parse_BIFF5Obj(blob, length, opts);
     var cmo = parse_FtCmo(blob, 22);
@@ -6915,6 +8017,17 @@
     var hlink = parse_Hyperlink(blob, length - 24);
     return [ref, hlink];
   }
+  function write_HLink(hl) {
+    var O = new_buf(24);
+    var ref = decode_cell(hl[0]);
+    O.write_shift(2, ref.r);
+    O.write_shift(2, ref.r);
+    O.write_shift(2, ref.c);
+    O.write_shift(2, ref.c);
+    var clsid = "d0 c9 ea 79 f9 ba ce 11 8c 82 00 aa 00 4b a9 0b".split(" ");
+    for (var i = 0; i < 16; ++i) O.write_shift(1, parseInt(clsid[i], 16));
+    return bconcat([O, write_Hyperlink(hl[1])]);
+  }
   function parse_HLinkTooltip(blob, length) {
     blob.read_shift(2);
     var ref = parse_Ref8U(blob, 8);
@@ -6922,12 +8035,31 @@
     wzTooltip = wzTooltip.replace(chr0, "");
     return [ref, wzTooltip];
   }
+  function write_HLinkTooltip(hl) {
+    var TT = hl[1].Tooltip;
+    var O = new_buf(10 + 2 * (TT.length + 1));
+    O.write_shift(2, 2048);
+    var ref = decode_cell(hl[0]);
+    O.write_shift(2, ref.r);
+    O.write_shift(2, ref.r);
+    O.write_shift(2, ref.c);
+    O.write_shift(2, ref.c);
+    for (var i = 0; i < TT.length; ++i) O.write_shift(2, TT.charCodeAt(i));
+    O.write_shift(2, 0);
+    return O;
+  }
   function parse_Country(blob) {
     var o = [0, 0], d;
     d = blob.read_shift(2);
     o[0] = CountryEnum[d] || d;
     d = blob.read_shift(2);
     o[1] = CountryEnum[d] || d;
+    return o;
+  }
+  function write_Country(o) {
+    if (!o) o = new_buf(4);
+    o.write_shift(2, 1);
+    o.write_shift(2, 1);
     return o;
   }
   function parse_ClrtClient(blob) {
@@ -6962,6 +8094,20 @@
     if (opts.biff >= 5 || !opts.biff) o.level = flags >> 8 & 7;
     return o;
   }
+  function write_ColInfo(col, idx) {
+    var o = new_buf(12);
+    o.write_shift(2, idx);
+    o.write_shift(2, idx);
+    o.write_shift(2, col.width * 256);
+    o.write_shift(2, 0);
+    var f = 0;
+    if (col.hidden) f |= 1;
+    o.write_shift(1, f);
+    f = col.level || 0;
+    o.write_shift(1, f);
+    o.write_shift(2, 0);
+    return o;
+  }
   function parse_Setup(blob, length) {
     var o = {};
     if (length < 32) return o;
@@ -6981,6 +8127,11 @@
     blob.l += 3;
     if (d & 16) def.area = true;
     return def;
+  }
+  function write_RRTabId(n) {
+    var out = new_buf(2 * n);
+    for (var i = 0; i < n; ++i) out.write_shift(2, i + 1);
+    return out;
   }
   var parse_Blank = parse_XLSCell;
   var parse_Scl = parseuint16a;
@@ -7010,6 +8161,12 @@
     cell.val = num;
     return cell;
   }
+  function write_BIFF2NUM(r, c, val) {
+    var out = new_buf(15);
+    write_BIFF2Cell(out, r, c);
+    out.write_shift(8, val, "f");
+    return out;
+  }
   function parse_BIFF2INT(blob) {
     var cell = parse_XLSCell(blob, 6);
     ++blob.l;
@@ -7017,6 +8174,12 @@
     cell.t = "n";
     cell.val = num;
     return cell;
+  }
+  function write_BIFF2INT(r, c, val) {
+    var out = new_buf(9);
+    write_BIFF2Cell(out, r, c);
+    out.write_shift(2, val);
+    return out;
   }
   function parse_BIFF2STRING(blob) {
     var cch = blob.read_shift(1);
@@ -9839,6 +11002,35 @@
     }
     return s;
   }
+  var straywsregex = /^\s|\s$|[\t\n\r]/;
+  function write_sst_xml(sst, opts) {
+    if (!opts.bookSST) return "";
+    var o = [XML_HEADER];
+    o[o.length] = writextag("sst", null, {
+      xmlns: XMLNS_main[0],
+      count: sst.Count,
+      uniqueCount: sst.Unique
+    });
+    for (var i = 0; i != sst.length; ++i) {
+      if (sst[i] == null) continue;
+      var s = sst[i];
+      var sitag = "<si>";
+      if (s.r) sitag += s.r;
+      else {
+        sitag += "<t";
+        if (!s.t) s.t = "";
+        if (s.t.match(straywsregex)) sitag += ' xml:space="preserve"';
+        sitag += ">" + escapexml(s.t) + "</t>";
+      }
+      sitag += "</si>";
+      o[o.length] = sitag;
+    }
+    if (o.length > 2) {
+      o[o.length] = "</sst>";
+      o[1] = o[1].replace("/>", ">");
+    }
+    return o.join("");
+  }
   function parse_BrtBeginSst(data) {
     return [data.read_shift(4), data.read_shift(4)];
   }
@@ -9869,6 +11061,24 @@
       }
     });
     return s;
+  }
+  function write_BrtBeginSst(sst, o) {
+    if (!o) o = new_buf(8);
+    o.write_shift(4, sst.Count);
+    o.write_shift(4, sst.Unique);
+    return o;
+  }
+  var write_BrtSSTItem = write_RichStr;
+  function write_sst_bin(sst) {
+    var ba = buf_array();
+    write_record(ba, 159, write_BrtBeginSst(sst));
+    for (var i = 0; i < sst.length; ++i) write_record(ba, 19, write_BrtSSTItem(sst[i]));
+    write_record(
+      ba,
+      160
+      /* BrtEndSst */
+    );
+    return ba.end();
   }
   function _JS2ANSI(str) {
     if (typeof $cptable !== "undefined") return $cptable.utils.encode(current_ansi, str);
@@ -10819,6 +12029,21 @@
       }
     }
   }
+  function write_numFmts(NF) {
+    var o = ["<numFmts>"];
+    [[5, 8], [23, 26], [41, 44], [
+      /*63*/
+      50,
+      /*66],[164,*/
+      392
+    ]].forEach(function(r) {
+      for (var i = r[0]; i <= r[1]; ++i) if (NF[i] != null) o[o.length] = writextag("numFmt", null, { numFmtId: i, formatCode: escapexml(NF[i]) });
+    });
+    if (o.length === 1) return "";
+    o[o.length] = "</numFmts>";
+    o[0] = writextag("numFmts", null, { count: o.length - 2 }).replace("/>", ">");
+    return o.join("");
+  }
   var cellXF_uint = ["numFmtId", "fillId", "fontId", "borderId", "xfId"];
   var cellXF_bool = ["applyAlignment", "applyBorder", "applyFill", "applyFont", "applyNumberFormat", "applyProtection", "pivotButton", "quotePrefix"];
   function parse_cellXfs(t, styles, opts) {
@@ -10896,6 +12121,17 @@
       }
     });
   }
+  function write_cellXfs(cellXfs) {
+    var o = [];
+    o[o.length] = writextag("cellXfs", null);
+    cellXfs.forEach(function(c) {
+      o[o.length] = writextag("xf", null, c);
+    });
+    o[o.length] = "</cellXfs>";
+    if (o.length === 2) return "";
+    o[0] = writextag("cellXfs", null, { count: o.length - 2 }).replace("/>", ">");
+    return o.join("");
+  }
   var parse_sty_xml = /* @__PURE__ */ (function make_pstyx() {
     var numFmtRegex = /<(?:\w+:)?numFmts([^>]*)>[\S\s]*?<\/(?:\w+:)?numFmts>/;
     var cellXfRegex = /<(?:\w+:)?cellXfs([^>]*)>[\S\s]*?<\/(?:\w+:)?cellXfs>/;
@@ -10915,10 +12151,38 @@
       return styles;
     };
   })();
+  function write_sty_xml(wb, opts) {
+    var o = [XML_HEADER, writextag("styleSheet", null, {
+      "xmlns": XMLNS_main[0],
+      "xmlns:vt": XMLNS.vt
+    })], w;
+    if (wb.SSF && (w = write_numFmts(wb.SSF)) != null) o[o.length] = w;
+    o[o.length] = '<fonts count="1"><font><sz val="12"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font></fonts>';
+    o[o.length] = '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>';
+    o[o.length] = '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>';
+    o[o.length] = '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>';
+    if (w = write_cellXfs(opts.cellXfs)) o[o.length] = w;
+    o[o.length] = '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>';
+    o[o.length] = '<dxfs count="0"/>';
+    o[o.length] = '<tableStyles count="0" defaultTableStyle="TableStyleMedium9" defaultPivotStyle="PivotStyleMedium4"/>';
+    if (o.length > 2) {
+      o[o.length] = "</styleSheet>";
+      o[1] = o[1].replace("/>", ">");
+    }
+    return o.join("");
+  }
   function parse_BrtFmt(data, length) {
     var numFmtId = data.read_shift(2);
     var stFmtCode = parse_XLWideString(data, length - 2);
     return [numFmtId, stFmtCode];
+  }
+  function write_BrtFmt(i, f, o) {
+    if (!o) o = new_buf(6 + 4 * f.length);
+    o.write_shift(2, i);
+    write_XLWideString(f, o);
+    var out = o.length > o.l ? o.slice(0, o.l) : o;
+    if (o.l == null) o.l = o.length;
+    return out;
   }
   function parse_BrtFont(data, length, opts) {
     var out = {};
@@ -10961,7 +12225,67 @@
     out.name = parse_XLWideString(data, length - 21);
     return out;
   }
+  function write_BrtFont(font, o) {
+    if (!o) o = new_buf(25 + 4 * 32);
+    o.write_shift(2, font.sz * 20);
+    write_FontFlags(font, o);
+    o.write_shift(2, font.bold ? 700 : 400);
+    var sss = 0;
+    if (font.vertAlign == "superscript") sss = 1;
+    else if (font.vertAlign == "subscript") sss = 2;
+    o.write_shift(2, sss);
+    o.write_shift(1, font.underline || 0);
+    o.write_shift(1, font.family || 0);
+    o.write_shift(1, font.charset || 0);
+    o.write_shift(1, 0);
+    write_BrtColor(font.color, o);
+    var scheme = 0;
+    if (font.scheme == "major") scheme = 1;
+    if (font.scheme == "minor") scheme = 2;
+    o.write_shift(1, scheme);
+    write_XLWideString(font.name, o);
+    return o.length > o.l ? o.slice(0, o.l) : o;
+  }
+  var XLSBFillPTNames = [
+    "none",
+    "solid",
+    "mediumGray",
+    "darkGray",
+    "lightGray",
+    "darkHorizontal",
+    "darkVertical",
+    "darkDown",
+    "darkUp",
+    "darkGrid",
+    "darkTrellis",
+    "lightHorizontal",
+    "lightVertical",
+    "lightDown",
+    "lightUp",
+    "lightGrid",
+    "lightTrellis",
+    "gray125",
+    "gray0625"
+  ];
+  var rev_XLSBFillPTNames;
   var parse_BrtFill = parsenoop;
+  function write_BrtFill(fill2, o) {
+    if (!o) o = new_buf(4 * 3 + 8 * 7 + 16 * 1);
+    if (!rev_XLSBFillPTNames) rev_XLSBFillPTNames = evert(XLSBFillPTNames);
+    var fls = rev_XLSBFillPTNames[fill2.patternType];
+    if (fls == null) fls = 40;
+    o.write_shift(4, fls);
+    var j = 0;
+    if (fls != 40) {
+      write_BrtColor({ auto: 1 }, o);
+      write_BrtColor({ auto: 1 }, o);
+      for (; j < 12; ++j) o.write_shift(4, 0);
+    } else {
+      for (; j < 4; ++j) o.write_shift(4, 0);
+      for (; j < 12; ++j) o.write_shift(4, 0);
+    }
+    return o.length > o.l ? o.slice(0, o.l) : o;
+  }
   function parse_BrtXF(data, length) {
     var tgt = data.l + length;
     var ixfeParent = data.read_shift(2);
@@ -10969,7 +12293,57 @@
     data.l = tgt;
     return { ixfe: ixfeParent, numFmtId: ifmt };
   }
+  function write_BrtXF(data, ixfeP, o) {
+    if (!o) o = new_buf(16);
+    o.write_shift(2, ixfeP || 0);
+    o.write_shift(2, data.numFmtId || 0);
+    o.write_shift(2, 0);
+    o.write_shift(2, 0);
+    o.write_shift(2, 0);
+    o.write_shift(1, 0);
+    o.write_shift(1, 0);
+    var flow = 0;
+    o.write_shift(1, flow);
+    o.write_shift(1, 0);
+    o.write_shift(1, 0);
+    o.write_shift(1, 0);
+    return o;
+  }
+  function write_Blxf(data, o) {
+    if (!o) o = new_buf(10);
+    o.write_shift(1, 0);
+    o.write_shift(1, 0);
+    o.write_shift(4, 0);
+    o.write_shift(4, 0);
+    return o;
+  }
   var parse_BrtBorder = parsenoop;
+  function write_BrtBorder(border, o) {
+    if (!o) o = new_buf(51);
+    o.write_shift(1, 0);
+    write_Blxf(null, o);
+    write_Blxf(null, o);
+    write_Blxf(null, o);
+    write_Blxf(null, o);
+    write_Blxf(null, o);
+    return o.length > o.l ? o.slice(0, o.l) : o;
+  }
+  function write_BrtStyle(style, o) {
+    if (!o) o = new_buf(12 + 4 * 10);
+    o.write_shift(4, style.xfId);
+    o.write_shift(2, 1);
+    o.write_shift(1, +style.builtinId);
+    o.write_shift(1, 0);
+    write_XLNullableWideString(style.name || "", o);
+    return o.length > o.l ? o.slice(0, o.l) : o;
+  }
+  function write_BrtBeginTableStyles(cnt, defTableStyle, defPivotStyle) {
+    var o = new_buf(4 + 256 * 2 * 4);
+    o.write_shift(4, cnt);
+    write_XLNullableWideString(defTableStyle, o);
+    write_XLNullableWideString(defPivotStyle, o);
+    return o.length > o.l ? o.slice(0, o.l) : o;
+  }
   function parse_sty_bin(data, themes, opts) {
     var styles = {};
     styles.NumberFmt = [];
@@ -11042,6 +12416,158 @@
       }
     });
     return styles;
+  }
+  function write_FMTS_bin(ba, NF) {
+    if (!NF) return;
+    var cnt = 0;
+    [[5, 8], [23, 26], [41, 44], [
+      /*63*/
+      50,
+      /*66],[164,*/
+      392
+    ]].forEach(function(r) {
+      for (var i = r[0]; i <= r[1]; ++i) if (NF[i] != null) ++cnt;
+    });
+    if (cnt == 0) return;
+    write_record(ba, 615, write_UInt32LE(cnt));
+    [[5, 8], [23, 26], [41, 44], [
+      /*63*/
+      50,
+      /*66],[164,*/
+      392
+    ]].forEach(function(r) {
+      for (var i = r[0]; i <= r[1]; ++i) if (NF[i] != null) write_record(ba, 44, write_BrtFmt(i, NF[i]));
+    });
+    write_record(
+      ba,
+      616
+      /* BrtEndFmts */
+    );
+  }
+  function write_FONTS_bin(ba) {
+    var cnt = 1;
+    if (cnt == 0) return;
+    write_record(ba, 611, write_UInt32LE(cnt));
+    write_record(ba, 43, write_BrtFont({
+      sz: 12,
+      color: { theme: 1 },
+      name: "Calibri",
+      family: 2,
+      scheme: "minor"
+    }));
+    write_record(
+      ba,
+      612
+      /* BrtEndFonts */
+    );
+  }
+  function write_FILLS_bin(ba) {
+    var cnt = 2;
+    if (cnt == 0) return;
+    write_record(ba, 603, write_UInt32LE(cnt));
+    write_record(ba, 45, write_BrtFill({ patternType: "none" }));
+    write_record(ba, 45, write_BrtFill({ patternType: "gray125" }));
+    write_record(
+      ba,
+      604
+      /* BrtEndFills */
+    );
+  }
+  function write_BORDERS_bin(ba) {
+    var cnt = 1;
+    if (cnt == 0) return;
+    write_record(ba, 613, write_UInt32LE(cnt));
+    write_record(ba, 46, write_BrtBorder({}));
+    write_record(
+      ba,
+      614
+      /* BrtEndBorders */
+    );
+  }
+  function write_CELLSTYLEXFS_bin(ba) {
+    var cnt = 1;
+    write_record(ba, 626, write_UInt32LE(cnt));
+    write_record(ba, 47, write_BrtXF({
+      numFmtId: 0,
+      fontId: 0,
+      fillId: 0,
+      borderId: 0
+    }, 65535));
+    write_record(
+      ba,
+      627
+      /* BrtEndCellStyleXFs */
+    );
+  }
+  function write_CELLXFS_bin(ba, data) {
+    write_record(ba, 617, write_UInt32LE(data.length));
+    data.forEach(function(c) {
+      write_record(ba, 47, write_BrtXF(c, 0));
+    });
+    write_record(
+      ba,
+      618
+      /* BrtEndCellXFs */
+    );
+  }
+  function write_STYLES_bin(ba) {
+    var cnt = 1;
+    write_record(ba, 619, write_UInt32LE(cnt));
+    write_record(ba, 48, write_BrtStyle({
+      xfId: 0,
+      builtinId: 0,
+      name: "Normal"
+    }));
+    write_record(
+      ba,
+      620
+      /* BrtEndStyles */
+    );
+  }
+  function write_DXFS_bin(ba) {
+    var cnt = 0;
+    write_record(ba, 505, write_UInt32LE(cnt));
+    write_record(
+      ba,
+      506
+      /* BrtEndDXFs */
+    );
+  }
+  function write_TABLESTYLES_bin(ba) {
+    var cnt = 0;
+    write_record(ba, 508, write_BrtBeginTableStyles(cnt, "TableStyleMedium9", "PivotStyleMedium4"));
+    write_record(
+      ba,
+      509
+      /* BrtEndTableStyles */
+    );
+  }
+  function write_COLORPALETTE_bin() {
+    return;
+  }
+  function write_sty_bin(wb, opts) {
+    var ba = buf_array();
+    write_record(
+      ba,
+      278
+      /* BrtBeginStyleSheet */
+    );
+    write_FMTS_bin(ba, wb.SSF);
+    write_FONTS_bin(ba, wb);
+    write_FILLS_bin(ba, wb);
+    write_BORDERS_bin(ba, wb);
+    write_CELLSTYLEXFS_bin(ba, wb);
+    write_CELLXFS_bin(ba, opts.cellXfs);
+    write_STYLES_bin(ba, wb);
+    write_DXFS_bin(ba, wb);
+    write_TABLESTYLES_bin(ba, wb);
+    write_COLORPALETTE_bin(ba, wb);
+    write_record(
+      ba,
+      279
+      /* BrtEndStyleSheet */
+    );
+    return ba.end();
   }
   var XLSXThemeClrScheme = [
     "</a:lt1>",
@@ -11457,6 +12983,13 @@
       name: parse_XLWideString(data, length - 8)
     };
   }
+  function write_BrtMdtinfo(data) {
+    var o = new_buf(12 + 2 * data.name.length);
+    o.write_shift(4, data.flags);
+    o.write_shift(4, data.version);
+    write_XLWideString(data.name, o);
+    return o.slice(0, o.l);
+  }
   function parse_BrtMdb(data) {
     var out = [];
     var cnt = data.read_shift(4);
@@ -11464,9 +12997,30 @@
       out.push([data.read_shift(4), data.read_shift(4)]);
     return out;
   }
+  function write_BrtMdb(mdb) {
+    var o = new_buf(4 + 8 * mdb.length);
+    o.write_shift(4, mdb.length);
+    for (var i = 0; i < mdb.length; ++i) {
+      o.write_shift(4, mdb[i][0]);
+      o.write_shift(4, mdb[i][1]);
+    }
+    return o;
+  }
+  function write_BrtBeginEsfmd(cnt, name) {
+    var o = new_buf(8 + 2 * name.length);
+    o.write_shift(4, cnt);
+    write_XLWideString(name, o);
+    return o.slice(0, o.l);
+  }
   function parse_BrtBeginEsmdb(data) {
     data.l += 4;
     return data.read_shift(4) != 0;
+  }
+  function write_BrtBeginEsmdb(cnt, cm) {
+    var o = new_buf(8);
+    o.write_shift(4, cnt);
+    o.write_shift(4, cm ? 1 : 0);
+    return o;
   }
   function parse_xlmeta_bin(data, name, _opts) {
     var out = { Types: [], Cell: [], Value: [] };
@@ -11508,6 +13062,30 @@
       }
     });
     return out;
+  }
+  function write_xlmeta_bin() {
+    var ba = buf_array();
+    write_record(ba, 332);
+    write_record(ba, 334, write_UInt32LE(1));
+    write_record(ba, 335, write_BrtMdtinfo({
+      name: "XLDAPR",
+      version: 12e4,
+      flags: 3496657072
+    }));
+    write_record(ba, 336);
+    write_record(ba, 339, write_BrtBeginEsfmd(1, "XLDAPR"));
+    write_record(ba, 52);
+    write_record(ba, 35, write_UInt32LE(514));
+    write_record(ba, 4096, write_UInt32LE(0));
+    write_record(ba, 4097, writeuint16(1));
+    write_record(ba, 36);
+    write_record(ba, 53);
+    write_record(ba, 340);
+    write_record(ba, 337, write_BrtBeginEsmdb(1, true));
+    write_record(ba, 51, write_BrtMdb([[1, 0]]));
+    write_record(ba, 338);
+    write_record(ba, 333);
+    return ba.end();
   }
   function parse_xlmeta_xml(data, name, opts) {
     var out = { Types: [], Cell: [], Value: [] };
@@ -11588,6 +13166,11 @@
       return x;
     });
     return out;
+  }
+  function write_xlmeta_xml() {
+    var o = [XML_HEADER];
+    o.push('<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:xlrd="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata" xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray">\n  <metadataTypes count="1">\n    <metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/>\n  </metadataTypes>\n  <futureMetadata name="XLDAPR" count="1">\n    <bk>\n      <extLst>\n        <ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}">\n          <xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/>\n        </ext>\n      </extLst>\n    </bk>\n  </futureMetadata>\n  <cellMetadata count="1">\n    <bk>\n      <rc t="1" v="0"/>\n    </bk>\n  </cellMetadata>\n</metadata>');
+    return o.join("");
   }
   function parse_cc_xml(data) {
     var d = [];
@@ -11709,6 +13292,58 @@
     var id = (data.match(/<c:chart [^>]*r:id="([^"]*)"/) || ["", ""])[1];
     return rels["!id"][id].Target;
   }
+  var _shapeid = 1024;
+  function write_comments_vml(rId, comments) {
+    var csize = [21600, 21600];
+    var bbox = ["m0,0l0", csize[1], csize[0], csize[1], csize[0], "0xe"].join(",");
+    var o = [
+      writextag("xml", null, { "xmlns:v": XLMLNS.v, "xmlns:o": XLMLNS.o, "xmlns:x": XLMLNS.x, "xmlns:mv": XLMLNS.mv }).replace(/\/>/, ">"),
+      writextag("o:shapelayout", writextag("o:idmap", null, { "v:ext": "edit", "data": rId }), { "v:ext": "edit" }),
+      writextag("v:shapetype", [
+        writextag("v:stroke", null, { joinstyle: "miter" }),
+        writextag("v:path", null, { gradientshapeok: "t", "o:connecttype": "rect" })
+      ].join(""), { id: "_x0000_t202", "o:spt": 202, coordsize: csize.join(","), path: bbox })
+    ];
+    while (_shapeid < rId * 1e3) _shapeid += 1e3;
+    comments.forEach(function(x) {
+      var c = decode_cell(x[0]);
+      var fillopts = (
+        /*::(*/
+        { "color2": "#BEFF82", "type": "gradient" }
+      );
+      if (fillopts.type == "gradient") fillopts.angle = "-180";
+      var fillparm = fillopts.type == "gradient" ? writextag("o:fill", null, { type: "gradientUnscaled", "v:ext": "view" }) : null;
+      var fillxml = writextag("v:fill", fillparm, fillopts);
+      var shadata = { on: "t", "obscured": "t" };
+      ++_shapeid;
+      o = o.concat([
+        "<v:shape" + wxt_helper({
+          id: "_x0000_s" + _shapeid,
+          type: "#_x0000_t202",
+          style: "position:absolute; margin-left:80pt;margin-top:5pt;width:104pt;height:64pt;z-index:10" + (x[1].hidden ? ";visibility:hidden" : ""),
+          fillcolor: "#ECFAD4",
+          strokecolor: "#edeaa1"
+        }) + ">",
+        fillxml,
+        writextag("v:shadow", null, shadata),
+        writextag("v:path", null, { "o:connecttype": "none" }),
+        '<v:textbox><div style="text-align:left"></div></v:textbox>',
+        '<x:ClientData ObjectType="Note">',
+        "<x:MoveWithCells/>",
+        "<x:SizeWithCells/>",
+        /* Part 4 19.4.2.3 Anchor (Anchor) */
+        writetag("x:Anchor", [c.c + 1, 0, c.r + 1, 0, c.c + 3, 20, c.r + 5, 20].join(",")),
+        writetag("x:AutoFill", "False"),
+        writetag("x:Row", String(c.r)),
+        writetag("x:Column", String(c.c)),
+        x[1].hidden ? "" : "<x:Visible/>",
+        "</x:ClientData>",
+        "</v:shape>"
+      ]);
+    });
+    o.push("</xml>");
+    return o.join("");
+  }
   function sheet_insert_comments(sheet, comments, threaded, people) {
     var dense = Array.isArray(sheet);
     var cell;
@@ -11775,6 +13410,52 @@
     });
     return commentList;
   }
+  function write_comments_xml(data) {
+    var o = [XML_HEADER, writextag("comments", null, { "xmlns": XMLNS_main[0] })];
+    var iauthor = [];
+    o.push("<authors>");
+    data.forEach(function(x) {
+      x[1].forEach(function(w) {
+        var a = escapexml(w.a);
+        if (iauthor.indexOf(a) == -1) {
+          iauthor.push(a);
+          o.push("<author>" + a + "</author>");
+        }
+        if (w.T && w.ID && iauthor.indexOf("tc=" + w.ID) == -1) {
+          iauthor.push("tc=" + w.ID);
+          o.push("<author>tc=" + w.ID + "</author>");
+        }
+      });
+    });
+    if (iauthor.length == 0) {
+      iauthor.push("SheetJ5");
+      o.push("<author>SheetJ5</author>");
+    }
+    o.push("</authors>");
+    o.push("<commentList>");
+    data.forEach(function(d) {
+      var lastauthor = 0, ts = [];
+      if (d[1][0] && d[1][0].T && d[1][0].ID) lastauthor = iauthor.indexOf("tc=" + d[1][0].ID);
+      else d[1].forEach(function(c) {
+        if (c.a) lastauthor = iauthor.indexOf(escapexml(c.a));
+        ts.push(c.t || "");
+      });
+      o.push('<comment ref="' + d[0] + '" authorId="' + lastauthor + '"><text>');
+      if (ts.length <= 1) o.push(writetag("t", escapexml(ts[0] || "")));
+      else {
+        var t = "Comment:\n    " + ts[0] + "\n";
+        for (var i = 1; i < ts.length; ++i) t += "Reply:\n    " + ts[i] + "\n";
+        o.push(writetag("t", escapexml(t)));
+      }
+      o.push("</text></comment>");
+    });
+    o.push("</commentList>");
+    if (o.length > 2) {
+      o[o.length] = "</comments>";
+      o[1] = o[1].replace("/>", ">");
+    }
+    return o.join("");
+  }
   function parse_tcmnt_xml(data, opts) {
     var out = [];
     var pass = false, comment = {}, tidx = 0;
@@ -11831,6 +13512,30 @@
     });
     return out;
   }
+  function write_tcmnt_xml(comments, people, opts) {
+    var o = [XML_HEADER, writextag("ThreadedComments", null, { "xmlns": XMLNS.TCMNT }).replace(/[\/]>/, ">")];
+    comments.forEach(function(carr) {
+      var rootid = "";
+      (carr[1] || []).forEach(function(c, idx) {
+        if (!c.T) {
+          delete c.ID;
+          return;
+        }
+        if (c.a && people.indexOf(c.a) == -1) people.push(c.a);
+        var tcopts = {
+          ref: carr[0],
+          id: "{54EE7951-7262-4200-6969-" + ("000000000000" + opts.tcid++).slice(-12) + "}"
+        };
+        if (idx == 0) rootid = tcopts.id;
+        else tcopts.parentId = rootid;
+        c.ID = tcopts.id;
+        if (c.a) tcopts.personId = "{54EE7950-7262-4200-6969-" + ("000000000000" + people.indexOf(c.a)).slice(-12) + "}";
+        o.push(writextag("threadedComment", writetag("text", c.t || ""), tcopts));
+      });
+    });
+    o.push("</ThreadedComments>");
+    return o.join("");
+  }
   function parse_people_xml(data, opts) {
     var out = [];
     var pass = false;
@@ -11870,6 +13575,22 @@
     });
     return out;
   }
+  function write_people_xml(people) {
+    var o = [XML_HEADER, writextag("personList", null, {
+      "xmlns": XMLNS.TCMNT,
+      "xmlns:x": XMLNS_main[0]
+    }).replace(/[\/]>/, ">")];
+    people.forEach(function(person, idx) {
+      o.push(writextag("person", null, {
+        displayName: person,
+        id: "{54EE7950-7262-4200-6969-" + ("000000000000" + idx).slice(-12) + "}",
+        userId: person,
+        providerId: "None"
+      }));
+    });
+    o.push("</personList>");
+    return o.join("");
+  }
   function parse_BrtBeginComment(data) {
     var out = {};
     out.iauthor = data.read_shift(4);
@@ -11879,7 +13600,20 @@
     data.l += 16;
     return out;
   }
+  function write_BrtBeginComment(data, o) {
+    if (o == null) o = new_buf(36);
+    o.write_shift(4, data[1].iauthor);
+    write_UncheckedRfX(data[0], o);
+    o.write_shift(4, 0);
+    o.write_shift(4, 0);
+    o.write_shift(4, 0);
+    o.write_shift(4, 0);
+    return o;
+  }
   var parse_BrtCommentAuthor = parse_XLWideString;
+  function write_BrtCommentAuthor(data) {
+    return write_XLWideString(data.slice(0, 54));
+  }
   function parse_comments_bin(data, opts) {
     var out = [];
     var authors = [];
@@ -11925,6 +13659,62 @@
     });
     return out;
   }
+  function write_comments_bin(data) {
+    var ba = buf_array();
+    var iauthor = [];
+    write_record(
+      ba,
+      628
+      /* BrtBeginComments */
+    );
+    write_record(
+      ba,
+      630
+      /* BrtBeginCommentAuthors */
+    );
+    data.forEach(function(comment) {
+      comment[1].forEach(function(c) {
+        if (iauthor.indexOf(c.a) > -1) return;
+        iauthor.push(c.a.slice(0, 54));
+        write_record(ba, 632, write_BrtCommentAuthor(c.a));
+      });
+    });
+    write_record(
+      ba,
+      631
+      /* BrtEndCommentAuthors */
+    );
+    write_record(
+      ba,
+      633
+      /* BrtBeginCommentList */
+    );
+    data.forEach(function(comment) {
+      comment[1].forEach(function(c) {
+        c.iauthor = iauthor.indexOf(c.a);
+        var range = { s: decode_cell(comment[0]), e: decode_cell(comment[0]) };
+        write_record(ba, 635, write_BrtBeginComment([range, c]));
+        if (c.t && c.t.length > 0) write_record(ba, 637, write_BrtCommentText(c));
+        write_record(
+          ba,
+          636
+          /* BrtEndComment */
+        );
+        delete c.iauthor;
+      });
+    });
+    write_record(
+      ba,
+      634
+      /* BrtEndCommentList */
+    );
+    write_record(
+      ba,
+      629
+      /* BrtEndComments */
+    );
+    return ba.end();
+  }
   var CT_VBA = "application/vnd.ms-office.vbaProject";
   function make_vba_xls(cfb) {
     var newcfb = CFB.utils.cfb_new({ root: "R" });
@@ -11936,6 +13726,16 @@
     });
     return CFB.write(newcfb);
   }
+  function fill_vba_xls(cfb, vba) {
+    vba.FullPaths.forEach(function(p, i) {
+      if (i == 0)
+        return;
+      var newpath = p.replace(/[^\/]*[\/]/, "/_VBA_PROJECT_CUR/");
+      if (newpath.slice(-1) !== "/")
+        CFB.utils.cfb_add(cfb, newpath, vba.FileIndex[i].content);
+    });
+  }
+  var VBAFMTS = ["xlsb", "xlsm", "xlam", "biff8", "xla"];
   function parse_ds_bin() {
     return { "!type": "dialog" };
   }
@@ -13231,6 +15031,18 @@
     }
     return [];
   }
+  function write_FormulaValue(value) {
+    if (value == null) {
+      var o = new_buf(8);
+      o.write_shift(1, 3);
+      o.write_shift(1, 0);
+      o.write_shift(2, 0);
+      o.write_shift(2, 0);
+      o.write_shift(2, 65535);
+      return o;
+    } else if (typeof value == "number") return write_Xnum(value);
+    return write_Xnum(0);
+  }
   function parse_Formula(blob, length, opts) {
     var end = blob.l + length;
     var cell = parse_XLSCell(blob, 6);
@@ -13245,6 +15057,18 @@
     }
     var cbf = parse_XLSCellParsedFormula(blob, end - blob.l, opts);
     return { cell, val: val[0], formula: cbf, shared: flags >> 3 & 1, tt: val[1] };
+  }
+  function write_Formula(cell, R, C, opts, os) {
+    var o1 = write_XLSCell(R, C, os);
+    var o2 = write_FormulaValue(cell.v);
+    var o3 = new_buf(6);
+    var flags = 1 | 32;
+    o3.write_shift(2, flags);
+    o3.write_shift(4, 0);
+    var bf = new_buf(cell.bf.length);
+    for (var i = 0; i < cell.bf.length; ++i) bf[i] = cell.bf[i];
+    var out = bconcat([o1, o2, o3, bf]);
+    return out;
   }
   function parse_XLSBParsedFormula(data, length, opts) {
     var cce = data.read_shift(4);
@@ -14403,13 +16227,70 @@
     f = f.replace(/\[.(#[A-Z]*[?!])\]/g, "$1");
     return f.replace(/[;~]/g, ",").replace(/\|/g, ";");
   }
+  function csf_to_ods_formula(f) {
+    var o = "of:=" + f.replace(crefregex, "$1[.$2$3$4$5]").replace(/\]:\[/g, ":");
+    return o.replace(/;/g, "|").replace(/,/g, ";");
+  }
   function ods_to_csf_3D(r) {
     var a = r.split(":");
     var s = a[0].split(".")[0];
     return [s, a[0].split(".")[1] + (a.length > 1 ? ":" + (a[1].split(".")[1] || a[1].split(".")[0]) : "")];
   }
+  function csf_to_ods_3D(r) {
+    return r.replace(/\./, "!");
+  }
   var strs = {};
   var _ssfopts = {};
+  var browser_has_Map = typeof Map !== "undefined";
+  function get_sst_id(sst, str, rev) {
+    var i = 0, len = sst.length;
+    if (rev) {
+      if (browser_has_Map ? rev.has(str) : Object.prototype.hasOwnProperty.call(rev, str)) {
+        var revarr = browser_has_Map ? rev.get(str) : rev[str];
+        for (; i < revarr.length; ++i) {
+          if (sst[revarr[i]].t === str) {
+            sst.Count++;
+            return revarr[i];
+          }
+        }
+      }
+    } else for (; i < len; ++i) {
+      if (sst[i].t === str) {
+        sst.Count++;
+        return i;
+      }
+    }
+    sst[len] = { t: str };
+    sst.Count++;
+    sst.Unique++;
+    if (rev) {
+      if (browser_has_Map) {
+        if (!rev.has(str)) rev.set(str, []);
+        rev.get(str).push(len);
+      } else {
+        if (!Object.prototype.hasOwnProperty.call(rev, str)) rev[str] = [];
+        rev[str].push(len);
+      }
+    }
+    return len;
+  }
+  function col_obj_w(C, col) {
+    var p = { min: C + 1, max: C + 1 };
+    var wch = -1;
+    if (col.MDW) MDW = col.MDW;
+    if (col.width != null) p.customWidth = 1;
+    else if (col.wpx != null) wch = px2char(col.wpx);
+    else if (col.wch != null) wch = col.wch;
+    if (wch > -1) {
+      p.width = char2width(wch);
+      p.customWidth = 1;
+    } else if (col.width != null) p.width = col.width;
+    if (col.hidden) p.hidden = true;
+    if (col.level != null) {
+      p.outlineLevel = p.level = col.level;
+    }
+    return p;
+  }
   function default_margins(margins, mode) {
     if (!margins) return;
     var defs = [0.7, 0.7, 0.75, 0.75, 0.3, 0.3];
@@ -14420,6 +16301,28 @@
     if (margins.bottom == null) margins.bottom = defs[3];
     if (margins.header == null) margins.header = defs[4];
     if (margins.footer == null) margins.footer = defs[5];
+  }
+  function get_cell_style(styles, cell, opts) {
+    var z = opts.revssf[cell.z != null ? cell.z : "General"];
+    var i = 60, len = styles.length;
+    if (z == null && opts.ssf) {
+      for (; i < 392; ++i) if (opts.ssf[i] == null) {
+        SSF_load(cell.z, i);
+        opts.ssf[i] = cell.z;
+        opts.revssf[cell.z] = z = i;
+        break;
+      }
+    }
+    for (i = 0; i != len; ++i) if (styles[i].numFmtId === z) return i;
+    styles[len] = {
+      numFmtId: z,
+      fontId: 0,
+      fillId: 0,
+      borderId: 0,
+      xfId: 0,
+      applyNumberFormat: 1
+    };
+    return len;
   }
   function safe_format(p, fmtid, fillid, opts, themes, styles) {
     try {
@@ -14460,6 +16363,12 @@
       }
     } catch (e) {
       if (opts.WTF && styles.Fills) throw e;
+    }
+  }
+  function check_ws(ws, sname, i) {
+    if (ws && ws["!ref"]) {
+      var range = safe_decode_range(ws["!ref"]);
+      if (range.e.c < range.s.c || range.e.r < range.s.r) throw new Error("Bad range (" + i + "): " + ws["!ref"]);
     }
   }
   function parse_ws_xml_dim(ws, s) {
@@ -14531,6 +16440,12 @@
     if (merges.length > 0) s["!merges"] = merges;
     return s;
   }
+  function write_ws_xml_merges(merges) {
+    if (merges.length === 0) return "";
+    var o = '<mergeCells count="' + merges.length + '">';
+    for (var i = 0; i != merges.length; ++i) o += '<mergeCell ref="' + encode_range(merges[i]) + '"/>';
+    return o + "</mergeCells>";
+  }
   function parse_ws_xml_sheetpr(sheetPr, s, wb, idx) {
     var data = parsexmltag(sheetPr);
     if (!wb.Sheets[idx]) wb.Sheets[idx] = {};
@@ -14538,6 +16453,52 @@
   }
   function parse_ws_xml_sheetpr2(sheetPr, body, s, wb, idx) {
     parse_ws_xml_sheetpr(sheetPr.slice(0, sheetPr.indexOf(">")), s, wb, idx);
+  }
+  function write_ws_xml_sheetpr(ws, wb, idx, opts, o) {
+    var needed = false;
+    var props = {}, payload = null;
+    if (opts.bookType !== "xlsx" && wb.vbaraw) {
+      var cname = wb.SheetNames[idx];
+      try {
+        if (wb.Workbook) cname = wb.Workbook.Sheets[idx].CodeName || cname;
+      } catch (e) {
+      }
+      needed = true;
+      props.codeName = utf8write(escapexml(cname));
+    }
+    if (ws && ws["!outline"]) {
+      var outlineprops = { summaryBelow: 1, summaryRight: 1 };
+      if (ws["!outline"].above) outlineprops.summaryBelow = 0;
+      if (ws["!outline"].left) outlineprops.summaryRight = 0;
+      payload = (payload || "") + writextag("outlinePr", null, outlineprops);
+    }
+    if (!needed && !payload) return;
+    o[o.length] = writextag("sheetPr", payload, props);
+  }
+  var sheetprot_deffalse = ["objects", "scenarios", "selectLockedCells", "selectUnlockedCells"];
+  var sheetprot_deftrue = [
+    "formatColumns",
+    "formatRows",
+    "formatCells",
+    "insertColumns",
+    "insertRows",
+    "insertHyperlinks",
+    "deleteColumns",
+    "deleteRows",
+    "sort",
+    "autoFilter",
+    "pivotTables"
+  ];
+  function write_ws_xml_protection(sp) {
+    var o = { sheet: 1 };
+    sheetprot_deffalse.forEach(function(n) {
+      if (sp[n] != null && sp[n]) o[n] = "1";
+    });
+    sheetprot_deftrue.forEach(function(n) {
+      if (sp[n] != null && !sp[n]) o[n] = "0";
+    });
+    if (sp.password) o.password = crypto_CreatePasswordVerifier_Method1(sp.password).toString(16).toUpperCase();
+    return writextag("sheetProtection", null, o);
   }
   function parse_ws_xml_hlinks(s, data, rels) {
     var dense = Array.isArray(s);
@@ -14578,6 +16539,10 @@
     });
     return o;
   }
+  function write_ws_xml_margins(margin) {
+    default_margins(margin);
+    return writextag("pageMargins", null, margin);
+  }
   function parse_ws_xml_cols(columns, cols) {
     var seencol = false;
     for (var coli = 0; coli != cols.length; ++coli) {
@@ -14596,9 +16561,38 @@
       while (colm <= colM) columns[colm++] = dup(coll);
     }
   }
+  function write_ws_xml_cols(ws, cols) {
+    var o = ["<cols>"], col;
+    for (var i = 0; i != cols.length; ++i) {
+      if (!(col = cols[i])) continue;
+      o[o.length] = writextag("col", null, col_obj_w(i, col));
+    }
+    o[o.length] = "</cols>";
+    return o.join("");
+  }
   function parse_ws_xml_autofilter(data) {
     var o = { ref: (data.match(/ref="([^"]*)"/) || [])[1] };
     return o;
+  }
+  function write_ws_xml_autofilter(data, ws, wb, idx) {
+    var ref = typeof data.ref == "string" ? data.ref : encode_range(data.ref);
+    if (!wb.Workbook) wb.Workbook = { Sheets: [] };
+    if (!wb.Workbook.Names) wb.Workbook.Names = [];
+    var names = wb.Workbook.Names;
+    var range = decode_range(ref);
+    if (range.s.r == range.e.r) {
+      range.e.r = decode_range(ws["!ref"]).e.r;
+      ref = encode_range(range);
+    }
+    for (var i = 0; i < names.length; ++i) {
+      var name = names[i];
+      if (name.Name != "_xlnm._FilterDatabase") continue;
+      if (name.Sheet != idx) continue;
+      name.Ref = "'" + wb.SheetNames[idx] + "'!" + ref;
+      break;
+    }
+    if (i == names.length) names.push({ Name: "_xlnm._FilterDatabase", Sheet: idx, Ref: "'" + wb.SheetNames[idx] + "'!" + ref });
+    return writextag("autoFilter", null, { ref });
   }
   var sviewregex = /<(?:\w:)?sheetView(?:[^>a-z][^>]*)?\/?>/;
   function parse_ws_xml_sheetviews(data, wb) {
@@ -14609,6 +16603,82 @@
       if (+tag.zoomScale) wb.Views[i].zoom = +tag.zoomScale;
       if (parsexmlbool(tag.rightToLeft)) wb.Views[i].RTL = true;
     });
+  }
+  function write_ws_xml_sheetviews(ws, opts, idx, wb) {
+    var sview = { workbookViewId: "0" };
+    if ((((wb || {}).Workbook || {}).Views || [])[0]) sview.rightToLeft = wb.Workbook.Views[0].RTL ? "1" : "0";
+    return writextag("sheetViews", writextag("sheetView", null, sview), {});
+  }
+  function write_ws_xml_cell(cell, ref, ws, opts) {
+    if (cell.c) ws["!comments"].push([ref, cell.c]);
+    if (cell.v === void 0 && typeof cell.f !== "string" || cell.t === "z" && !cell.f) return "";
+    var vv = "";
+    var oldt = cell.t, oldv = cell.v;
+    if (cell.t !== "z") switch (cell.t) {
+      case "b":
+        vv = cell.v ? "1" : "0";
+        break;
+      case "n":
+        vv = "" + cell.v;
+        break;
+      case "e":
+        vv = BErr[cell.v];
+        break;
+      case "d":
+        if (opts && opts.cellDates) vv = parseDate(cell.v, -1).toISOString();
+        else {
+          cell = dup(cell);
+          cell.t = "n";
+          vv = "" + (cell.v = datenum(parseDate(cell.v)));
+        }
+        if (typeof cell.z === "undefined") cell.z = table_fmt[14];
+        break;
+      default:
+        vv = cell.v;
+        break;
+    }
+    var v = writetag("v", escapexml(vv)), o = { r: ref };
+    var os = get_cell_style(opts.cellXfs, cell, opts);
+    if (os !== 0) o.s = os;
+    switch (cell.t) {
+      case "n":
+        break;
+      case "d":
+        o.t = "d";
+        break;
+      case "b":
+        o.t = "b";
+        break;
+      case "e":
+        o.t = "e";
+        break;
+      case "z":
+        break;
+      default:
+        if (cell.v == null) {
+          delete cell.t;
+          break;
+        }
+        if (cell.v.length > 32767) throw new Error("Text length must not exceed 32767 characters");
+        if (opts && opts.bookSST) {
+          v = writetag("v", "" + get_sst_id(opts.Strings, cell.v, opts.revStrings));
+          o.t = "s";
+          break;
+        }
+        o.t = "str";
+        break;
+    }
+    if (cell.t != oldt) {
+      cell.t = oldt;
+      cell.v = oldv;
+    }
+    if (typeof cell.f == "string" && cell.f) {
+      var ff = cell.F && cell.F.slice(0, ref.length) == ref ? { t: "array", ref: cell.F } : null;
+      v = writextag("f", escapexml(cell.f), ff) + (cell.v != null ? v : "");
+    }
+    if (cell.l) ws["!links"].push([ref, cell.l]);
+    if (cell.D) o.cm = 1;
+    return writextag("c", v, o);
   }
   var parse_ws_xml_data = /* @__PURE__ */ (function() {
     var cellregex = /<(?:\w+:)?c[ \/>]/, rowregex = /<\/(?:\w+:)?row>/;
@@ -14841,6 +16911,138 @@
       if (rows.length > 0) s["!rows"] = rows;
     };
   })();
+  function write_ws_xml_data(ws, opts, idx, wb) {
+    var o = [], r = [], range = safe_decode_range(ws["!ref"]), cell = "", ref, rr = "", cols = [], R = 0, C = 0, rows = ws["!rows"];
+    var dense = Array.isArray(ws);
+    var params = { r: rr }, row, height = -1;
+    for (C = range.s.c; C <= range.e.c; ++C) cols[C] = encode_col(C);
+    for (R = range.s.r; R <= range.e.r; ++R) {
+      r = [];
+      rr = encode_row(R);
+      for (C = range.s.c; C <= range.e.c; ++C) {
+        ref = cols[C] + rr;
+        var _cell = dense ? (ws[R] || [])[C] : ws[ref];
+        if (_cell === void 0) continue;
+        if ((cell = write_ws_xml_cell(_cell, ref, ws, opts, idx, wb)) != null) r.push(cell);
+      }
+      if (r.length > 0 || rows && rows[R]) {
+        params = { r: rr };
+        if (rows && rows[R]) {
+          row = rows[R];
+          if (row.hidden) params.hidden = 1;
+          height = -1;
+          if (row.hpx) height = px2pt(row.hpx);
+          else if (row.hpt) height = row.hpt;
+          if (height > -1) {
+            params.ht = height;
+            params.customHeight = 1;
+          }
+          if (row.level) {
+            params.outlineLevel = row.level;
+          }
+        }
+        o[o.length] = writextag("row", r.join(""), params);
+      }
+    }
+    if (rows) for (; R < rows.length; ++R) {
+      if (rows && rows[R]) {
+        params = { r: R + 1 };
+        row = rows[R];
+        if (row.hidden) params.hidden = 1;
+        height = -1;
+        if (row.hpx) height = px2pt(row.hpx);
+        else if (row.hpt) height = row.hpt;
+        if (height > -1) {
+          params.ht = height;
+          params.customHeight = 1;
+        }
+        if (row.level) {
+          params.outlineLevel = row.level;
+        }
+        o[o.length] = writextag("row", "", params);
+      }
+    }
+    return o.join("");
+  }
+  function write_ws_xml(idx, opts, wb, rels) {
+    var o = [XML_HEADER, writextag("worksheet", null, {
+      "xmlns": XMLNS_main[0],
+      "xmlns:r": XMLNS.r
+    })];
+    var s = wb.SheetNames[idx], sidx = 0, rdata = "";
+    var ws = wb.Sheets[s];
+    if (ws == null) ws = {};
+    var ref = ws["!ref"] || "A1";
+    var range = safe_decode_range(ref);
+    if (range.e.c > 16383 || range.e.r > 1048575) {
+      if (opts.WTF) throw new Error("Range " + ref + " exceeds format limit A1:XFD1048576");
+      range.e.c = Math.min(range.e.c, 16383);
+      range.e.r = Math.min(range.e.c, 1048575);
+      ref = encode_range(range);
+    }
+    if (!rels) rels = {};
+    ws["!comments"] = [];
+    var _drawing = [];
+    write_ws_xml_sheetpr(ws, wb, idx, opts, o);
+    o[o.length] = writextag("dimension", null, { "ref": ref });
+    o[o.length] = write_ws_xml_sheetviews(ws, opts, idx, wb);
+    if (opts.sheetFormat) o[o.length] = writextag("sheetFormatPr", null, {
+      defaultRowHeight: opts.sheetFormat.defaultRowHeight || "16",
+      baseColWidth: opts.sheetFormat.baseColWidth || "10",
+      outlineLevelRow: opts.sheetFormat.outlineLevelRow || "7"
+    });
+    if (ws["!cols"] != null && ws["!cols"].length > 0) o[o.length] = write_ws_xml_cols(ws, ws["!cols"]);
+    o[sidx = o.length] = "<sheetData/>";
+    ws["!links"] = [];
+    if (ws["!ref"] != null) {
+      rdata = write_ws_xml_data(ws, opts, idx, wb, rels);
+      if (rdata.length > 0) o[o.length] = rdata;
+    }
+    if (o.length > sidx + 1) {
+      o[o.length] = "</sheetData>";
+      o[sidx] = o[sidx].replace("/>", ">");
+    }
+    if (ws["!protect"]) o[o.length] = write_ws_xml_protection(ws["!protect"]);
+    if (ws["!autofilter"] != null) o[o.length] = write_ws_xml_autofilter(ws["!autofilter"], ws, wb, idx);
+    if (ws["!merges"] != null && ws["!merges"].length > 0) o[o.length] = write_ws_xml_merges(ws["!merges"]);
+    var relc = -1, rel, rId = -1;
+    if (
+      /*::(*/
+      ws["!links"].length > 0
+    ) {
+      o[o.length] = "<hyperlinks>";
+      ws["!links"].forEach(function(l) {
+        if (!l[1].Target) return;
+        rel = { "ref": l[0] };
+        if (l[1].Target.charAt(0) != "#") {
+          rId = add_rels(rels, -1, escapexml(l[1].Target).replace(/#.*$/, ""), RELS.HLINK);
+          rel["r:id"] = "rId" + rId;
+        }
+        if ((relc = l[1].Target.indexOf("#")) > -1) rel.location = escapexml(l[1].Target.slice(relc + 1));
+        if (l[1].Tooltip) rel.tooltip = escapexml(l[1].Tooltip);
+        o[o.length] = writextag("hyperlink", null, rel);
+      });
+      o[o.length] = "</hyperlinks>";
+    }
+    delete ws["!links"];
+    if (ws["!margins"] != null) o[o.length] = write_ws_xml_margins(ws["!margins"]);
+    if (!opts || opts.ignoreEC || opts.ignoreEC == void 0) o[o.length] = writetag("ignoredErrors", writextag("ignoredError", null, { numberStoredAsText: 1, sqref: ref }));
+    if (_drawing.length > 0) {
+      rId = add_rels(rels, -1, "../drawings/drawing" + (idx + 1) + ".xml", RELS.DRAW);
+      o[o.length] = writextag("drawing", null, { "r:id": "rId" + rId });
+      ws["!drawing"] = _drawing;
+    }
+    if (ws["!comments"].length > 0) {
+      rId = add_rels(rels, -1, "../drawings/vmlDrawing" + (idx + 1) + ".vml", RELS.VML);
+      o[o.length] = writextag("legacyDrawing", null, { "r:id": "rId" + rId });
+      ws["!legacy"] = rId;
+    }
+    if (o.length > 1) {
+      o[o.length] = "</worksheet>";
+      o[1] = o[1].replace("/>", ">");
+    }
+    return o.join("");
+  }
   function parse_BrtRowHdr(data, length) {
     var z = {};
     var tgt = data.l + length;
@@ -14855,7 +17057,53 @@
     if (flags & 32) z.hpt = miyRw / 20;
     return z;
   }
+  function write_BrtRowHdr(R, range, ws) {
+    var o = new_buf(17 + 8 * 16);
+    var row = (ws["!rows"] || [])[R] || {};
+    o.write_shift(4, R);
+    o.write_shift(4, 0);
+    var miyRw = 320;
+    if (row.hpx) miyRw = px2pt(row.hpx) * 20;
+    else if (row.hpt) miyRw = row.hpt * 20;
+    o.write_shift(2, miyRw);
+    o.write_shift(1, 0);
+    var flags = 0;
+    if (row.level) flags |= row.level;
+    if (row.hidden) flags |= 16;
+    if (row.hpx || row.hpt) flags |= 32;
+    o.write_shift(1, flags);
+    o.write_shift(1, 0);
+    var ncolspan = 0, lcs = o.l;
+    o.l += 4;
+    var caddr = { r: R, c: 0 };
+    for (var i = 0; i < 16; ++i) {
+      if (range.s.c > i + 1 << 10 || range.e.c < i << 10) continue;
+      var first = -1, last = -1;
+      for (var j = i << 10; j < i + 1 << 10; ++j) {
+        caddr.c = j;
+        var cell = Array.isArray(ws) ? (ws[caddr.r] || [])[caddr.c] : ws[encode_cell(caddr)];
+        if (cell) {
+          if (first < 0) first = j;
+          last = j;
+        }
+      }
+      if (first < 0) continue;
+      ++ncolspan;
+      o.write_shift(4, first);
+      o.write_shift(4, last);
+    }
+    var l = o.l;
+    o.l = lcs;
+    o.write_shift(4, ncolspan);
+    o.l = l;
+    return o.length > o.l ? o.slice(0, o.l) : o;
+  }
+  function write_row_header(ba, ws, range, R) {
+    var o = write_BrtRowHdr(R, range, ws);
+    if (o.length > 17 || (ws["!rows"] || [])[R]) write_record(ba, 0, o);
+  }
   var parse_BrtWsDim = parse_UncheckedRfX;
+  var write_BrtWsDim = write_UncheckedRfX;
   function parse_BrtWsFmtInfo() {
   }
   function parse_BrtWsProp(data, length) {
@@ -14868,63 +17116,148 @@
     z.name = parse_XLSBCodeName(data, length - 19);
     return z;
   }
+  function write_BrtWsProp(str, outl, o) {
+    if (o == null) o = new_buf(84 + 4 * str.length);
+    var f = 192;
+    if (outl) {
+      if (outl.above) f &= ~64;
+      if (outl.left) f &= ~128;
+    }
+    o.write_shift(1, f);
+    for (var i = 1; i < 3; ++i) o.write_shift(1, 0);
+    write_BrtColor({ auto: 1 }, o);
+    o.write_shift(-4, -1);
+    o.write_shift(-4, -1);
+    write_XLSBCodeName(str, o);
+    return o.slice(0, o.l);
+  }
   function parse_BrtCellBlank(data) {
     var cell = parse_XLSBCell(data);
     return [cell];
   }
+  function write_BrtCellBlank(cell, ncell, o) {
+    if (o == null) o = new_buf(8);
+    return write_XLSBCell(ncell, o);
+  }
   function parse_BrtShortBlank(data) {
     var cell = parse_XLSBShortCell(data);
     return [cell];
+  }
+  function write_BrtShortBlank(cell, ncell, o) {
+    if (o == null) o = new_buf(4);
+    return write_XLSBShortCell(ncell, o);
   }
   function parse_BrtCellBool(data) {
     var cell = parse_XLSBCell(data);
     var fBool = data.read_shift(1);
     return [cell, fBool, "b"];
   }
+  function write_BrtCellBool(cell, ncell, o) {
+    if (o == null) o = new_buf(9);
+    write_XLSBCell(ncell, o);
+    o.write_shift(1, cell.v ? 1 : 0);
+    return o;
+  }
   function parse_BrtShortBool(data) {
     var cell = parse_XLSBShortCell(data);
     var fBool = data.read_shift(1);
     return [cell, fBool, "b"];
+  }
+  function write_BrtShortBool(cell, ncell, o) {
+    if (o == null) o = new_buf(5);
+    write_XLSBShortCell(ncell, o);
+    o.write_shift(1, cell.v ? 1 : 0);
+    return o;
   }
   function parse_BrtCellError(data) {
     var cell = parse_XLSBCell(data);
     var bError = data.read_shift(1);
     return [cell, bError, "e"];
   }
+  function write_BrtCellError(cell, ncell, o) {
+    if (o == null) o = new_buf(9);
+    write_XLSBCell(ncell, o);
+    o.write_shift(1, cell.v);
+    return o;
+  }
   function parse_BrtShortError(data) {
     var cell = parse_XLSBShortCell(data);
     var bError = data.read_shift(1);
     return [cell, bError, "e"];
+  }
+  function write_BrtShortError(cell, ncell, o) {
+    if (o == null) o = new_buf(8);
+    write_XLSBShortCell(ncell, o);
+    o.write_shift(1, cell.v);
+    o.write_shift(2, 0);
+    o.write_shift(1, 0);
+    return o;
   }
   function parse_BrtCellIsst(data) {
     var cell = parse_XLSBCell(data);
     var isst = data.read_shift(4);
     return [cell, isst, "s"];
   }
+  function write_BrtCellIsst(cell, ncell, o) {
+    if (o == null) o = new_buf(12);
+    write_XLSBCell(ncell, o);
+    o.write_shift(4, ncell.v);
+    return o;
+  }
   function parse_BrtShortIsst(data) {
     var cell = parse_XLSBShortCell(data);
     var isst = data.read_shift(4);
     return [cell, isst, "s"];
+  }
+  function write_BrtShortIsst(cell, ncell, o) {
+    if (o == null) o = new_buf(8);
+    write_XLSBShortCell(ncell, o);
+    o.write_shift(4, ncell.v);
+    return o;
   }
   function parse_BrtCellReal(data) {
     var cell = parse_XLSBCell(data);
     var value = parse_Xnum(data);
     return [cell, value, "n"];
   }
+  function write_BrtCellReal(cell, ncell, o) {
+    if (o == null) o = new_buf(16);
+    write_XLSBCell(ncell, o);
+    write_Xnum(cell.v, o);
+    return o;
+  }
   function parse_BrtShortReal(data) {
     var cell = parse_XLSBShortCell(data);
     var value = parse_Xnum(data);
     return [cell, value, "n"];
+  }
+  function write_BrtShortReal(cell, ncell, o) {
+    if (o == null) o = new_buf(12);
+    write_XLSBShortCell(ncell, o);
+    write_Xnum(cell.v, o);
+    return o;
   }
   function parse_BrtCellRk(data) {
     var cell = parse_XLSBCell(data);
     var value = parse_RkNumber(data);
     return [cell, value, "n"];
   }
+  function write_BrtCellRk(cell, ncell, o) {
+    if (o == null) o = new_buf(12);
+    write_XLSBCell(ncell, o);
+    write_RkNumber(cell.v, o);
+    return o;
+  }
   function parse_BrtShortRk(data) {
     var cell = parse_XLSBShortCell(data);
     var value = parse_RkNumber(data);
     return [cell, value, "n"];
+  }
+  function write_BrtShortRk(cell, ncell, o) {
+    if (o == null) o = new_buf(8);
+    write_XLSBShortCell(ncell, o);
+    write_RkNumber(cell.v, o);
+    return o;
   }
   function parse_BrtCellRString(data) {
     var cell = parse_XLSBCell(data);
@@ -14936,10 +17269,22 @@
     var value = parse_XLWideString(data);
     return [cell, value, "str"];
   }
+  function write_BrtCellSt(cell, ncell, o) {
+    if (o == null) o = new_buf(12 + 4 * cell.v.length);
+    write_XLSBCell(ncell, o);
+    write_XLWideString(cell.v, o);
+    return o.length > o.l ? o.slice(0, o.l) : o;
+  }
   function parse_BrtShortSt(data) {
     var cell = parse_XLSBShortCell(data);
     var value = parse_XLWideString(data);
     return [cell, value, "str"];
+  }
+  function write_BrtShortSt(cell, ncell, o) {
+    if (o == null) o = new_buf(8 + 4 * cell.v.length);
+    write_XLSBShortCell(ncell, o);
+    write_XLWideString(cell.v, o);
+    return o.length > o.l ? o.slice(0, o.l) : o;
   }
   function parse_BrtFmlaBool(data, length, opts) {
     var end = data.l + length;
@@ -14994,6 +17339,12 @@
     return o;
   }
   var parse_BrtMergeCell = parse_UncheckedRfX;
+  var write_BrtMergeCell = write_UncheckedRfX;
+  function write_BrtBeginMergeCells(cnt, o) {
+    if (o == null) o = new_buf(4);
+    o.write_shift(4, cnt);
+    return o;
+  }
   function parse_BrtHLink(data, length) {
     var end = data.l + length;
     var rfx = parse_UncheckedRfX(data, 16);
@@ -15005,6 +17356,17 @@
     var o = { rfx, relId, loc, display };
     if (tooltip) o.Tooltip = tooltip;
     return o;
+  }
+  function write_BrtHLink(l, rId) {
+    var o = new_buf(50 + 4 * (l[1].Target.length + (l[1].Tooltip || "").length));
+    write_UncheckedRfX({ s: decode_cell(l[0]), e: decode_cell(l[0]) }, o);
+    write_RelID("rId" + rId, o);
+    var locidx = l[1].Target.indexOf("#");
+    var loc = locidx == -1 ? "" : l[1].Target.slice(locidx + 1);
+    write_XLWideString(loc || "", o);
+    write_XLWideString(l[1].Tooltip || "", o);
+    write_XLWideString("", o);
+    return o.slice(0, o.l);
   }
   function parse_BrtPane() {
   }
@@ -15031,6 +17393,24 @@
     } else data.l = end;
     return o;
   }
+  function write_BrtColInfo(C, col, o) {
+    if (o == null) o = new_buf(18);
+    var p = col_obj_w(C, col);
+    o.write_shift(-4, C);
+    o.write_shift(-4, C);
+    o.write_shift(4, (p.width || 10) * 256);
+    o.write_shift(
+      4,
+      0
+      /*ixfe*/
+    );
+    var flags = 0;
+    if (col.hidden) flags |= 1;
+    if (typeof p.width == "number") flags |= 2;
+    if (col.level) flags |= col.level << 8;
+    o.write_shift(2, flags);
+    return o;
+  }
   var BrtMarginKeys = ["left", "right", "top", "bottom", "header", "footer"];
   function parse_BrtMargins(data) {
     var margins = {};
@@ -15039,10 +17419,84 @@
     });
     return margins;
   }
+  function write_BrtMargins(margins, o) {
+    if (o == null) o = new_buf(6 * 8);
+    default_margins(margins);
+    BrtMarginKeys.forEach(function(k) {
+      write_Xnum(margins[k], o);
+    });
+    return o;
+  }
   function parse_BrtBeginWsView(data) {
     var f = data.read_shift(2);
     data.l += 28;
     return { RTL: f & 32 };
+  }
+  function write_BrtBeginWsView(ws, Workbook, o) {
+    if (o == null) o = new_buf(30);
+    var f = 924;
+    if ((((Workbook || {}).Views || [])[0] || {}).RTL) f |= 32;
+    o.write_shift(2, f);
+    o.write_shift(4, 0);
+    o.write_shift(4, 0);
+    o.write_shift(4, 0);
+    o.write_shift(1, 0);
+    o.write_shift(1, 0);
+    o.write_shift(2, 0);
+    o.write_shift(2, 100);
+    o.write_shift(2, 0);
+    o.write_shift(2, 0);
+    o.write_shift(2, 0);
+    o.write_shift(4, 0);
+    return o;
+  }
+  function write_BrtCellIgnoreEC(ref) {
+    var o = new_buf(24);
+    o.write_shift(4, 4);
+    o.write_shift(4, 1);
+    write_UncheckedRfX(ref, o);
+    return o;
+  }
+  function write_BrtSheetProtection(sp, o) {
+    if (o == null) o = new_buf(16 * 4 + 2);
+    o.write_shift(2, sp.password ? crypto_CreatePasswordVerifier_Method1(sp.password) : 0);
+    o.write_shift(4, 1);
+    [
+      ["objects", false],
+      // fObjects
+      ["scenarios", false],
+      // fScenarios
+      ["formatCells", true],
+      // fFormatCells
+      ["formatColumns", true],
+      // fFormatColumns
+      ["formatRows", true],
+      // fFormatRows
+      ["insertColumns", true],
+      // fInsertColumns
+      ["insertRows", true],
+      // fInsertRows
+      ["insertHyperlinks", true],
+      // fInsertHyperlinks
+      ["deleteColumns", true],
+      // fDeleteColumns
+      ["deleteRows", true],
+      // fDeleteRows
+      ["selectLockedCells", false],
+      // fSelLockedCells
+      ["sort", true],
+      // fSort
+      ["autoFilter", true],
+      // fAutoFilter
+      ["pivotTables", true],
+      // fPivotTables
+      ["selectUnlockedCells", false]
+      // fSelUnlockedCells
+    ].forEach(function(n) {
+      if (n[1]) o.write_shift(4, sp[n[0]] != null && !sp[n[0]] ? 1 : 0);
+      else o.write_shift(4, sp[n[0]] != null && sp[n[0]] ? 0 : 1);
+    });
+    return o;
   }
   function parse_BrtDVal() {
   }
@@ -15428,6 +17882,253 @@
     if (rowinfo.length > 0) s["!rows"] = rowinfo;
     return s;
   }
+  function write_ws_bin_cell(ba, cell, R, C, opts, ws, last_seen) {
+    if (cell.v === void 0) return false;
+    var vv = "";
+    switch (cell.t) {
+      case "b":
+        vv = cell.v ? "1" : "0";
+        break;
+      case "d":
+        cell = dup(cell);
+        cell.z = cell.z || table_fmt[14];
+        cell.v = datenum(parseDate(cell.v));
+        cell.t = "n";
+        break;
+      /* falls through */
+      case "n":
+      case "e":
+        vv = "" + cell.v;
+        break;
+      default:
+        vv = cell.v;
+        break;
+    }
+    var o = { r: R, c: C };
+    o.s = get_cell_style(opts.cellXfs, cell, opts);
+    if (cell.l) ws["!links"].push([encode_cell(o), cell.l]);
+    if (cell.c) ws["!comments"].push([encode_cell(o), cell.c]);
+    switch (cell.t) {
+      case "s":
+      case "str":
+        if (opts.bookSST) {
+          vv = get_sst_id(opts.Strings, cell.v, opts.revStrings);
+          o.t = "s";
+          o.v = vv;
+          if (last_seen) write_record(ba, 18, write_BrtShortIsst(cell, o));
+          else write_record(ba, 7, write_BrtCellIsst(cell, o));
+        } else {
+          o.t = "str";
+          if (last_seen) write_record(ba, 17, write_BrtShortSt(cell, o));
+          else write_record(ba, 6, write_BrtCellSt(cell, o));
+        }
+        return true;
+      case "n":
+        if (cell.v == (cell.v | 0) && cell.v > -1e3 && cell.v < 1e3) {
+          if (last_seen) write_record(ba, 13, write_BrtShortRk(cell, o));
+          else write_record(ba, 2, write_BrtCellRk(cell, o));
+        } else {
+          if (last_seen) write_record(ba, 16, write_BrtShortReal(cell, o));
+          else write_record(ba, 5, write_BrtCellReal(cell, o));
+        }
+        return true;
+      case "b":
+        o.t = "b";
+        if (last_seen) write_record(ba, 15, write_BrtShortBool(cell, o));
+        else write_record(ba, 4, write_BrtCellBool(cell, o));
+        return true;
+      case "e":
+        o.t = "e";
+        if (last_seen) write_record(ba, 14, write_BrtShortError(cell, o));
+        else write_record(ba, 3, write_BrtCellError(cell, o));
+        return true;
+    }
+    if (last_seen) write_record(ba, 12, write_BrtShortBlank(cell, o));
+    else write_record(ba, 1, write_BrtCellBlank(cell, o));
+    return true;
+  }
+  function write_CELLTABLE(ba, ws, idx, opts) {
+    var range = safe_decode_range(ws["!ref"] || "A1"), ref, rr = "", cols = [];
+    write_record(
+      ba,
+      145
+      /* BrtBeginSheetData */
+    );
+    var dense = Array.isArray(ws);
+    var cap = range.e.r;
+    if (ws["!rows"]) cap = Math.max(range.e.r, ws["!rows"].length - 1);
+    for (var R = range.s.r; R <= cap; ++R) {
+      rr = encode_row(R);
+      write_row_header(ba, ws, range, R);
+      var last_seen = false;
+      if (R <= range.e.r) for (var C = range.s.c; C <= range.e.c; ++C) {
+        if (R === range.s.r) cols[C] = encode_col(C);
+        ref = cols[C] + rr;
+        var cell = dense ? (ws[R] || [])[C] : ws[ref];
+        if (!cell) {
+          last_seen = false;
+          continue;
+        }
+        last_seen = write_ws_bin_cell(ba, cell, R, C, opts, ws, last_seen);
+      }
+    }
+    write_record(
+      ba,
+      146
+      /* BrtEndSheetData */
+    );
+  }
+  function write_MERGECELLS(ba, ws) {
+    if (!ws || !ws["!merges"]) return;
+    write_record(ba, 177, write_BrtBeginMergeCells(ws["!merges"].length));
+    ws["!merges"].forEach(function(m) {
+      write_record(ba, 176, write_BrtMergeCell(m));
+    });
+    write_record(
+      ba,
+      178
+      /* BrtEndMergeCells */
+    );
+  }
+  function write_COLINFOS(ba, ws) {
+    if (!ws || !ws["!cols"]) return;
+    write_record(
+      ba,
+      390
+      /* BrtBeginColInfos */
+    );
+    ws["!cols"].forEach(function(m, i) {
+      if (m) write_record(ba, 60, write_BrtColInfo(i, m));
+    });
+    write_record(
+      ba,
+      391
+      /* BrtEndColInfos */
+    );
+  }
+  function write_IGNOREECS(ba, ws) {
+    if (!ws || !ws["!ref"]) return;
+    write_record(
+      ba,
+      648
+      /* BrtBeginCellIgnoreECs */
+    );
+    write_record(ba, 649, write_BrtCellIgnoreEC(safe_decode_range(ws["!ref"])));
+    write_record(
+      ba,
+      650
+      /* BrtEndCellIgnoreECs */
+    );
+  }
+  function write_HLINKS(ba, ws, rels) {
+    ws["!links"].forEach(function(l) {
+      if (!l[1].Target) return;
+      var rId = add_rels(rels, -1, l[1].Target.replace(/#.*$/, ""), RELS.HLINK);
+      write_record(ba, 494, write_BrtHLink(l, rId));
+    });
+    delete ws["!links"];
+  }
+  function write_LEGACYDRAWING(ba, ws, idx, rels) {
+    if (ws["!comments"].length > 0) {
+      var rId = add_rels(rels, -1, "../drawings/vmlDrawing" + (idx + 1) + ".vml", RELS.VML);
+      write_record(ba, 551, write_RelID("rId" + rId));
+      ws["!legacy"] = rId;
+    }
+  }
+  function write_AUTOFILTER(ba, ws, wb, idx) {
+    if (!ws["!autofilter"]) return;
+    var data = ws["!autofilter"];
+    var ref = typeof data.ref === "string" ? data.ref : encode_range(data.ref);
+    if (!wb.Workbook) wb.Workbook = { Sheets: [] };
+    if (!wb.Workbook.Names) wb.Workbook.Names = [];
+    var names = wb.Workbook.Names;
+    var range = decode_range(ref);
+    if (range.s.r == range.e.r) {
+      range.e.r = decode_range(ws["!ref"]).e.r;
+      ref = encode_range(range);
+    }
+    for (var i = 0; i < names.length; ++i) {
+      var name = names[i];
+      if (name.Name != "_xlnm._FilterDatabase") continue;
+      if (name.Sheet != idx) continue;
+      name.Ref = "'" + wb.SheetNames[idx] + "'!" + ref;
+      break;
+    }
+    if (i == names.length) names.push({ Name: "_xlnm._FilterDatabase", Sheet: idx, Ref: "'" + wb.SheetNames[idx] + "'!" + ref });
+    write_record(ba, 161, write_UncheckedRfX(safe_decode_range(ref)));
+    write_record(
+      ba,
+      162
+      /* BrtEndAFilter */
+    );
+  }
+  function write_WSVIEWS2(ba, ws, Workbook) {
+    write_record(
+      ba,
+      133
+      /* BrtBeginWsViews */
+    );
+    {
+      write_record(ba, 137, write_BrtBeginWsView(ws, Workbook));
+      write_record(
+        ba,
+        138
+        /* BrtEndWsView */
+      );
+    }
+    write_record(
+      ba,
+      134
+      /* BrtEndWsViews */
+    );
+  }
+  function write_WSFMTINFO() {
+  }
+  function write_SHEETPROTECT(ba, ws) {
+    if (!ws["!protect"]) return;
+    write_record(ba, 535, write_BrtSheetProtection(ws["!protect"]));
+  }
+  function write_ws_bin(idx, opts, wb, rels) {
+    var ba = buf_array();
+    var s = wb.SheetNames[idx], ws = wb.Sheets[s] || {};
+    var c = s;
+    try {
+      if (wb && wb.Workbook) c = wb.Workbook.Sheets[idx].CodeName || c;
+    } catch (e) {
+    }
+    var r = safe_decode_range(ws["!ref"] || "A1");
+    if (r.e.c > 16383 || r.e.r > 1048575) {
+      if (opts.WTF) throw new Error("Range " + (ws["!ref"] || "A1") + " exceeds format limit A1:XFD1048576");
+      r.e.c = Math.min(r.e.c, 16383);
+      r.e.r = Math.min(r.e.c, 1048575);
+    }
+    ws["!links"] = [];
+    ws["!comments"] = [];
+    write_record(
+      ba,
+      129
+      /* BrtBeginSheet */
+    );
+    if (wb.vbaraw || ws["!outline"]) write_record(ba, 147, write_BrtWsProp(c, ws["!outline"]));
+    write_record(ba, 148, write_BrtWsDim(r));
+    write_WSVIEWS2(ba, ws, wb.Workbook);
+    write_WSFMTINFO(ba, ws);
+    write_COLINFOS(ba, ws, idx, opts, wb);
+    write_CELLTABLE(ba, ws, idx, opts, wb);
+    write_SHEETPROTECT(ba, ws);
+    write_AUTOFILTER(ba, ws, wb, idx);
+    write_MERGECELLS(ba, ws);
+    write_HLINKS(ba, ws, rels);
+    if (ws["!margins"]) write_record(ba, 476, write_BrtMargins(ws["!margins"]));
+    if (!opts || opts.ignoreEC || opts.ignoreEC == void 0) write_IGNOREECS(ba, ws);
+    write_LEGACYDRAWING(ba, ws, idx, rels);
+    write_record(
+      ba,
+      130
+      /* BrtEndSheet */
+    );
+    return ba.end();
+  }
   function parse_Cache(data) {
     var col = [];
     var num = data.match(/^<c:numCache>/);
@@ -15616,6 +18317,11 @@
     push_defaults_array(wb.Sheets, SheetDef);
     _ssfopts.date1904 = parsexmlbool(wb.WBProps.date1904);
   }
+  function safe1904(wb) {
+    if (!wb.Workbook) return "false";
+    if (!wb.Workbook.WBProps) return "false";
+    return parsexmlbool(wb.Workbook.WBProps.date1904) ? "true" : "false";
+  }
   var badchars = /* @__PURE__ */ "][*?/\\".split("");
   function check_ws_name(n, safe) {
     if (n.length > 31) {
@@ -15629,6 +18335,23 @@
       _good = false;
     });
     return _good;
+  }
+  function check_wb_names(N, S, codes) {
+    N.forEach(function(n, i) {
+      check_ws_name(n);
+      for (var j = 0; j < i; ++j) if (n == N[j]) throw new Error("Duplicate Sheet Name: " + n);
+      if (codes) {
+        var cn = S && S[i] && S[i].CodeName || n;
+        if (cn.charCodeAt(0) == 95 && cn.length > 22) throw new Error("Bad Code Name: Worksheet" + cn);
+      }
+    });
+  }
+  function check_wb(wb) {
+    if (!wb || !wb.SheetNames || !wb.Sheets) throw new Error("Invalid Workbook");
+    if (!wb.SheetNames.length) throw new Error("Workbook is empty");
+    var Sheets = wb.Workbook && wb.Workbook.Sheets || [];
+    check_wb_names(wb.SheetNames, Sheets, !!wb.vbaraw);
+    for (var i = 0; i < wb.SheetNames.length; ++i) check_ws(wb.Sheets[wb.SheetNames[i]], wb.SheetNames[i], i);
   }
   var wbnsregex = /<\w+:workbook/;
   function parse_wb_xml(data, opts) {
@@ -15866,6 +18589,74 @@
     parse_wb_defaults(wb);
     return wb;
   }
+  function write_wb_xml(wb) {
+    var o = [XML_HEADER];
+    o[o.length] = writextag("workbook", null, {
+      "xmlns": XMLNS_main[0],
+      //'xmlns:mx': XMLNS.mx,
+      //'xmlns:s': XMLNS_main[0],
+      "xmlns:r": XMLNS.r
+    });
+    var write_names = wb.Workbook && (wb.Workbook.Names || []).length > 0;
+    var workbookPr = { codeName: "ThisWorkbook" };
+    if (wb.Workbook && wb.Workbook.WBProps) {
+      WBPropsDef.forEach(function(x) {
+        if (wb.Workbook.WBProps[x[0]] == null) return;
+        if (wb.Workbook.WBProps[x[0]] == x[1]) return;
+        workbookPr[x[0]] = wb.Workbook.WBProps[x[0]];
+      });
+      if (wb.Workbook.WBProps.CodeName) {
+        workbookPr.codeName = wb.Workbook.WBProps.CodeName;
+        delete workbookPr.CodeName;
+      }
+    }
+    o[o.length] = writextag("workbookPr", null, workbookPr);
+    var sheets = wb.Workbook && wb.Workbook.Sheets || [];
+    var i = 0;
+    if (sheets && sheets[0] && !!sheets[0].Hidden) {
+      o[o.length] = "<bookViews>";
+      for (i = 0; i != wb.SheetNames.length; ++i) {
+        if (!sheets[i]) break;
+        if (!sheets[i].Hidden) break;
+      }
+      if (i == wb.SheetNames.length) i = 0;
+      o[o.length] = '<workbookView firstSheet="' + i + '" activeTab="' + i + '"/>';
+      o[o.length] = "</bookViews>";
+    }
+    o[o.length] = "<sheets>";
+    for (i = 0; i != wb.SheetNames.length; ++i) {
+      var sht = { name: escapexml(wb.SheetNames[i].slice(0, 31)) };
+      sht.sheetId = "" + (i + 1);
+      sht["r:id"] = "rId" + (i + 1);
+      if (sheets[i]) switch (sheets[i].Hidden) {
+        case 1:
+          sht.state = "hidden";
+          break;
+        case 2:
+          sht.state = "veryHidden";
+          break;
+      }
+      o[o.length] = writextag("sheet", null, sht);
+    }
+    o[o.length] = "</sheets>";
+    if (write_names) {
+      o[o.length] = "<definedNames>";
+      if (wb.Workbook && wb.Workbook.Names) wb.Workbook.Names.forEach(function(n) {
+        var d = { name: n.Name };
+        if (n.Comment) d.comment = n.Comment;
+        if (n.Sheet != null) d.localSheetId = "" + n.Sheet;
+        if (n.Hidden) d.hidden = "1";
+        if (!n.Ref) return;
+        o[o.length] = writextag("definedName", escapexml(n.Ref), d);
+      });
+      o[o.length] = "</definedNames>";
+    }
+    if (o.length > 2) {
+      o[o.length] = "</workbook>";
+      o[1] = o[1].replace("/>", ">");
+    }
+    return o.join("");
+  }
   function parse_BrtBundleSh(data, length) {
     var z = {};
     z.Hidden = data.read_shift(4);
@@ -15873,6 +18664,14 @@
     z.strRelID = parse_RelID(data, length - 8);
     z.name = parse_XLWideString(data);
     return z;
+  }
+  function write_BrtBundleSh(data, o) {
+    if (!o) o = new_buf(127);
+    o.write_shift(4, data.Hidden);
+    o.write_shift(4, data.iTabID);
+    write_RelID(data.strRelID, o);
+    write_XLWideString(data.name.slice(0, 31), o);
+    return o.length > o.l ? o.slice(0, o.l) : o;
   }
   function parse_BrtWbProp(data, length) {
     var o = {};
@@ -15896,6 +18695,17 @@
     o.showPivotChartFilter = !!(flags & 32768);
     o.updateLinks = ["userSet", "never", "always"][flags >> 8 & 3];
     return o;
+  }
+  function write_BrtWbProp(data, o) {
+    if (!o) o = new_buf(72);
+    var flags = 0;
+    if (data) {
+      if (data.filterPrivacy) flags |= 8;
+    }
+    o.write_shift(4, flags);
+    o.write_shift(4, 0);
+    write_XLSBCodeName(data && data.CodeName || "ThisWorkbook", o);
+    return o.slice(0, o.l);
   }
   function parse_BrtFRTArchID$(data, length) {
     var o = {};
@@ -16057,6 +18867,84 @@
     wb.supbooks = supbooks;
     return wb;
   }
+  function write_BUNDLESHS(ba, wb) {
+    write_record(
+      ba,
+      143
+      /* BrtBeginBundleShs */
+    );
+    for (var idx = 0; idx != wb.SheetNames.length; ++idx) {
+      var viz = wb.Workbook && wb.Workbook.Sheets && wb.Workbook.Sheets[idx] && wb.Workbook.Sheets[idx].Hidden || 0;
+      var d = { Hidden: viz, iTabID: idx + 1, strRelID: "rId" + (idx + 1), name: wb.SheetNames[idx] };
+      write_record(ba, 156, write_BrtBundleSh(d));
+    }
+    write_record(
+      ba,
+      144
+      /* BrtEndBundleShs */
+    );
+  }
+  function write_BrtFileVersion(data, o) {
+    if (!o) o = new_buf(127);
+    for (var i = 0; i != 4; ++i) o.write_shift(4, 0);
+    write_XLWideString("SheetJS", o);
+    write_XLWideString(XLSX.version, o);
+    write_XLWideString(XLSX.version, o);
+    write_XLWideString("7262", o);
+    return o.length > o.l ? o.slice(0, o.l) : o;
+  }
+  function write_BrtBookView(idx, o) {
+    if (!o) o = new_buf(29);
+    o.write_shift(-4, 0);
+    o.write_shift(-4, 460);
+    o.write_shift(4, 28800);
+    o.write_shift(4, 17600);
+    o.write_shift(4, 500);
+    o.write_shift(4, idx);
+    o.write_shift(4, idx);
+    var flags = 120;
+    o.write_shift(1, flags);
+    return o.length > o.l ? o.slice(0, o.l) : o;
+  }
+  function write_BOOKVIEWS(ba, wb) {
+    if (!wb.Workbook || !wb.Workbook.Sheets) return;
+    var sheets = wb.Workbook.Sheets;
+    var i = 0, vistab = -1, hidden = -1;
+    for (; i < sheets.length; ++i) {
+      if (!sheets[i] || !sheets[i].Hidden && vistab == -1) vistab = i;
+      else if (sheets[i].Hidden == 1 && hidden == -1) hidden = i;
+    }
+    if (hidden > vistab) return;
+    write_record(
+      ba,
+      135
+      /* BrtBeginBookViews */
+    );
+    write_record(ba, 158, write_BrtBookView(vistab));
+    write_record(
+      ba,
+      136
+      /* BrtEndBookViews */
+    );
+  }
+  function write_wb_bin(wb, opts) {
+    var ba = buf_array();
+    write_record(
+      ba,
+      131
+      /* BrtBeginBook */
+    );
+    write_record(ba, 128, write_BrtFileVersion());
+    write_record(ba, 153, write_BrtWbProp(wb.Workbook && wb.Workbook.WBProps || null));
+    write_BOOKVIEWS(ba, wb, opts);
+    write_BUNDLESHS(ba, wb, opts);
+    write_record(
+      ba,
+      132
+      /* BrtEndBook */
+    );
+    return ba.end();
+  }
   function parse_wb(data, name, opts) {
     if (name.slice(-4) === ".bin") return parse_wb_bin(data, opts);
     return parse_wb_xml(data, opts);
@@ -16103,6 +18991,24 @@
   function parse_xlmeta(data, name, opts) {
     if (name.slice(-4) === ".bin") return parse_xlmeta_bin(data, name, opts);
     return parse_xlmeta_xml(data, name, opts);
+  }
+  function write_wb(wb, name, opts) {
+    return (name.slice(-4) === ".bin" ? write_wb_bin : write_wb_xml)(wb, opts);
+  }
+  function write_ws(data, name, opts, wb, rels) {
+    return (name.slice(-4) === ".bin" ? write_ws_bin : write_ws_xml)(data, opts, wb, rels);
+  }
+  function write_sty(data, name, opts) {
+    return (name.slice(-4) === ".bin" ? write_sty_bin : write_sty_xml)(data, opts);
+  }
+  function write_sst(data, name, opts) {
+    return (name.slice(-4) === ".bin" ? write_sst_bin : write_sst_xml)(data, opts);
+  }
+  function write_cmnt(data, name, opts) {
+    return (name.slice(-4) === ".bin" ? write_comments_bin : write_comments_xml)(data, opts);
+  }
+  function write_xlmeta(name) {
+    return (name.slice(-4) === ".bin" ? write_xlmeta_bin : write_xlmeta_xml)();
   }
   var attregexg2 = /([\w:]+)=((?:")([^"]*)(?:")|(?:')([^']*)(?:'))/g;
   var attregex2 = /([\w:]+)=((?:")(?:[^"]*)(?:")|(?:')(?:[^']*)(?:'))/;
@@ -17384,6 +20290,253 @@
         return parse_xlml_xml(a2s(data), opts);
     }
   }
+  function write_props_xlml(wb, opts) {
+    var o = [];
+    if (wb.Props) o.push(xlml_write_docprops(wb.Props, opts));
+    if (wb.Custprops) o.push(xlml_write_custprops(wb.Props, wb.Custprops, opts));
+    return o.join("");
+  }
+  function write_wb_xlml() {
+    return "";
+  }
+  function write_sty_xlml(wb, opts) {
+    var styles = ['<Style ss:ID="Default" ss:Name="Normal"><NumberFormat/></Style>'];
+    opts.cellXfs.forEach(function(xf, id) {
+      var payload = [];
+      payload.push(writextag("NumberFormat", null, { "ss:Format": escapexml(table_fmt[xf.numFmtId]) }));
+      var o = (
+        /*::(*/
+        { "ss:ID": "s" + (21 + id) }
+      );
+      styles.push(writextag("Style", payload.join(""), o));
+    });
+    return writextag("Styles", styles.join(""));
+  }
+  function write_name_xlml(n) {
+    return writextag("NamedRange", null, { "ss:Name": n.Name, "ss:RefersTo": "=" + a1_to_rc(n.Ref, { r: 0, c: 0 }) });
+  }
+  function write_names_xlml(wb) {
+    if (!((wb || {}).Workbook || {}).Names) return "";
+    var names = wb.Workbook.Names;
+    var out = [];
+    for (var i = 0; i < names.length; ++i) {
+      var n = names[i];
+      if (n.Sheet != null) continue;
+      if (n.Name.match(/^_xlfn\./)) continue;
+      out.push(write_name_xlml(n));
+    }
+    return writextag("Names", out.join(""));
+  }
+  function write_ws_xlml_names(ws, opts, idx, wb) {
+    if (!ws) return "";
+    if (!((wb || {}).Workbook || {}).Names) return "";
+    var names = wb.Workbook.Names;
+    var out = [];
+    for (var i = 0; i < names.length; ++i) {
+      var n = names[i];
+      if (n.Sheet != idx) continue;
+      if (n.Name.match(/^_xlfn\./)) continue;
+      out.push(write_name_xlml(n));
+    }
+    return out.join("");
+  }
+  function write_ws_xlml_wsopts(ws, opts, idx, wb) {
+    if (!ws) return "";
+    var o = [];
+    if (ws["!margins"]) {
+      o.push("<PageSetup>");
+      if (ws["!margins"].header) o.push(writextag("Header", null, { "x:Margin": ws["!margins"].header }));
+      if (ws["!margins"].footer) o.push(writextag("Footer", null, { "x:Margin": ws["!margins"].footer }));
+      o.push(writextag("PageMargins", null, {
+        "x:Bottom": ws["!margins"].bottom || "0.75",
+        "x:Left": ws["!margins"].left || "0.7",
+        "x:Right": ws["!margins"].right || "0.7",
+        "x:Top": ws["!margins"].top || "0.75"
+      }));
+      o.push("</PageSetup>");
+    }
+    if (wb && wb.Workbook && wb.Workbook.Sheets && wb.Workbook.Sheets[idx]) {
+      if (wb.Workbook.Sheets[idx].Hidden) o.push(writextag("Visible", wb.Workbook.Sheets[idx].Hidden == 1 ? "SheetHidden" : "SheetVeryHidden", {}));
+      else {
+        for (var i = 0; i < idx; ++i) if (wb.Workbook.Sheets[i] && !wb.Workbook.Sheets[i].Hidden) break;
+        if (i == idx) o.push("<Selected/>");
+      }
+    }
+    if (((((wb || {}).Workbook || {}).Views || [])[0] || {}).RTL) o.push("<DisplayRightToLeft/>");
+    if (ws["!protect"]) {
+      o.push(writetag("ProtectContents", "True"));
+      if (ws["!protect"].objects) o.push(writetag("ProtectObjects", "True"));
+      if (ws["!protect"].scenarios) o.push(writetag("ProtectScenarios", "True"));
+      if (ws["!protect"].selectLockedCells != null && !ws["!protect"].selectLockedCells) o.push(writetag("EnableSelection", "NoSelection"));
+      else if (ws["!protect"].selectUnlockedCells != null && !ws["!protect"].selectUnlockedCells) o.push(writetag("EnableSelection", "UnlockedCells"));
+      [
+        ["formatCells", "AllowFormatCells"],
+        ["formatColumns", "AllowSizeCols"],
+        ["formatRows", "AllowSizeRows"],
+        ["insertColumns", "AllowInsertCols"],
+        ["insertRows", "AllowInsertRows"],
+        ["insertHyperlinks", "AllowInsertHyperlinks"],
+        ["deleteColumns", "AllowDeleteCols"],
+        ["deleteRows", "AllowDeleteRows"],
+        ["sort", "AllowSort"],
+        ["autoFilter", "AllowFilter"],
+        ["pivotTables", "AllowUsePivotTables"]
+      ].forEach(function(x) {
+        if (ws["!protect"][x[0]]) o.push("<" + x[1] + "/>");
+      });
+    }
+    if (o.length == 0) return "";
+    return writextag("WorksheetOptions", o.join(""), { xmlns: XLMLNS.x });
+  }
+  function write_ws_xlml_comment(comments) {
+    return comments.map(function(c) {
+      var t = xlml_unfixstr(c.t || "");
+      var d = writextag("ss:Data", t, { "xmlns": "http://www.w3.org/TR/REC-html40" });
+      return writextag("Comment", d, { "ss:Author": c.a });
+    }).join("");
+  }
+  function write_ws_xlml_cell(cell, ref, ws, opts, idx, wb, addr) {
+    if (!cell || cell.v == void 0 && cell.f == void 0) return "";
+    var attr = {};
+    if (cell.f) attr["ss:Formula"] = "=" + escapexml(a1_to_rc(cell.f, addr));
+    if (cell.F && cell.F.slice(0, ref.length) == ref) {
+      var end = decode_cell(cell.F.slice(ref.length + 1));
+      attr["ss:ArrayRange"] = "RC:R" + (end.r == addr.r ? "" : "[" + (end.r - addr.r) + "]") + "C" + (end.c == addr.c ? "" : "[" + (end.c - addr.c) + "]");
+    }
+    if (cell.l && cell.l.Target) {
+      attr["ss:HRef"] = escapexml(cell.l.Target);
+      if (cell.l.Tooltip) attr["x:HRefScreenTip"] = escapexml(cell.l.Tooltip);
+    }
+    if (ws["!merges"]) {
+      var marr = ws["!merges"];
+      for (var mi = 0; mi != marr.length; ++mi) {
+        if (marr[mi].s.c != addr.c || marr[mi].s.r != addr.r) continue;
+        if (marr[mi].e.c > marr[mi].s.c) attr["ss:MergeAcross"] = marr[mi].e.c - marr[mi].s.c;
+        if (marr[mi].e.r > marr[mi].s.r) attr["ss:MergeDown"] = marr[mi].e.r - marr[mi].s.r;
+      }
+    }
+    var t = "", p = "";
+    switch (cell.t) {
+      case "z":
+        if (!opts.sheetStubs) return "";
+        break;
+      case "n":
+        t = "Number";
+        p = String(cell.v);
+        break;
+      case "b":
+        t = "Boolean";
+        p = cell.v ? "1" : "0";
+        break;
+      case "e":
+        t = "Error";
+        p = BErr[cell.v];
+        break;
+      case "d":
+        t = "DateTime";
+        p = new Date(cell.v).toISOString();
+        if (cell.z == null) cell.z = cell.z || table_fmt[14];
+        break;
+      case "s":
+        t = "String";
+        p = escapexlml(cell.v || "");
+        break;
+    }
+    var os = get_cell_style(opts.cellXfs, cell, opts);
+    attr["ss:StyleID"] = "s" + (21 + os);
+    attr["ss:Index"] = addr.c + 1;
+    var _v = cell.v != null ? p : "";
+    var m = cell.t == "z" ? "" : '<Data ss:Type="' + t + '">' + _v + "</Data>";
+    if ((cell.c || []).length > 0) m += write_ws_xlml_comment(cell.c);
+    return writextag("Cell", m, attr);
+  }
+  function write_ws_xlml_row(R, row) {
+    var o = '<Row ss:Index="' + (R + 1) + '"';
+    if (row) {
+      if (row.hpt && !row.hpx) row.hpx = pt2px(row.hpt);
+      if (row.hpx) o += ' ss:AutoFitHeight="0" ss:Height="' + row.hpx + '"';
+      if (row.hidden) o += ' ss:Hidden="1"';
+    }
+    return o + ">";
+  }
+  function write_ws_xlml_table(ws, opts, idx, wb) {
+    if (!ws["!ref"]) return "";
+    var range = safe_decode_range(ws["!ref"]);
+    var marr = ws["!merges"] || [], mi = 0;
+    var o = [];
+    if (ws["!cols"]) ws["!cols"].forEach(function(n, i) {
+      process_col(n);
+      var w = !!n.width;
+      var p = col_obj_w(i, n);
+      var k = { "ss:Index": i + 1 };
+      if (w) k["ss:Width"] = width2px(p.width);
+      if (n.hidden) k["ss:Hidden"] = "1";
+      o.push(writextag("Column", null, k));
+    });
+    var dense = Array.isArray(ws);
+    for (var R = range.s.r; R <= range.e.r; ++R) {
+      var row = [write_ws_xlml_row(R, (ws["!rows"] || [])[R])];
+      for (var C = range.s.c; C <= range.e.c; ++C) {
+        var skip = false;
+        for (mi = 0; mi != marr.length; ++mi) {
+          if (marr[mi].s.c > C) continue;
+          if (marr[mi].s.r > R) continue;
+          if (marr[mi].e.c < C) continue;
+          if (marr[mi].e.r < R) continue;
+          if (marr[mi].s.c != C || marr[mi].s.r != R) skip = true;
+          break;
+        }
+        if (skip) continue;
+        var addr = { r: R, c: C };
+        var ref = encode_cell(addr), cell = dense ? (ws[R] || [])[C] : ws[ref];
+        row.push(write_ws_xlml_cell(cell, ref, ws, opts, idx, wb, addr));
+      }
+      row.push("</Row>");
+      if (row.length > 2) o.push(row.join(""));
+    }
+    return o.join("");
+  }
+  function write_ws_xlml(idx, opts, wb) {
+    var o = [];
+    var s = wb.SheetNames[idx];
+    var ws = wb.Sheets[s];
+    var t = ws ? write_ws_xlml_names(ws, opts, idx, wb) : "";
+    if (t.length > 0) o.push("<Names>" + t + "</Names>");
+    t = ws ? write_ws_xlml_table(ws, opts, idx, wb) : "";
+    if (t.length > 0) o.push("<Table>" + t + "</Table>");
+    o.push(write_ws_xlml_wsopts(ws, opts, idx, wb));
+    return o.join("");
+  }
+  function write_xlml(wb, opts) {
+    if (!opts) opts = {};
+    if (!wb.SSF) wb.SSF = dup(table_fmt);
+    if (wb.SSF) {
+      make_ssf();
+      SSF_load_table(wb.SSF);
+      opts.revssf = evert_num(wb.SSF);
+      opts.revssf[wb.SSF[65535]] = 0;
+      opts.ssf = wb.SSF;
+      opts.cellXfs = [];
+      get_cell_style(opts.cellXfs, {}, { revssf: { "General": 0 } });
+    }
+    var d = [];
+    d.push(write_props_xlml(wb, opts));
+    d.push(write_wb_xlml(wb, opts));
+    d.push("");
+    d.push("");
+    for (var i = 0; i < wb.SheetNames.length; ++i)
+      d.push(writextag("Worksheet", write_ws_xlml(i, opts, wb), { "ss:Name": escapexml(wb.SheetNames[i]) }));
+    d[2] = write_sty_xlml(wb, opts);
+    d[3] = write_names_xlml(wb, opts);
+    return XML_HEADER + writextag("Workbook", d.join(""), {
+      "xmlns": XLMLNS.ss,
+      "xmlns:o": XLMLNS.o,
+      "xmlns:x": XLMLNS.x,
+      "xmlns:ss": XLMLNS.ss,
+      "xmlns:dt": XLMLNS.dt,
+      "xmlns:html": XLMLNS.html
+    });
+  }
   function parse_compobj(obj) {
     var v = {};
     var o = obj.content;
@@ -18184,6 +21337,28 @@
       delete props.TitlesOfParts;
     }
   }
+  function write_xls_props(wb, cfb) {
+    var DSEntries = [], SEntries = [], CEntries = [];
+    var i = 0, Keys;
+    var DocSummaryRE = evert_key(DocSummaryPIDDSI, "n");
+    var SummaryRE = evert_key(SummaryPIDSI, "n");
+    if (wb.Props) {
+      Keys = keys(wb.Props);
+      for (i = 0; i < Keys.length; ++i) (Object.prototype.hasOwnProperty.call(DocSummaryRE, Keys[i]) ? DSEntries : Object.prototype.hasOwnProperty.call(SummaryRE, Keys[i]) ? SEntries : CEntries).push([Keys[i], wb.Props[Keys[i]]]);
+    }
+    if (wb.Custprops) {
+      Keys = keys(wb.Custprops);
+      for (i = 0; i < Keys.length; ++i) if (!Object.prototype.hasOwnProperty.call(wb.Props || {}, Keys[i])) (Object.prototype.hasOwnProperty.call(DocSummaryRE, Keys[i]) ? DSEntries : Object.prototype.hasOwnProperty.call(SummaryRE, Keys[i]) ? SEntries : CEntries).push([Keys[i], wb.Custprops[Keys[i]]]);
+    }
+    var CEntries2 = [];
+    for (i = 0; i < CEntries.length; ++i) {
+      if (XLSPSSkip.indexOf(CEntries[i][0]) > -1 || PseudoPropsPairs.indexOf(CEntries[i][0]) > -1) continue;
+      if (CEntries[i][1] == null) continue;
+      CEntries2.push(CEntries[i]);
+    }
+    if (SEntries.length) CFB.utils.cfb_add(cfb, "/SummaryInformation", write_PropertySetStream(SEntries, PSCLSID.SI, SummaryRE, SummaryPIDSI));
+    if (DSEntries.length || CEntries2.length) CFB.utils.cfb_add(cfb, "/DocumentSummaryInformation", write_PropertySetStream(DSEntries, PSCLSID.DSI, DocSummaryRE, DocSummaryPIDDSI, CEntries2.length ? CEntries2 : null, PSCLSID.UDI));
+  }
   function parse_xlscfb(cfb, options) {
     if (!options) options = {};
     fix_read_opts(options);
@@ -18234,6 +21409,33 @@
     WorkbookP.Props = WorkbookP.Custprops = props;
     if (options.bookFiles) WorkbookP.cfb = cfb;
     return WorkbookP;
+  }
+  function write_xlscfb(wb, opts) {
+    var o = opts || {};
+    var cfb = CFB.utils.cfb_new({ root: "R" });
+    var wbpath = "/Workbook";
+    switch (o.bookType || "xls") {
+      case "xls":
+        o.bookType = "biff8";
+      /* falls through */
+      case "xla":
+        if (!o.bookType) o.bookType = "xla";
+      /* falls through */
+      case "biff8":
+        wbpath = "/Workbook";
+        o.biff = 8;
+        break;
+      case "biff5":
+        wbpath = "/Book";
+        o.biff = 5;
+        break;
+      default:
+        throw new Error("invalid type " + o.bookType + " for XLS CFB");
+    }
+    CFB.utils.cfb_add(cfb, wbpath, write_biff_buf(wb, o));
+    if (o.biff == 8 && (wb.Props || wb.Custprops)) write_xls_props(wb, cfb);
+    if (o.biff == 8 && wb.vbaraw) fill_vba_xls(cfb, CFB.read(wb.vbaraw, { type: typeof wb.vbaraw == "string" ? "binary" : "buffer" }));
+    return cfb;
   }
   var XLSBRecordEnum = {
     /*::[*/
@@ -24206,6 +27408,402 @@
       len > 0 && is_buf(payload)
     ) ba.push(payload);
   }
+  function write_biff_continue(ba, type, payload, length) {
+    var len = length || (payload || []).length || 0;
+    if (len <= 8224) return write_biff_rec(ba, type, payload, len);
+    var t = type;
+    if (isNaN(t)) return;
+    var parts = payload.parts || [], sidx = 0;
+    var i = 0, w = 0;
+    while (w + (parts[sidx] || 8224) <= 8224) {
+      w += parts[sidx] || 8224;
+      sidx++;
+    }
+    var o = ba.next(4);
+    o.write_shift(2, t);
+    o.write_shift(2, w);
+    ba.push(payload.slice(i, i + w));
+    i += w;
+    while (i < len) {
+      o = ba.next(4);
+      o.write_shift(2, 60);
+      w = 0;
+      while (w + (parts[sidx] || 8224) <= 8224) {
+        w += parts[sidx] || 8224;
+        sidx++;
+      }
+      o.write_shift(2, w);
+      ba.push(payload.slice(i, i + w));
+      i += w;
+    }
+  }
+  function write_BIFF2Cell(out, r, c) {
+    if (!out) out = new_buf(7);
+    out.write_shift(2, r);
+    out.write_shift(2, c);
+    out.write_shift(2, 0);
+    out.write_shift(1, 0);
+    return out;
+  }
+  function write_BIFF2BERR(r, c, val, t) {
+    var out = new_buf(9);
+    write_BIFF2Cell(out, r, c);
+    write_Bes(val, t || "b", out);
+    return out;
+  }
+  function write_BIFF2LABEL(r, c, val) {
+    var out = new_buf(8 + 2 * val.length);
+    write_BIFF2Cell(out, r, c);
+    out.write_shift(1, val.length);
+    out.write_shift(val.length, val, "sbcs");
+    return out.l < out.length ? out.slice(0, out.l) : out;
+  }
+  function write_ws_biff2_cell(ba, cell, R, C) {
+    if (cell.v != null) switch (cell.t) {
+      case "d":
+      case "n":
+        var v = cell.t == "d" ? datenum(parseDate(cell.v)) : cell.v;
+        if (v == (v | 0) && v >= 0 && v < 65536)
+          write_biff_rec(ba, 2, write_BIFF2INT(R, C, v));
+        else
+          write_biff_rec(ba, 3, write_BIFF2NUM(R, C, v));
+        return;
+      case "b":
+      case "e":
+        write_biff_rec(ba, 5, write_BIFF2BERR(R, C, cell.v, cell.t));
+        return;
+      /* TODO: codepage, sst */
+      case "s":
+      case "str":
+        write_biff_rec(ba, 4, write_BIFF2LABEL(R, C, (cell.v || "").slice(0, 255)));
+        return;
+    }
+    write_biff_rec(ba, 1, write_BIFF2Cell(null, R, C));
+  }
+  function write_ws_biff2(ba, ws, idx, opts) {
+    var dense = Array.isArray(ws);
+    var range = safe_decode_range(ws["!ref"] || "A1"), ref, rr = "", cols = [];
+    if (range.e.c > 255 || range.e.r > 16383) {
+      if (opts.WTF) throw new Error("Range " + (ws["!ref"] || "A1") + " exceeds format limit A1:IV16384");
+      range.e.c = Math.min(range.e.c, 255);
+      range.e.r = Math.min(range.e.c, 16383);
+      ref = encode_range(range);
+    }
+    for (var R = range.s.r; R <= range.e.r; ++R) {
+      rr = encode_row(R);
+      for (var C = range.s.c; C <= range.e.c; ++C) {
+        if (R === range.s.r) cols[C] = encode_col(C);
+        ref = cols[C] + rr;
+        var cell = dense ? (ws[R] || [])[C] : ws[ref];
+        if (!cell) continue;
+        write_ws_biff2_cell(ba, cell, R, C, opts);
+      }
+    }
+  }
+  function write_biff2_buf(wb, opts) {
+    var o = opts || {};
+    if (DENSE != null && o.dense == null) o.dense = DENSE;
+    var ba = buf_array();
+    var idx = 0;
+    for (var i = 0; i < wb.SheetNames.length; ++i) if (wb.SheetNames[i] == o.sheet) idx = i;
+    if (idx == 0 && !!o.sheet && wb.SheetNames[0] != o.sheet) throw new Error("Sheet not found: " + o.sheet);
+    write_biff_rec(ba, o.biff == 4 ? 1033 : o.biff == 3 ? 521 : 9, write_BOF(wb, 16, o));
+    write_ws_biff2(ba, wb.Sheets[wb.SheetNames[idx]], idx, o, wb);
+    write_biff_rec(ba, 10);
+    return ba.end();
+  }
+  function write_FONTS_biff8(ba, data, opts) {
+    write_biff_rec(ba, 49, write_Font({
+      sz: 12,
+      color: { theme: 1 },
+      name: "Arial",
+      family: 2,
+      scheme: "minor"
+    }, opts));
+  }
+  function write_FMTS_biff8(ba, NF, opts) {
+    if (!NF) return;
+    [[5, 8], [23, 26], [41, 44], [
+      /*63*/
+      50,
+      /*66],[164,*/
+      392
+    ]].forEach(function(r) {
+      for (var i = r[0]; i <= r[1]; ++i) if (NF[i] != null) write_biff_rec(ba, 1054, write_Format(i, NF[i], opts));
+    });
+  }
+  function write_FEAT(ba, ws) {
+    var o = new_buf(19);
+    o.write_shift(4, 2151);
+    o.write_shift(4, 0);
+    o.write_shift(4, 0);
+    o.write_shift(2, 3);
+    o.write_shift(1, 1);
+    o.write_shift(4, 0);
+    write_biff_rec(ba, 2151, o);
+    o = new_buf(39);
+    o.write_shift(4, 2152);
+    o.write_shift(4, 0);
+    o.write_shift(4, 0);
+    o.write_shift(2, 3);
+    o.write_shift(1, 0);
+    o.write_shift(4, 0);
+    o.write_shift(2, 1);
+    o.write_shift(4, 4);
+    o.write_shift(2, 0);
+    write_Ref8U(safe_decode_range(ws["!ref"] || "A1"), o);
+    o.write_shift(4, 4);
+    write_biff_rec(ba, 2152, o);
+  }
+  function write_CELLXFS_biff8(ba, opts) {
+    for (var i = 0; i < 16; ++i) write_biff_rec(ba, 224, write_XF({ numFmtId: 0, style: true }, 0, opts));
+    opts.cellXfs.forEach(function(c) {
+      write_biff_rec(ba, 224, write_XF(c, 0, opts));
+    });
+  }
+  function write_ws_biff8_hlinks(ba, ws) {
+    for (var R = 0; R < ws["!links"].length; ++R) {
+      var HL = ws["!links"][R];
+      write_biff_rec(ba, 440, write_HLink(HL));
+      if (HL[1].Tooltip) write_biff_rec(ba, 2048, write_HLinkTooltip(HL));
+    }
+    delete ws["!links"];
+  }
+  function write_ws_cols_biff8(ba, cols) {
+    if (!cols) return;
+    var cnt = 0;
+    cols.forEach(function(col, idx) {
+      if (++cnt <= 256 && col) {
+        write_biff_rec(ba, 125, write_ColInfo(col_obj_w(idx, col), idx));
+      }
+    });
+  }
+  function write_ws_biff8_cell(ba, cell, R, C, opts) {
+    var os = 16 + get_cell_style(opts.cellXfs, cell, opts);
+    if (cell.v == null && !cell.bf) {
+      write_biff_rec(ba, 513, write_XLSCell(R, C, os));
+      return;
+    }
+    if (cell.bf) write_biff_rec(ba, 6, write_Formula(cell, R, C, opts, os));
+    else switch (cell.t) {
+      case "d":
+      case "n":
+        var v = cell.t == "d" ? datenum(parseDate(cell.v)) : cell.v;
+        write_biff_rec(ba, 515, write_Number(R, C, v, os, opts));
+        break;
+      case "b":
+      case "e":
+        write_biff_rec(ba, 517, write_BoolErr(R, C, cell.v, os, opts, cell.t));
+        break;
+      /* TODO: codepage, sst */
+      case "s":
+      case "str":
+        if (opts.bookSST) {
+          var isst = get_sst_id(opts.Strings, cell.v, opts.revStrings);
+          write_biff_rec(ba, 253, write_LabelSst(R, C, isst, os, opts));
+        } else write_biff_rec(ba, 516, write_Label(R, C, (cell.v || "").slice(0, 255), os, opts));
+        break;
+      default:
+        write_biff_rec(ba, 513, write_XLSCell(R, C, os));
+    }
+  }
+  function write_ws_biff8(idx, opts, wb) {
+    var ba = buf_array();
+    var s = wb.SheetNames[idx], ws = wb.Sheets[s] || {};
+    var _WB = (wb || {}).Workbook || {};
+    var _sheet = (_WB.Sheets || [])[idx] || {};
+    var dense = Array.isArray(ws);
+    var b8 = opts.biff == 8;
+    var ref, rr = "", cols = [];
+    var range = safe_decode_range(ws["!ref"] || "A1");
+    var MAX_ROWS = b8 ? 65536 : 16384;
+    if (range.e.c > 255 || range.e.r >= MAX_ROWS) {
+      if (opts.WTF) throw new Error("Range " + (ws["!ref"] || "A1") + " exceeds format limit A1:IV16384");
+      range.e.c = Math.min(range.e.c, 255);
+      range.e.r = Math.min(range.e.c, MAX_ROWS - 1);
+    }
+    write_biff_rec(ba, 2057, write_BOF(wb, 16, opts));
+    write_biff_rec(ba, 13, writeuint16(1));
+    write_biff_rec(ba, 12, writeuint16(100));
+    write_biff_rec(ba, 15, writebool(true));
+    write_biff_rec(ba, 17, writebool(false));
+    write_biff_rec(ba, 16, write_Xnum(1e-3));
+    write_biff_rec(ba, 95, writebool(true));
+    write_biff_rec(ba, 42, writebool(false));
+    write_biff_rec(ba, 43, writebool(false));
+    write_biff_rec(ba, 130, writeuint16(1));
+    write_biff_rec(ba, 128, write_Guts([0, 0]));
+    write_biff_rec(ba, 131, writebool(false));
+    write_biff_rec(ba, 132, writebool(false));
+    if (b8) write_ws_cols_biff8(ba, ws["!cols"]);
+    write_biff_rec(ba, 512, write_Dimensions(range, opts));
+    if (b8) ws["!links"] = [];
+    for (var R = range.s.r; R <= range.e.r; ++R) {
+      rr = encode_row(R);
+      for (var C = range.s.c; C <= range.e.c; ++C) {
+        if (R === range.s.r) cols[C] = encode_col(C);
+        ref = cols[C] + rr;
+        var cell = dense ? (ws[R] || [])[C] : ws[ref];
+        if (!cell) continue;
+        write_ws_biff8_cell(ba, cell, R, C, opts);
+        if (b8 && cell.l) ws["!links"].push([ref, cell.l]);
+      }
+    }
+    var cname = _sheet.CodeName || _sheet.name || s;
+    if (b8) write_biff_rec(ba, 574, write_Window2((_WB.Views || [])[0]));
+    if (b8 && (ws["!merges"] || []).length) write_biff_rec(ba, 229, write_MergeCells(ws["!merges"]));
+    if (b8) write_ws_biff8_hlinks(ba, ws);
+    write_biff_rec(ba, 442, write_XLUnicodeString(cname, opts));
+    if (b8) write_FEAT(ba, ws);
+    write_biff_rec(
+      ba,
+      10
+      /* EOF */
+    );
+    return ba.end();
+  }
+  function write_biff8_global(wb, bufs, opts) {
+    var A = buf_array();
+    var _WB = (wb || {}).Workbook || {};
+    var _sheets = _WB.Sheets || [];
+    var _wb = (
+      /*::((*/
+      _WB.WBProps || {
+        /*::CodeName:"ThisWorkbook"*/
+      }
+    );
+    var b8 = opts.biff == 8, b5 = opts.biff == 5;
+    write_biff_rec(A, 2057, write_BOF(wb, 5, opts));
+    if (opts.bookType == "xla") write_biff_rec(
+      A,
+      135
+      /* Addin */
+    );
+    write_biff_rec(A, 225, b8 ? writeuint16(1200) : null);
+    write_biff_rec(A, 193, writezeroes(2));
+    if (b5) write_biff_rec(
+      A,
+      191
+      /* ToolbarHdr */
+    );
+    if (b5) write_biff_rec(
+      A,
+      192
+      /* ToolbarEnd */
+    );
+    write_biff_rec(
+      A,
+      226
+      /* InterfaceEnd */
+    );
+    write_biff_rec(A, 92, write_WriteAccess("SheetJS", opts));
+    write_biff_rec(A, 66, writeuint16(b8 ? 1200 : 1252));
+    if (b8) write_biff_rec(A, 353, writeuint16(0));
+    if (b8) write_biff_rec(
+      A,
+      448
+      /* Excel9File */
+    );
+    write_biff_rec(A, 317, write_RRTabId(wb.SheetNames.length));
+    if (b8 && wb.vbaraw) write_biff_rec(
+      A,
+      211
+      /* ObProj */
+    );
+    if (b8 && wb.vbaraw) {
+      var cname = _wb.CodeName || "ThisWorkbook";
+      write_biff_rec(A, 442, write_XLUnicodeString(cname, opts));
+    }
+    write_biff_rec(A, 156, writeuint16(17));
+    write_biff_rec(A, 25, writebool(false));
+    write_biff_rec(A, 18, writebool(false));
+    write_biff_rec(A, 19, writeuint16(0));
+    if (b8) write_biff_rec(A, 431, writebool(false));
+    if (b8) write_biff_rec(A, 444, writeuint16(0));
+    write_biff_rec(A, 61, write_Window1(opts));
+    write_biff_rec(A, 64, writebool(false));
+    write_biff_rec(A, 141, writeuint16(0));
+    write_biff_rec(A, 34, writebool(safe1904(wb) == "true"));
+    write_biff_rec(A, 14, writebool(true));
+    if (b8) write_biff_rec(A, 439, writebool(false));
+    write_biff_rec(A, 218, writeuint16(0));
+    write_FONTS_biff8(A, wb, opts);
+    write_FMTS_biff8(A, wb.SSF, opts);
+    write_CELLXFS_biff8(A, opts);
+    if (b8) write_biff_rec(A, 352, writebool(false));
+    var a = A.end();
+    var C = buf_array();
+    if (b8) write_biff_rec(C, 140, write_Country());
+    if (b8 && opts.Strings) write_biff_continue(C, 252, write_SST(opts.Strings, opts));
+    write_biff_rec(
+      C,
+      10
+      /* EOF */
+    );
+    var c = C.end();
+    var B = buf_array();
+    var blen = 0, j = 0;
+    for (j = 0; j < wb.SheetNames.length; ++j) blen += (b8 ? 12 : 11) + (b8 ? 2 : 1) * wb.SheetNames[j].length;
+    var start = a.length + blen + c.length;
+    for (j = 0; j < wb.SheetNames.length; ++j) {
+      var _sheet = _sheets[j] || {};
+      write_biff_rec(B, 133, write_BoundSheet8({ pos: start, hs: _sheet.Hidden || 0, dt: 0, name: wb.SheetNames[j] }, opts));
+      start += bufs[j].length;
+    }
+    var b = B.end();
+    if (blen != b.length) throw new Error("BS8 " + blen + " != " + b.length);
+    var out = [];
+    if (a.length) out.push(a);
+    if (b.length) out.push(b);
+    if (c.length) out.push(c);
+    return bconcat(out);
+  }
+  function write_biff8_buf(wb, opts) {
+    var o = opts || {};
+    var bufs = [];
+    if (wb && !wb.SSF) {
+      wb.SSF = dup(table_fmt);
+    }
+    if (wb && wb.SSF) {
+      make_ssf();
+      SSF_load_table(wb.SSF);
+      o.revssf = evert_num(wb.SSF);
+      o.revssf[wb.SSF[65535]] = 0;
+      o.ssf = wb.SSF;
+    }
+    o.Strings = /*::((*/
+    [];
+    o.Strings.Count = 0;
+    o.Strings.Unique = 0;
+    fix_write_opts(o);
+    o.cellXfs = [];
+    get_cell_style(o.cellXfs, {}, { revssf: { "General": 0 } });
+    if (!wb.Props) wb.Props = {};
+    for (var i = 0; i < wb.SheetNames.length; ++i) bufs[bufs.length] = write_ws_biff8(i, o, wb);
+    bufs.unshift(write_biff8_global(wb, bufs, o));
+    return bconcat(bufs);
+  }
+  function write_biff_buf(wb, opts) {
+    for (var i = 0; i <= wb.SheetNames.length; ++i) {
+      var ws = wb.Sheets[wb.SheetNames[i]];
+      if (!ws || !ws["!ref"]) continue;
+      var range = decode_range(ws["!ref"]);
+      if (range.e.c > 255) {
+        if (typeof console != "undefined" && console.error) console.error("Worksheet '" + wb.SheetNames[i] + "' extends beyond column IV (255).  Data may be lost.");
+      }
+    }
+    var o = opts || {};
+    switch (o.biff || 2) {
+      case 8:
+      case 5:
+        return write_biff8_buf(wb, opts);
+      case 4:
+      case 3:
+      case 2:
+        return write_biff2_buf(wb, opts);
+    }
+    throw new Error("invalid type " + o.bookType + " for BIFF");
+  }
   function html_to_sheet(str, _opts) {
     var opts = _opts || {};
     if (DENSE != null && opts.dense == null) opts.dense = DENSE;
@@ -25294,11 +28892,296 @@
   function parse_fods(data, opts) {
     return parse_content_xml(data, opts);
   }
+  var write_styles_ods = /* @__PURE__ */ (function() {
+    var master_styles = [
+      "<office:master-styles>",
+      '<style:master-page style:name="mp1" style:page-layout-name="mp1">',
+      "<style:header/>",
+      '<style:header-left style:display="false"/>',
+      "<style:footer/>",
+      '<style:footer-left style:display="false"/>',
+      "</style:master-page>",
+      "</office:master-styles>"
+    ].join("");
+    var payload = "<office:document-styles " + wxt_helper({
+      "xmlns:office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
+      "xmlns:table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
+      "xmlns:style": "urn:oasis:names:tc:opendocument:xmlns:style:1.0",
+      "xmlns:text": "urn:oasis:names:tc:opendocument:xmlns:text:1.0",
+      "xmlns:draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
+      "xmlns:fo": "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0",
+      "xmlns:xlink": "http://www.w3.org/1999/xlink",
+      "xmlns:dc": "http://purl.org/dc/elements/1.1/",
+      "xmlns:number": "urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0",
+      "xmlns:svg": "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0",
+      "xmlns:of": "urn:oasis:names:tc:opendocument:xmlns:of:1.2",
+      "office:version": "1.2"
+    }) + ">" + master_styles + "</office:document-styles>";
+    return function wso() {
+      return XML_HEADER + payload;
+    };
+  })();
+  var write_content_ods = /* @__PURE__ */ (function() {
+    var write_text_p = function(text) {
+      return escapexml(text).replace(/  +/g, function($$) {
+        return '<text:s text:c="' + $$.length + '"/>';
+      }).replace(/\t/g, "<text:tab/>").replace(/\n/g, "</text:p><text:p>").replace(/^ /, "<text:s/>").replace(/ $/, "<text:s/>");
+    };
+    var null_cell_xml = "          <table:table-cell />\n";
+    var covered_cell_xml = "          <table:covered-table-cell/>\n";
+    var write_ws2 = function(ws, wb, i) {
+      var o = [];
+      o.push('      <table:table table:name="' + escapexml(wb.SheetNames[i]) + '" table:style-name="ta1">\n');
+      var R = 0, C = 0, range = decode_range(ws["!ref"] || "A1");
+      var marr = ws["!merges"] || [], mi = 0;
+      var dense = Array.isArray(ws);
+      if (ws["!cols"]) {
+        for (C = 0; C <= range.e.c; ++C) o.push("        <table:table-column" + (ws["!cols"][C] ? ' table:style-name="co' + ws["!cols"][C].ods + '"' : "") + "></table:table-column>\n");
+      }
+      var H = "", ROWS = ws["!rows"] || [];
+      for (R = 0; R < range.s.r; ++R) {
+        H = ROWS[R] ? ' table:style-name="ro' + ROWS[R].ods + '"' : "";
+        o.push("        <table:table-row" + H + "></table:table-row>\n");
+      }
+      for (; R <= range.e.r; ++R) {
+        H = ROWS[R] ? ' table:style-name="ro' + ROWS[R].ods + '"' : "";
+        o.push("        <table:table-row" + H + ">\n");
+        for (C = 0; C < range.s.c; ++C) o.push(null_cell_xml);
+        for (; C <= range.e.c; ++C) {
+          var skip = false, ct = {}, textp = "";
+          for (mi = 0; mi != marr.length; ++mi) {
+            if (marr[mi].s.c > C) continue;
+            if (marr[mi].s.r > R) continue;
+            if (marr[mi].e.c < C) continue;
+            if (marr[mi].e.r < R) continue;
+            if (marr[mi].s.c != C || marr[mi].s.r != R) skip = true;
+            ct["table:number-columns-spanned"] = marr[mi].e.c - marr[mi].s.c + 1;
+            ct["table:number-rows-spanned"] = marr[mi].e.r - marr[mi].s.r + 1;
+            break;
+          }
+          if (skip) {
+            o.push(covered_cell_xml);
+            continue;
+          }
+          var ref = encode_cell({ r: R, c: C }), cell = dense ? (ws[R] || [])[C] : ws[ref];
+          if (cell && cell.f) {
+            ct["table:formula"] = escapexml(csf_to_ods_formula(cell.f));
+            if (cell.F) {
+              if (cell.F.slice(0, ref.length) == ref) {
+                var _Fref = decode_range(cell.F);
+                ct["table:number-matrix-columns-spanned"] = _Fref.e.c - _Fref.s.c + 1;
+                ct["table:number-matrix-rows-spanned"] = _Fref.e.r - _Fref.s.r + 1;
+              }
+            }
+          }
+          if (!cell) {
+            o.push(null_cell_xml);
+            continue;
+          }
+          switch (cell.t) {
+            case "b":
+              textp = cell.v ? "TRUE" : "FALSE";
+              ct["office:value-type"] = "boolean";
+              ct["office:boolean-value"] = cell.v ? "true" : "false";
+              break;
+            case "n":
+              textp = cell.w || String(cell.v || 0);
+              ct["office:value-type"] = "float";
+              ct["office:value"] = cell.v || 0;
+              break;
+            case "s":
+            case "str":
+              textp = cell.v == null ? "" : cell.v;
+              ct["office:value-type"] = "string";
+              break;
+            case "d":
+              textp = cell.w || parseDate(cell.v).toISOString();
+              ct["office:value-type"] = "date";
+              ct["office:date-value"] = parseDate(cell.v).toISOString();
+              ct["table:style-name"] = "ce1";
+              break;
+            //case 'e':
+            default:
+              o.push(null_cell_xml);
+              continue;
+          }
+          var text_p = write_text_p(textp);
+          if (cell.l && cell.l.Target) {
+            var _tgt = cell.l.Target;
+            _tgt = _tgt.charAt(0) == "#" ? "#" + csf_to_ods_3D(_tgt.slice(1)) : _tgt;
+            if (_tgt.charAt(0) != "#" && !_tgt.match(/^\w+:/)) _tgt = "../" + _tgt;
+            text_p = writextag("text:a", text_p, { "xlink:href": _tgt.replace(/&/g, "&amp;") });
+          }
+          o.push("          " + writextag("table:table-cell", writextag("text:p", text_p, {}), ct) + "\n");
+        }
+        o.push("        </table:table-row>\n");
+      }
+      o.push("      </table:table>\n");
+      return o.join("");
+    };
+    var write_automatic_styles_ods = function(o, wb) {
+      o.push(" <office:automatic-styles>\n");
+      o.push('  <number:date-style style:name="N37" number:automatic-order="true">\n');
+      o.push('   <number:month number:style="long"/>\n');
+      o.push("   <number:text>/</number:text>\n");
+      o.push('   <number:day number:style="long"/>\n');
+      o.push("   <number:text>/</number:text>\n");
+      o.push("   <number:year/>\n");
+      o.push("  </number:date-style>\n");
+      var cidx = 0;
+      wb.SheetNames.map(function(n) {
+        return wb.Sheets[n];
+      }).forEach(function(ws) {
+        if (!ws) return;
+        if (ws["!cols"]) {
+          for (var C = 0; C < ws["!cols"].length; ++C) if (ws["!cols"][C]) {
+            var colobj = ws["!cols"][C];
+            if (colobj.width == null && colobj.wpx == null && colobj.wch == null) continue;
+            process_col(colobj);
+            colobj.ods = cidx;
+            var w = ws["!cols"][C].wpx + "px";
+            o.push('  <style:style style:name="co' + cidx + '" style:family="table-column">\n');
+            o.push('   <style:table-column-properties fo:break-before="auto" style:column-width="' + w + '"/>\n');
+            o.push("  </style:style>\n");
+            ++cidx;
+          }
+        }
+      });
+      var ridx = 0;
+      wb.SheetNames.map(function(n) {
+        return wb.Sheets[n];
+      }).forEach(function(ws) {
+        if (!ws) return;
+        if (ws["!rows"]) {
+          for (var R = 0; R < ws["!rows"].length; ++R) if (ws["!rows"][R]) {
+            ws["!rows"][R].ods = ridx;
+            var h = ws["!rows"][R].hpx + "px";
+            o.push('  <style:style style:name="ro' + ridx + '" style:family="table-row">\n');
+            o.push('   <style:table-row-properties fo:break-before="auto" style:row-height="' + h + '"/>\n');
+            o.push("  </style:style>\n");
+            ++ridx;
+          }
+        }
+      });
+      o.push('  <style:style style:name="ta1" style:family="table" style:master-page-name="mp1">\n');
+      o.push('   <style:table-properties table:display="true" style:writing-mode="lr-tb"/>\n');
+      o.push("  </style:style>\n");
+      o.push('  <style:style style:name="ce1" style:family="table-cell" style:parent-style-name="Default" style:data-style-name="N37"/>\n');
+      o.push(" </office:automatic-styles>\n");
+    };
+    return function wcx(wb, opts) {
+      var o = [XML_HEADER];
+      var attr = wxt_helper({
+        "xmlns:office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
+        "xmlns:table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
+        "xmlns:style": "urn:oasis:names:tc:opendocument:xmlns:style:1.0",
+        "xmlns:text": "urn:oasis:names:tc:opendocument:xmlns:text:1.0",
+        "xmlns:draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
+        "xmlns:fo": "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0",
+        "xmlns:xlink": "http://www.w3.org/1999/xlink",
+        "xmlns:dc": "http://purl.org/dc/elements/1.1/",
+        "xmlns:meta": "urn:oasis:names:tc:opendocument:xmlns:meta:1.0",
+        "xmlns:number": "urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0",
+        "xmlns:presentation": "urn:oasis:names:tc:opendocument:xmlns:presentation:1.0",
+        "xmlns:svg": "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0",
+        "xmlns:chart": "urn:oasis:names:tc:opendocument:xmlns:chart:1.0",
+        "xmlns:dr3d": "urn:oasis:names:tc:opendocument:xmlns:dr3d:1.0",
+        "xmlns:math": "http://www.w3.org/1998/Math/MathML",
+        "xmlns:form": "urn:oasis:names:tc:opendocument:xmlns:form:1.0",
+        "xmlns:script": "urn:oasis:names:tc:opendocument:xmlns:script:1.0",
+        "xmlns:ooo": "http://openoffice.org/2004/office",
+        "xmlns:ooow": "http://openoffice.org/2004/writer",
+        "xmlns:oooc": "http://openoffice.org/2004/calc",
+        "xmlns:dom": "http://www.w3.org/2001/xml-events",
+        "xmlns:xforms": "http://www.w3.org/2002/xforms",
+        "xmlns:xsd": "http://www.w3.org/2001/XMLSchema",
+        "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+        "xmlns:sheet": "urn:oasis:names:tc:opendocument:sh33tjs:1.0",
+        "xmlns:rpt": "http://openoffice.org/2005/report",
+        "xmlns:of": "urn:oasis:names:tc:opendocument:xmlns:of:1.2",
+        "xmlns:xhtml": "http://www.w3.org/1999/xhtml",
+        "xmlns:grddl": "http://www.w3.org/2003/g/data-view#",
+        "xmlns:tableooo": "http://openoffice.org/2009/table",
+        "xmlns:drawooo": "http://openoffice.org/2010/draw",
+        "xmlns:calcext": "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0",
+        "xmlns:loext": "urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0",
+        "xmlns:field": "urn:openoffice:names:experimental:ooo-ms-interop:xmlns:field:1.0",
+        "xmlns:formx": "urn:openoffice:names:experimental:ooxml-odf-interop:xmlns:form:1.0",
+        "xmlns:css3t": "http://www.w3.org/TR/css3-text/",
+        "office:version": "1.2"
+      });
+      var fods = wxt_helper({
+        "xmlns:config": "urn:oasis:names:tc:opendocument:xmlns:config:1.0",
+        "office:mimetype": "application/vnd.oasis.opendocument.spreadsheet"
+      });
+      if (opts.bookType == "fods") {
+        o.push("<office:document" + attr + fods + ">\n");
+        o.push(write_meta_ods().replace(/office:document-meta/g, "office:meta"));
+      } else o.push("<office:document-content" + attr + ">\n");
+      write_automatic_styles_ods(o, wb);
+      o.push("  <office:body>\n");
+      o.push("    <office:spreadsheet>\n");
+      for (var i = 0; i != wb.SheetNames.length; ++i) o.push(write_ws2(wb.Sheets[wb.SheetNames[i]], wb, i, opts));
+      o.push("    </office:spreadsheet>\n");
+      o.push("  </office:body>\n");
+      if (opts.bookType == "fods") o.push("</office:document>");
+      else o.push("</office:document-content>");
+      return o.join("");
+    };
+  })();
+  function write_ods(wb, opts) {
+    if (opts.bookType == "fods") return write_content_ods(wb, opts);
+    var zip = zip_new();
+    var f = "";
+    var manifest = [];
+    var rdf = [];
+    f = "mimetype";
+    zip_add_file(zip, f, "application/vnd.oasis.opendocument.spreadsheet");
+    f = "content.xml";
+    zip_add_file(zip, f, write_content_ods(wb, opts));
+    manifest.push([f, "text/xml"]);
+    rdf.push([f, "ContentFile"]);
+    f = "styles.xml";
+    zip_add_file(zip, f, write_styles_ods(wb, opts));
+    manifest.push([f, "text/xml"]);
+    rdf.push([f, "StylesFile"]);
+    f = "meta.xml";
+    zip_add_file(zip, f, XML_HEADER + write_meta_ods(
+      /*::wb, opts*/
+    ));
+    manifest.push([f, "text/xml"]);
+    rdf.push([f, "MetadataFile"]);
+    f = "manifest.rdf";
+    zip_add_file(zip, f, write_rdf(
+      rdf
+      /*, opts*/
+    ));
+    manifest.push([f, "application/rdf+xml"]);
+    f = "META-INF/manifest.xml";
+    zip_add_file(zip, f, write_manifest(
+      manifest
+      /*, opts*/
+    ));
+    return zip;
+  }
   function u8_to_dataview(array) {
     return new DataView(array.buffer, array.byteOffset, array.byteLength);
   }
   function u8str(u8) {
     return typeof TextDecoder != "undefined" ? new TextDecoder().decode(u8) : utf8read(a2s(u8));
+  }
+  function stru8(str) {
+    return typeof TextEncoder != "undefined" ? new TextEncoder().encode(str) : s2a(utf8write(str));
+  }
+  function u8contains(body, search) {
+    outer:
+      for (var L = 0; L <= body.length - search.length; ++L) {
+        for (var j = 0; j < search.length; ++j)
+          if (body[L + j] != search[j])
+            continue outer;
+        return true;
+      }
+    return false;
   }
   function u8concat(u8a) {
     var len = u8a.reduce(function(acc, x) {
@@ -25323,6 +29206,15 @@
     for (var j = offset + 13; j >= offset; --j)
       mantissa = mantissa * 256 + buf[j];
     return (buf[offset + 15] & 128 ? -mantissa : mantissa) * Math.pow(10, exp - 6176);
+  }
+  function writeDecimal128LE(buf, offset, value) {
+    var exp = Math.floor(value == 0 ? 0 : Math.LOG10E * Math.log(Math.abs(value))) + 6176 - 20;
+    var mantissa = value / Math.pow(10, exp - 6176);
+    buf[offset + 15] |= exp >> 7;
+    buf[offset + 14] |= (exp & 127) << 1;
+    for (var i = 0; mantissa >= 1; ++i, mantissa /= 256)
+      buf[offset + i] = mantissa & 255;
+    buf[offset + 15] |= value >= 0 ? 0 : 128;
   }
   function parse_varint49(buf, ptr) {
     var l = ptr ? ptr[0] : 0;
@@ -25354,6 +29246,43 @@
     if (ptr)
       ptr[0] = l;
     return usz;
+  }
+  function write_varint49(v) {
+    var usz = new Uint8Array(7);
+    usz[0] = v & 127;
+    var L = 1;
+    sz:
+      if (v > 127) {
+        usz[L - 1] |= 128;
+        usz[L] = v >> 7 & 127;
+        ++L;
+        if (v <= 16383)
+          break sz;
+        usz[L - 1] |= 128;
+        usz[L] = v >> 14 & 127;
+        ++L;
+        if (v <= 2097151)
+          break sz;
+        usz[L - 1] |= 128;
+        usz[L] = v >> 21 & 127;
+        ++L;
+        if (v <= 268435455)
+          break sz;
+        usz[L - 1] |= 128;
+        usz[L] = v / 256 >>> 21 & 127;
+        ++L;
+        if (v <= 34359738367)
+          break sz;
+        usz[L - 1] |= 128;
+        usz[L] = v / 65536 >>> 21 & 127;
+        ++L;
+        if (v <= 4398046511103)
+          break sz;
+        usz[L - 1] |= 128;
+        usz[L] = v / 16777216 >>> 21 & 127;
+        ++L;
+      }
+    return usz.slice(0, L);
   }
   function varint_to_i32(buf) {
     var l = 0, i32 = buf[l] & 127;
@@ -25420,6 +29349,20 @@
     }
     return out;
   }
+  function write_shallow(proto) {
+    var out = [];
+    proto.forEach(function(field, idx) {
+      field.forEach(function(item) {
+        if (!item.data)
+          return;
+        out.push(write_varint49(idx * 8 + item.type));
+        if (item.type == 2)
+          out.push(write_varint49(item.data.length));
+        out.push(item.data);
+      });
+    });
+    return u8concat(out);
+  }
   function mappa(data, cb) {
     return (data == null ? void 0 : data.map(function(d) {
       return cb(d.data);
@@ -25450,6 +29393,29 @@
       out.push(res);
     }
     return out;
+  }
+  function write_iwa_file(ias) {
+    var bufs = [];
+    ias.forEach(function(ia) {
+      var ai = [];
+      ai[1] = [{ data: write_varint49(ia.id), type: 0 }];
+      ai[2] = [];
+      if (ia.merge != null)
+        ai[3] = [{ data: write_varint49(+!!ia.merge), type: 0 }];
+      var midata = [];
+      ia.messages.forEach(function(mi) {
+        midata.push(mi.data);
+        mi.meta[3] = [{ type: 0, data: write_varint49(mi.data.length) }];
+        ai[2].push({ data: write_shallow(mi.meta), type: 2 });
+      });
+      var aipayload = write_shallow(ai);
+      bufs.push(write_varint49(aipayload.length));
+      bufs.push(aipayload);
+      midata.forEach(function(mid) {
+        return bufs.push(mid);
+      });
+    });
+    return u8concat(bufs);
   }
   function parse_snappy_chunk(type, buf) {
     if (type != 0)
@@ -25528,6 +29494,42 @@
     }
     if (l !== buf.length)
       throw new Error("data is not a valid framed stream!");
+    return u8concat(out);
+  }
+  function compress_iwa_file(buf) {
+    var out = [];
+    var l = 0;
+    while (l < buf.length) {
+      var c = Math.min(buf.length - l, 268435455);
+      var frame = new Uint8Array(4);
+      out.push(frame);
+      var usz = write_varint49(c);
+      var L = usz.length;
+      out.push(usz);
+      if (c <= 60) {
+        L++;
+        out.push(new Uint8Array([c - 1 << 2]));
+      } else if (c <= 256) {
+        L += 2;
+        out.push(new Uint8Array([240, c - 1 & 255]));
+      } else if (c <= 65536) {
+        L += 3;
+        out.push(new Uint8Array([244, c - 1 & 255, c - 1 >> 8 & 255]));
+      } else if (c <= 16777216) {
+        L += 4;
+        out.push(new Uint8Array([248, c - 1 & 255, c - 1 >> 8 & 255, c - 1 >> 16 & 255]));
+      } else if (c <= 4294967296) {
+        L += 5;
+        out.push(new Uint8Array([252, c - 1 & 255, c - 1 >> 8 & 255, c - 1 >> 16 & 255, c - 1 >>> 24 & 255]));
+      }
+      out.push(buf.slice(l, l + c));
+      L += c;
+      frame[0] = 0;
+      frame[1] = L & 255;
+      frame[2] = L >> 8 & 255;
+      frame[3] = L >> 16 & 255;
+      l += c;
+    }
     return u8concat(out);
   }
   function parse_old_storage(buf, sst, rsst, v) {
@@ -25653,6 +29655,66 @@
         throw new Error("Unsupported cell type ".concat(buf[1], " : ").concat(flags & 31, " : ").concat(buf.slice(0, 4)));
     }
     return ret;
+  }
+  function write_new_storage(cell, sst) {
+    var out = new Uint8Array(32), dv = u8_to_dataview(out), l = 12, flags = 0;
+    out[0] = 5;
+    switch (cell.t) {
+      case "n":
+        out[1] = 2;
+        writeDecimal128LE(out, l, cell.v);
+        flags |= 1;
+        l += 16;
+        break;
+      case "b":
+        out[1] = 6;
+        dv.setFloat64(l, cell.v ? 1 : 0, true);
+        flags |= 2;
+        l += 8;
+        break;
+      case "s":
+        if (sst.indexOf(cell.v) == -1)
+          throw new Error("Value ".concat(cell.v, " missing from SST!"));
+        out[1] = 3;
+        dv.setUint32(l, sst.indexOf(cell.v), true);
+        flags |= 8;
+        l += 4;
+        break;
+      default:
+        throw "unsupported cell type " + cell.t;
+    }
+    dv.setUint32(8, flags, true);
+    return out.slice(0, l);
+  }
+  function write_old_storage(cell, sst) {
+    var out = new Uint8Array(32), dv = u8_to_dataview(out), l = 12, flags = 0;
+    out[0] = 3;
+    switch (cell.t) {
+      case "n":
+        out[2] = 2;
+        dv.setFloat64(l, cell.v, true);
+        flags |= 32;
+        l += 8;
+        break;
+      case "b":
+        out[2] = 6;
+        dv.setFloat64(l, cell.v ? 1 : 0, true);
+        flags |= 32;
+        l += 8;
+        break;
+      case "s":
+        if (sst.indexOf(cell.v) == -1)
+          throw new Error("Value ".concat(cell.v, " missing from SST!"));
+        out[2] = 3;
+        dv.setUint32(l, sst.indexOf(cell.v), true);
+        flags |= 16;
+        l += 4;
+        break;
+      default:
+        throw "unsupported cell type " + cell.t;
+    }
+    dv.setUint32(4, flags, true);
+    return out.slice(0, l);
   }
   function parse_cell_storage(buf, sst, rsst) {
     switch (buf[0]) {
@@ -25880,6 +29942,324 @@
       throw new Error("Cannot find Document root");
     return parse_TN_DocumentArchive(M, docroot);
   }
+  function write_tile_row(tri, data, SST) {
+    var _a, _b, _c, _d;
+    if (!((_a = tri[6]) == null ? void 0 : _a[0]) || !((_b = tri[7]) == null ? void 0 : _b[0]))
+      throw "Mutation only works on post-BNC storages!";
+    var wide_offsets = ((_d = (_c = tri[8]) == null ? void 0 : _c[0]) == null ? void 0 : _d.data) && varint_to_i32(tri[8][0].data) > 0 || false;
+    if (wide_offsets)
+      throw "Math only works with normal offsets";
+    var cnt = 0;
+    var dv = u8_to_dataview(tri[7][0].data), last_offset = 0, cell_storage = [];
+    var _dv = u8_to_dataview(tri[4][0].data), _last_offset = 0, _cell_storage = [];
+    for (var C = 0; C < data.length; ++C) {
+      if (data[C] == null) {
+        dv.setUint16(C * 2, 65535, true);
+        _dv.setUint16(C * 2, 65535);
+        continue;
+      }
+      dv.setUint16(C * 2, last_offset, true);
+      _dv.setUint16(C * 2, _last_offset, true);
+      var celload, _celload;
+      switch (typeof data[C]) {
+        case "string":
+          celload = write_new_storage({ t: "s", v: data[C] }, SST);
+          _celload = write_old_storage({ t: "s", v: data[C] }, SST);
+          break;
+        case "number":
+          celload = write_new_storage({ t: "n", v: data[C] }, SST);
+          _celload = write_old_storage({ t: "n", v: data[C] }, SST);
+          break;
+        case "boolean":
+          celload = write_new_storage({ t: "b", v: data[C] }, SST);
+          _celload = write_old_storage({ t: "b", v: data[C] }, SST);
+          break;
+        default:
+          throw new Error("Unsupported value " + data[C]);
+      }
+      cell_storage.push(celload);
+      last_offset += celload.length;
+      _cell_storage.push(_celload);
+      _last_offset += _celload.length;
+      ++cnt;
+    }
+    tri[2][0].data = write_varint49(cnt);
+    for (; C < tri[7][0].data.length / 2; ++C) {
+      dv.setUint16(C * 2, 65535, true);
+      _dv.setUint16(C * 2, 65535, true);
+    }
+    tri[6][0].data = u8concat(cell_storage);
+    tri[3][0].data = u8concat(_cell_storage);
+    return cnt;
+  }
+  function write_numbers_iwa(wb, opts) {
+    if (!opts || !opts.numbers)
+      throw new Error("Must pass a `numbers` option -- check the README");
+    var ws = wb.Sheets[wb.SheetNames[0]];
+    if (wb.SheetNames.length > 1)
+      console.error("The Numbers writer currently writes only the first table");
+    var range = decode_range(ws["!ref"]);
+    range.s.r = range.s.c = 0;
+    var trunc = false;
+    if (range.e.c > 9) {
+      trunc = true;
+      range.e.c = 9;
+    }
+    if (range.e.r > 49) {
+      trunc = true;
+      range.e.r = 49;
+    }
+    if (trunc)
+      console.error("The Numbers writer is currently limited to ".concat(encode_range(range)));
+    var data = sheet_to_json(ws, { range, header: 1 });
+    var SST = ["~Sh33tJ5~"];
+    data.forEach(function(row) {
+      return row.forEach(function(cell) {
+        if (typeof cell == "string")
+          SST.push(cell);
+      });
+    });
+    var dependents = {};
+    var indices = [];
+    var cfb = CFB.read(opts.numbers, { type: "base64" });
+    cfb.FileIndex.map(function(fi, idx) {
+      return [fi, cfb.FullPaths[idx]];
+    }).forEach(function(row) {
+      var fi = row[0], fp = row[1];
+      if (fi.type != 2)
+        return;
+      if (!fi.name.match(/\.iwa/))
+        return;
+      var old_content = fi.content;
+      var raw1 = decompress_iwa_file(old_content);
+      var x2 = parse_iwa_file(raw1);
+      x2.forEach(function(packet2) {
+        indices.push(packet2.id);
+        dependents[packet2.id] = { deps: [], location: fp, type: varint_to_i32(packet2.messages[0].meta[1][0].data) };
+      });
+    });
+    indices.sort(function(x2, y2) {
+      return x2 - y2;
+    });
+    var indices_varint = indices.filter(function(x2) {
+      return x2 > 1;
+    }).map(function(x2) {
+      return [x2, write_varint49(x2)];
+    });
+    cfb.FileIndex.map(function(fi, idx) {
+      return [fi, cfb.FullPaths[idx]];
+    }).forEach(function(row) {
+      var fi = row[0], fp = row[1];
+      if (!fi.name.match(/\.iwa/))
+        return;
+      var x2 = parse_iwa_file(decompress_iwa_file(fi.content));
+      x2.forEach(function(ia) {
+        ia.messages.forEach(function(m) {
+          indices_varint.forEach(function(ivi) {
+            if (ia.messages.some(function(mess) {
+              return varint_to_i32(mess.meta[1][0].data) != 11006 && u8contains(mess.data, ivi[1]);
+            })) {
+              dependents[ivi[0]].deps.push(ia.id);
+            }
+          });
+        });
+      });
+    });
+    function get_unique_msgid() {
+      for (var i = 927262; i < 2e6; ++i)
+        if (!dependents[i])
+          return i;
+      throw new Error("Too many messages");
+    }
+    var entry = CFB.find(cfb, dependents[1].location);
+    var x = parse_iwa_file(decompress_iwa_file(entry.content));
+    var docroot;
+    for (var xi = 0; xi < x.length; ++xi) {
+      var packet = x[xi];
+      if (packet.id == 1)
+        docroot = packet;
+    }
+    var sheetrootref = parse_TSP_Reference(parse_shallow(docroot.messages[0].data)[1][0].data);
+    entry = CFB.find(cfb, dependents[sheetrootref].location);
+    x = parse_iwa_file(decompress_iwa_file(entry.content));
+    for (xi = 0; xi < x.length; ++xi) {
+      packet = x[xi];
+      if (packet.id == sheetrootref)
+        docroot = packet;
+    }
+    sheetrootref = parse_TSP_Reference(parse_shallow(docroot.messages[0].data)[2][0].data);
+    entry = CFB.find(cfb, dependents[sheetrootref].location);
+    x = parse_iwa_file(decompress_iwa_file(entry.content));
+    for (xi = 0; xi < x.length; ++xi) {
+      packet = x[xi];
+      if (packet.id == sheetrootref)
+        docroot = packet;
+    }
+    sheetrootref = parse_TSP_Reference(parse_shallow(docroot.messages[0].data)[2][0].data);
+    entry = CFB.find(cfb, dependents[sheetrootref].location);
+    x = parse_iwa_file(decompress_iwa_file(entry.content));
+    for (xi = 0; xi < x.length; ++xi) {
+      packet = x[xi];
+      if (packet.id == sheetrootref)
+        docroot = packet;
+    }
+    var pb = parse_shallow(docroot.messages[0].data);
+    {
+      pb[6][0].data = write_varint49(range.e.r + 1);
+      pb[7][0].data = write_varint49(range.e.c + 1);
+      var cruidsref = parse_TSP_Reference(pb[46][0].data);
+      var oldbucket = CFB.find(cfb, dependents[cruidsref].location);
+      var _x = parse_iwa_file(decompress_iwa_file(oldbucket.content));
+      {
+        for (var j = 0; j < _x.length; ++j) {
+          if (_x[j].id == cruidsref)
+            break;
+        }
+        if (_x[j].id != cruidsref)
+          throw "Bad ColumnRowUIDMapArchive";
+        var cruids = parse_shallow(_x[j].messages[0].data);
+        cruids[1] = [];
+        cruids[2] = [], cruids[3] = [];
+        for (var C = 0; C <= range.e.c; ++C) {
+          var uuid = [];
+          uuid[1] = uuid[2] = [{ type: 0, data: write_varint49(C + 420690) }];
+          cruids[1].push({ type: 2, data: write_shallow(uuid) });
+          cruids[2].push({ type: 0, data: write_varint49(C) });
+          cruids[3].push({ type: 0, data: write_varint49(C) });
+        }
+        cruids[4] = [];
+        cruids[5] = [], cruids[6] = [];
+        for (var R = 0; R <= range.e.r; ++R) {
+          uuid = [];
+          uuid[1] = uuid[2] = [{ type: 0, data: write_varint49(R + 726270) }];
+          cruids[4].push({ type: 2, data: write_shallow(uuid) });
+          cruids[5].push({ type: 0, data: write_varint49(R) });
+          cruids[6].push({ type: 0, data: write_varint49(R) });
+        }
+        _x[j].messages[0].data = write_shallow(cruids);
+      }
+      oldbucket.content = compress_iwa_file(write_iwa_file(_x));
+      oldbucket.size = oldbucket.content.length;
+      delete pb[46];
+      var store = parse_shallow(pb[4][0].data);
+      {
+        store[7][0].data = write_varint49(range.e.r + 1);
+        var row_headers = parse_shallow(store[1][0].data);
+        var row_header_ref = parse_TSP_Reference(row_headers[2][0].data);
+        oldbucket = CFB.find(cfb, dependents[row_header_ref].location);
+        _x = parse_iwa_file(decompress_iwa_file(oldbucket.content));
+        {
+          if (_x[0].id != row_header_ref)
+            throw "Bad HeaderStorageBucket";
+          var base_bucket = parse_shallow(_x[0].messages[0].data);
+          for (R = 0; R < data.length; ++R) {
+            var _bucket = parse_shallow(base_bucket[2][0].data);
+            _bucket[1][0].data = write_varint49(R);
+            _bucket[4][0].data = write_varint49(data[R].length);
+            base_bucket[2][R] = { type: base_bucket[2][0].type, data: write_shallow(_bucket) };
+          }
+          _x[0].messages[0].data = write_shallow(base_bucket);
+        }
+        oldbucket.content = compress_iwa_file(write_iwa_file(_x));
+        oldbucket.size = oldbucket.content.length;
+        var col_header_ref = parse_TSP_Reference(store[2][0].data);
+        oldbucket = CFB.find(cfb, dependents[col_header_ref].location);
+        _x = parse_iwa_file(decompress_iwa_file(oldbucket.content));
+        {
+          if (_x[0].id != col_header_ref)
+            throw "Bad HeaderStorageBucket";
+          base_bucket = parse_shallow(_x[0].messages[0].data);
+          for (C = 0; C <= range.e.c; ++C) {
+            _bucket = parse_shallow(base_bucket[2][0].data);
+            _bucket[1][0].data = write_varint49(C);
+            _bucket[4][0].data = write_varint49(range.e.r + 1);
+            base_bucket[2][C] = { type: base_bucket[2][0].type, data: write_shallow(_bucket) };
+          }
+          _x[0].messages[0].data = write_shallow(base_bucket);
+        }
+        oldbucket.content = compress_iwa_file(write_iwa_file(_x));
+        oldbucket.size = oldbucket.content.length;
+        var sstref = parse_TSP_Reference(store[4][0].data);
+        (function() {
+          var sentry = CFB.find(cfb, dependents[sstref].location);
+          var sx = parse_iwa_file(decompress_iwa_file(sentry.content));
+          var sstroot;
+          for (var sxi = 0; sxi < sx.length; ++sxi) {
+            var packet2 = sx[sxi];
+            if (packet2.id == sstref)
+              sstroot = packet2;
+          }
+          var sstdata = parse_shallow(sstroot.messages[0].data);
+          {
+            sstdata[3] = [];
+            var newsst = [];
+            SST.forEach(function(str, i) {
+              newsst[1] = [{ type: 0, data: write_varint49(i) }];
+              newsst[2] = [{ type: 0, data: write_varint49(1) }];
+              newsst[3] = [{ type: 2, data: stru8(str) }];
+              sstdata[3].push({ type: 2, data: write_shallow(newsst) });
+            });
+          }
+          sstroot.messages[0].data = write_shallow(sstdata);
+          var sy = write_iwa_file(sx);
+          var raw32 = compress_iwa_file(sy);
+          sentry.content = raw32;
+          sentry.size = sentry.content.length;
+        })();
+        var tile = parse_shallow(store[3][0].data);
+        {
+          var t = tile[1][0];
+          delete tile[2];
+          var tl = parse_shallow(t.data);
+          {
+            var tileref = parse_TSP_Reference(tl[2][0].data);
+            (function() {
+              var tentry = CFB.find(cfb, dependents[tileref].location);
+              var tx = parse_iwa_file(decompress_iwa_file(tentry.content));
+              var tileroot;
+              for (var sxi = 0; sxi < tx.length; ++sxi) {
+                var packet2 = tx[sxi];
+                if (packet2.id == tileref)
+                  tileroot = packet2;
+              }
+              var tiledata = parse_shallow(tileroot.messages[0].data);
+              {
+                delete tiledata[6];
+                delete tile[7];
+                var rowload = new Uint8Array(tiledata[5][0].data);
+                tiledata[5] = [];
+                var cnt = 0;
+                for (var R2 = 0; R2 <= range.e.r; ++R2) {
+                  var tilerow = parse_shallow(rowload);
+                  cnt += write_tile_row(tilerow, data[R2], SST);
+                  tilerow[1][0].data = write_varint49(R2);
+                  tiledata[5].push({ data: write_shallow(tilerow), type: 2 });
+                }
+                tiledata[1] = [{ type: 0, data: write_varint49(range.e.c + 1) }];
+                tiledata[2] = [{ type: 0, data: write_varint49(range.e.r + 1) }];
+                tiledata[3] = [{ type: 0, data: write_varint49(cnt) }];
+                tiledata[4] = [{ type: 0, data: write_varint49(range.e.r + 1) }];
+              }
+              tileroot.messages[0].data = write_shallow(tiledata);
+              var ty = write_iwa_file(tx);
+              var raw32 = compress_iwa_file(ty);
+              tentry.content = raw32;
+              tentry.size = tentry.content.length;
+            })();
+          }
+          t.data = write_shallow(tl);
+        }
+        store[3][0].data = write_shallow(tile);
+      }
+      pb[4][0].data = write_shallow(store);
+    }
+    docroot.messages[0].data = write_shallow(pb);
+    var y = write_iwa_file(x);
+    var raw3 = compress_iwa_file(y);
+    entry.content = raw3;
+    entry.size = entry.content.length;
+    return cfb;
+  }
   function fix_opts_func(defaults) {
     return function fix_opts(opts) {
       for (var i = 0; i != defaults.length; ++i) {
@@ -25919,6 +30299,20 @@
       /* include vba raw data (vbaraw) */
       ["password", ""],
       /* password */
+      ["WTF", false]
+      /* WTF mode (throws errors) */
+    ])(opts);
+  }
+  function fix_write_opts(opts) {
+    fix_opts_func([
+      ["cellDates", false],
+      /* write date cells with type `d` */
+      ["bookSST", false],
+      /* Generate Shared String Table */
+      ["bookType", "xlsx"],
+      /* Type of workbook (xlsx/m/b) */
+      ["compression", false],
+      /* Use file compression */
       ["WTF", false]
       /* WTF mode (throws errors) */
     ])(opts);
@@ -26208,6 +30602,278 @@
     if (einfo[0] == 2 && typeof decrypt_std76 !== "undefined") return decrypt_std76(einfo[1], data.content, opts.password || "", opts);
     throw new Error("File is password-protected");
   }
+  function write_zip(wb, opts) {
+    if (opts.bookType == "ods") return write_ods(wb, opts);
+    if (opts.bookType == "numbers") return write_numbers_iwa(wb, opts);
+    if (opts.bookType == "xlsb") return write_zip_xlsxb(wb, opts);
+    return write_zip_xlsx(wb, opts);
+  }
+  function write_zip_xlsxb(wb, opts) {
+    _shapeid = 1024;
+    if (wb && !wb.SSF) {
+      wb.SSF = dup(table_fmt);
+    }
+    if (wb && wb.SSF) {
+      make_ssf();
+      SSF_load_table(wb.SSF);
+      opts.revssf = evert_num(wb.SSF);
+      opts.revssf[wb.SSF[65535]] = 0;
+      opts.ssf = wb.SSF;
+    }
+    opts.rels = {};
+    opts.wbrels = {};
+    opts.Strings = /*::((*/
+    [];
+    opts.Strings.Count = 0;
+    opts.Strings.Unique = 0;
+    if (browser_has_Map) opts.revStrings = /* @__PURE__ */ new Map();
+    else {
+      opts.revStrings = {};
+      opts.revStrings.foo = [];
+      delete opts.revStrings.foo;
+    }
+    var wbext = opts.bookType == "xlsb" ? "bin" : "xml";
+    var vbafmt = VBAFMTS.indexOf(opts.bookType) > -1;
+    var ct = new_ct();
+    fix_write_opts(opts = opts || {});
+    var zip = zip_new();
+    var f = "", rId = 0;
+    opts.cellXfs = [];
+    get_cell_style(opts.cellXfs, {}, { revssf: { "General": 0 } });
+    if (!wb.Props) wb.Props = {};
+    f = "docProps/core.xml";
+    zip_add_file(zip, f, write_core_props(wb.Props, opts));
+    ct.coreprops.push(f);
+    add_rels(opts.rels, 2, f, RELS.CORE_PROPS);
+    f = "docProps/app.xml";
+    if (wb.Props && wb.Props.SheetNames) {
+    } else if (!wb.Workbook || !wb.Workbook.Sheets) wb.Props.SheetNames = wb.SheetNames;
+    else {
+      var _sn = [];
+      for (var _i = 0; _i < wb.SheetNames.length; ++_i)
+        if ((wb.Workbook.Sheets[_i] || {}).Hidden != 2) _sn.push(wb.SheetNames[_i]);
+      wb.Props.SheetNames = _sn;
+    }
+    wb.Props.Worksheets = wb.Props.SheetNames.length;
+    zip_add_file(zip, f, write_ext_props(wb.Props, opts));
+    ct.extprops.push(f);
+    add_rels(opts.rels, 3, f, RELS.EXT_PROPS);
+    if (wb.Custprops !== wb.Props && keys(wb.Custprops || {}).length > 0) {
+      f = "docProps/custom.xml";
+      zip_add_file(zip, f, write_cust_props(wb.Custprops, opts));
+      ct.custprops.push(f);
+      add_rels(opts.rels, 4, f, RELS.CUST_PROPS);
+    }
+    for (rId = 1; rId <= wb.SheetNames.length; ++rId) {
+      var wsrels = { "!id": {} };
+      var ws = wb.Sheets[wb.SheetNames[rId - 1]];
+      var _type = (ws || {})["!type"] || "sheet";
+      switch (_type) {
+        case "chart":
+        /* falls through */
+        default:
+          f = "xl/worksheets/sheet" + rId + "." + wbext;
+          zip_add_file(zip, f, write_ws(rId - 1, f, opts, wb, wsrels));
+          ct.sheets.push(f);
+          add_rels(opts.wbrels, -1, "worksheets/sheet" + rId + "." + wbext, RELS.WS[0]);
+      }
+      if (ws) {
+        var comments = ws["!comments"];
+        var need_vml = false;
+        var cf = "";
+        if (comments && comments.length > 0) {
+          cf = "xl/comments" + rId + "." + wbext;
+          zip_add_file(zip, cf, write_cmnt(comments, cf, opts));
+          ct.comments.push(cf);
+          add_rels(wsrels, -1, "../comments" + rId + "." + wbext, RELS.CMNT);
+          need_vml = true;
+        }
+        if (ws["!legacy"]) {
+          if (need_vml) zip_add_file(zip, "xl/drawings/vmlDrawing" + rId + ".vml", write_comments_vml(rId, ws["!comments"]));
+        }
+        delete ws["!comments"];
+        delete ws["!legacy"];
+      }
+      if (wsrels["!id"].rId1) zip_add_file(zip, get_rels_path(f), write_rels(wsrels));
+    }
+    if (opts.Strings != null && opts.Strings.length > 0) {
+      f = "xl/sharedStrings." + wbext;
+      zip_add_file(zip, f, write_sst(opts.Strings, f, opts));
+      ct.strs.push(f);
+      add_rels(opts.wbrels, -1, "sharedStrings." + wbext, RELS.SST);
+    }
+    f = "xl/workbook." + wbext;
+    zip_add_file(zip, f, write_wb(wb, f, opts));
+    ct.workbooks.push(f);
+    add_rels(opts.rels, 1, f, RELS.WB);
+    f = "xl/theme/theme1.xml";
+    zip_add_file(zip, f, write_theme(wb.Themes, opts));
+    ct.themes.push(f);
+    add_rels(opts.wbrels, -1, "theme/theme1.xml", RELS.THEME);
+    f = "xl/styles." + wbext;
+    zip_add_file(zip, f, write_sty(wb, f, opts));
+    ct.styles.push(f);
+    add_rels(opts.wbrels, -1, "styles." + wbext, RELS.STY);
+    if (wb.vbaraw && vbafmt) {
+      f = "xl/vbaProject.bin";
+      zip_add_file(zip, f, wb.vbaraw);
+      ct.vba.push(f);
+      add_rels(opts.wbrels, -1, "vbaProject.bin", RELS.VBA);
+    }
+    f = "xl/metadata." + wbext;
+    zip_add_file(zip, f, write_xlmeta(f));
+    ct.metadata.push(f);
+    add_rels(opts.wbrels, -1, "metadata." + wbext, RELS.XLMETA);
+    zip_add_file(zip, "[Content_Types].xml", write_ct(ct, opts));
+    zip_add_file(zip, "_rels/.rels", write_rels(opts.rels));
+    zip_add_file(zip, "xl/_rels/workbook." + wbext + ".rels", write_rels(opts.wbrels));
+    delete opts.revssf;
+    delete opts.ssf;
+    return zip;
+  }
+  function write_zip_xlsx(wb, opts) {
+    _shapeid = 1024;
+    if (wb && !wb.SSF) {
+      wb.SSF = dup(table_fmt);
+    }
+    if (wb && wb.SSF) {
+      make_ssf();
+      SSF_load_table(wb.SSF);
+      opts.revssf = evert_num(wb.SSF);
+      opts.revssf[wb.SSF[65535]] = 0;
+      opts.ssf = wb.SSF;
+    }
+    opts.rels = {};
+    opts.wbrels = {};
+    opts.Strings = /*::((*/
+    [];
+    opts.Strings.Count = 0;
+    opts.Strings.Unique = 0;
+    if (browser_has_Map) opts.revStrings = /* @__PURE__ */ new Map();
+    else {
+      opts.revStrings = {};
+      opts.revStrings.foo = [];
+      delete opts.revStrings.foo;
+    }
+    var wbext = "xml";
+    var vbafmt = VBAFMTS.indexOf(opts.bookType) > -1;
+    var ct = new_ct();
+    fix_write_opts(opts = opts || {});
+    var zip = zip_new();
+    var f = "", rId = 0;
+    opts.cellXfs = [];
+    get_cell_style(opts.cellXfs, {}, { revssf: { "General": 0 } });
+    if (!wb.Props) wb.Props = {};
+    f = "docProps/core.xml";
+    zip_add_file(zip, f, write_core_props(wb.Props, opts));
+    ct.coreprops.push(f);
+    add_rels(opts.rels, 2, f, RELS.CORE_PROPS);
+    f = "docProps/app.xml";
+    if (wb.Props && wb.Props.SheetNames) {
+    } else if (!wb.Workbook || !wb.Workbook.Sheets) wb.Props.SheetNames = wb.SheetNames;
+    else {
+      var _sn = [];
+      for (var _i = 0; _i < wb.SheetNames.length; ++_i)
+        if ((wb.Workbook.Sheets[_i] || {}).Hidden != 2) _sn.push(wb.SheetNames[_i]);
+      wb.Props.SheetNames = _sn;
+    }
+    wb.Props.Worksheets = wb.Props.SheetNames.length;
+    zip_add_file(zip, f, write_ext_props(wb.Props, opts));
+    ct.extprops.push(f);
+    add_rels(opts.rels, 3, f, RELS.EXT_PROPS);
+    if (wb.Custprops !== wb.Props && keys(wb.Custprops || {}).length > 0) {
+      f = "docProps/custom.xml";
+      zip_add_file(zip, f, write_cust_props(wb.Custprops, opts));
+      ct.custprops.push(f);
+      add_rels(opts.rels, 4, f, RELS.CUST_PROPS);
+    }
+    var people = ["SheetJ5"];
+    opts.tcid = 0;
+    for (rId = 1; rId <= wb.SheetNames.length; ++rId) {
+      var wsrels = { "!id": {} };
+      var ws = wb.Sheets[wb.SheetNames[rId - 1]];
+      var _type = (ws || {})["!type"] || "sheet";
+      switch (_type) {
+        case "chart":
+        /* falls through */
+        default:
+          f = "xl/worksheets/sheet" + rId + "." + wbext;
+          zip_add_file(zip, f, write_ws_xml(rId - 1, opts, wb, wsrels));
+          ct.sheets.push(f);
+          add_rels(opts.wbrels, -1, "worksheets/sheet" + rId + "." + wbext, RELS.WS[0]);
+      }
+      if (ws) {
+        var comments = ws["!comments"];
+        var need_vml = false;
+        var cf = "";
+        if (comments && comments.length > 0) {
+          var needtc = false;
+          comments.forEach(function(carr) {
+            carr[1].forEach(function(c) {
+              if (c.T == true) needtc = true;
+            });
+          });
+          if (needtc) {
+            cf = "xl/threadedComments/threadedComment" + rId + "." + wbext;
+            zip_add_file(zip, cf, write_tcmnt_xml(comments, people, opts));
+            ct.threadedcomments.push(cf);
+            add_rels(wsrels, -1, "../threadedComments/threadedComment" + rId + "." + wbext, RELS.TCMNT);
+          }
+          cf = "xl/comments" + rId + "." + wbext;
+          zip_add_file(zip, cf, write_comments_xml(comments, opts));
+          ct.comments.push(cf);
+          add_rels(wsrels, -1, "../comments" + rId + "." + wbext, RELS.CMNT);
+          need_vml = true;
+        }
+        if (ws["!legacy"]) {
+          if (need_vml) zip_add_file(zip, "xl/drawings/vmlDrawing" + rId + ".vml", write_comments_vml(rId, ws["!comments"]));
+        }
+        delete ws["!comments"];
+        delete ws["!legacy"];
+      }
+      if (wsrels["!id"].rId1) zip_add_file(zip, get_rels_path(f), write_rels(wsrels));
+    }
+    if (opts.Strings != null && opts.Strings.length > 0) {
+      f = "xl/sharedStrings." + wbext;
+      zip_add_file(zip, f, write_sst_xml(opts.Strings, opts));
+      ct.strs.push(f);
+      add_rels(opts.wbrels, -1, "sharedStrings." + wbext, RELS.SST);
+    }
+    f = "xl/workbook." + wbext;
+    zip_add_file(zip, f, write_wb_xml(wb, opts));
+    ct.workbooks.push(f);
+    add_rels(opts.rels, 1, f, RELS.WB);
+    f = "xl/theme/theme1.xml";
+    zip_add_file(zip, f, write_theme(wb.Themes, opts));
+    ct.themes.push(f);
+    add_rels(opts.wbrels, -1, "theme/theme1.xml", RELS.THEME);
+    f = "xl/styles." + wbext;
+    zip_add_file(zip, f, write_sty_xml(wb, opts));
+    ct.styles.push(f);
+    add_rels(opts.wbrels, -1, "styles." + wbext, RELS.STY);
+    if (wb.vbaraw && vbafmt) {
+      f = "xl/vbaProject.bin";
+      zip_add_file(zip, f, wb.vbaraw);
+      ct.vba.push(f);
+      add_rels(opts.wbrels, -1, "vbaProject.bin", RELS.VBA);
+    }
+    f = "xl/metadata." + wbext;
+    zip_add_file(zip, f, write_xlmeta_xml());
+    ct.metadata.push(f);
+    add_rels(opts.wbrels, -1, "metadata." + wbext, RELS.XLMETA);
+    if (people.length > 1) {
+      f = "xl/persons/person.xml";
+      zip_add_file(zip, f, write_people_xml(people, opts));
+      ct.people.push(f);
+      add_rels(opts.wbrels, -1, "persons/person.xml", RELS.PEOPLE);
+    }
+    zip_add_file(zip, "[Content_Types].xml", write_ct(ct, opts));
+    zip_add_file(zip, "_rels/.rels", write_rels(opts.rels));
+    zip_add_file(zip, "xl/_rels/workbook." + wbext + ".rels", write_rels(opts.wbrels));
+    delete opts.revssf;
+    delete opts.ssf;
+    return zip;
+  }
   function firstbyte(f, o) {
     var x = "";
     switch ((o || {}).type || "base64") {
@@ -26373,6 +31039,229 @@
     }
     if (DBF_SUPPORTED_VERSIONS.indexOf(n[0]) > -1 && n[2] <= 12 && n[3] <= 31) return DBF.to_workbook(d, o);
     return read_prn(data, d, o, str);
+  }
+  function write_cfb_ctr(cfb, o) {
+    switch (o.type) {
+      case "base64":
+      case "binary":
+        break;
+      case "buffer":
+      case "array":
+        o.type = "";
+        break;
+      case "file":
+        return write_dl(o.file, CFB.write(cfb, { type: has_buf ? "buffer" : "" }));
+      case "string":
+        throw new Error("'string' output type invalid for '" + o.bookType + "' files");
+      default:
+        throw new Error("Unrecognized type " + o.type);
+    }
+    return CFB.write(cfb, o);
+  }
+  function write_zip_type(wb, opts) {
+    var o = dup(opts || {});
+    var z = write_zip(wb, o);
+    return write_zip_denouement(z, o);
+  }
+  function write_zip_denouement(z, o) {
+    var oopts = {};
+    var ftype = has_buf ? "nodebuffer" : typeof Uint8Array !== "undefined" ? "array" : "string";
+    if (o.compression) oopts.compression = "DEFLATE";
+    if (o.password) oopts.type = ftype;
+    else switch (o.type) {
+      case "base64":
+        oopts.type = "base64";
+        break;
+      case "binary":
+        oopts.type = "string";
+        break;
+      case "string":
+        throw new Error("'string' output type invalid for '" + o.bookType + "' files");
+      case "buffer":
+      case "file":
+        oopts.type = ftype;
+        break;
+      default:
+        throw new Error("Unrecognized type " + o.type);
+    }
+    var out = z.FullPaths ? CFB.write(z, { fileType: "zip", type: (
+      /*::(*/
+      { "nodebuffer": "buffer", "string": "binary" }[oopts.type] || oopts.type
+    ), compression: !!o.compression }) : z.generate(oopts);
+    if (typeof Deno !== "undefined") {
+      if (typeof out == "string") {
+        if (o.type == "binary" || o.type == "base64") return out;
+        out = new Uint8Array(s2ab(out));
+      }
+    }
+    if (o.password && typeof encrypt_agile !== "undefined") return write_cfb_ctr(encrypt_agile(out, o.password), o);
+    if (o.type === "file") return write_dl(o.file, out);
+    return o.type == "string" ? utf8read(
+      /*::(*/
+      out
+      /*:: :any)*/
+    ) : out;
+  }
+  function write_cfb_type(wb, opts) {
+    var o = opts || {};
+    var cfb = write_xlscfb(wb, o);
+    return write_cfb_ctr(cfb, o);
+  }
+  function write_string_type(out, opts, bom) {
+    if (!bom) bom = "";
+    var o = bom + out;
+    switch (opts.type) {
+      case "base64":
+        return Base64_encode(utf8write(o));
+      case "binary":
+        return utf8write(o);
+      case "string":
+        return out;
+      case "file":
+        return write_dl(opts.file, o, "utf8");
+      case "buffer": {
+        if (has_buf) return Buffer_from(o, "utf8");
+        else if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(o);
+        else return write_string_type(o, { type: "binary" }).split("").map(function(c) {
+          return c.charCodeAt(0);
+        });
+      }
+    }
+    throw new Error("Unrecognized type " + opts.type);
+  }
+  function write_stxt_type(out, opts) {
+    switch (opts.type) {
+      case "base64":
+        return Base64_encode(out);
+      case "binary":
+        return out;
+      case "string":
+        return out;
+      /* override in sheet_to_txt */
+      case "file":
+        return write_dl(opts.file, out, "binary");
+      case "buffer": {
+        if (has_buf) return Buffer_from(out, "binary");
+        else return out.split("").map(function(c) {
+          return c.charCodeAt(0);
+        });
+      }
+    }
+    throw new Error("Unrecognized type " + opts.type);
+  }
+  function write_binary_type(out, opts) {
+    switch (opts.type) {
+      case "string":
+      case "base64":
+      case "binary":
+        var bstr = "";
+        for (var i = 0; i < out.length; ++i) bstr += String.fromCharCode(out[i]);
+        return opts.type == "base64" ? Base64_encode(bstr) : opts.type == "string" ? utf8read(bstr) : bstr;
+      case "file":
+        return write_dl(opts.file, out);
+      case "buffer":
+        return out;
+      default:
+        throw new Error("Unrecognized type " + opts.type);
+    }
+  }
+  function writeSync(wb, opts) {
+    reset_cp();
+    check_wb(wb);
+    var o = dup(opts || {});
+    if (o.cellStyles) {
+      o.cellNF = true;
+      o.sheetStubs = true;
+    }
+    if (o.type == "array") {
+      o.type = "binary";
+      var out = writeSync(wb, o);
+      o.type = "array";
+      return s2ab(out);
+    }
+    var idx = 0;
+    if (o.sheet) {
+      if (typeof o.sheet == "number") idx = o.sheet;
+      else idx = wb.SheetNames.indexOf(o.sheet);
+      if (!wb.SheetNames[idx]) throw new Error("Sheet not found: " + o.sheet + " : " + typeof o.sheet);
+    }
+    switch (o.bookType || "xlsb") {
+      case "xml":
+      case "xlml":
+        return write_string_type(write_xlml(wb, o), o);
+      case "slk":
+      case "sylk":
+        return write_string_type(SYLK.from_sheet(wb.Sheets[wb.SheetNames[idx]], o), o);
+      case "htm":
+      case "html":
+        return write_string_type(sheet_to_html(wb.Sheets[wb.SheetNames[idx]], o), o);
+      case "txt":
+        return write_stxt_type(sheet_to_txt(wb.Sheets[wb.SheetNames[idx]], o), o);
+      case "csv":
+        return write_string_type(sheet_to_csv(wb.Sheets[wb.SheetNames[idx]], o), o, "\uFEFF");
+      case "dif":
+        return write_string_type(DIF.from_sheet(wb.Sheets[wb.SheetNames[idx]], o), o);
+      case "dbf":
+        return write_binary_type(DBF.from_sheet(wb.Sheets[wb.SheetNames[idx]], o), o);
+      case "prn":
+        return write_string_type(PRN.from_sheet(wb.Sheets[wb.SheetNames[idx]], o), o);
+      case "rtf":
+        return write_string_type(RTF.from_sheet(wb.Sheets[wb.SheetNames[idx]], o), o);
+      case "eth":
+        return write_string_type(ETH.from_sheet(wb.Sheets[wb.SheetNames[idx]], o), o);
+      case "fods":
+        return write_string_type(write_ods(wb, o), o);
+      case "wk1":
+        return write_binary_type(WK_.sheet_to_wk1(wb.Sheets[wb.SheetNames[idx]], o), o);
+      case "wk3":
+        return write_binary_type(WK_.book_to_wk3(wb, o), o);
+      case "biff2":
+        if (!o.biff) o.biff = 2;
+      /* falls through */
+      case "biff3":
+        if (!o.biff) o.biff = 3;
+      /* falls through */
+      case "biff4":
+        if (!o.biff) o.biff = 4;
+        return write_binary_type(write_biff_buf(wb, o), o);
+      case "biff5":
+        if (!o.biff) o.biff = 5;
+      /* falls through */
+      case "biff8":
+      case "xla":
+      case "xls":
+        if (!o.biff) o.biff = 8;
+        return write_cfb_type(wb, o);
+      case "xlsx":
+      case "xlsm":
+      case "xlam":
+      case "xlsb":
+      case "numbers":
+      case "ods":
+        return write_zip_type(wb, o);
+      default:
+        throw new Error("Unrecognized bookType |" + o.bookType + "|");
+    }
+  }
+  function resolve_book_type(o) {
+    if (o.bookType) return;
+    var _BT = {
+      "xls": "biff8",
+      "htm": "html",
+      "slk": "sylk",
+      "socialcalc": "eth",
+      "Sh33tJS": "WTF"
+    };
+    var ext = o.file.slice(o.file.lastIndexOf(".")).toLowerCase();
+    if (ext.match(/^\.[a-z]+$/)) o.bookType = ext.slice(1);
+    o.bookType = _BT[o.bookType] || o.bookType;
+  }
+  function writeFileSync(wb, filename, opts) {
+    var o = opts || {};
+    o.type = "file";
+    o.file = filename;
+    resolve_book_type(o);
+    return writeSync(wb, o);
   }
   function make_json_row(sheet, r, R, cols, header, hdr, dense, o) {
     var rr = encode_row(R);
@@ -26799,6 +31688,1652 @@
   };
   var version = XLSX.version;
 
+  // web/gradebook.ts
+  var STORE_KEY = "elite-sheets-gradebook-v1";
+  var ABSENT = /* @__PURE__ */ new Set(["", "-", "--", "\u2014", "n/a", "na", "absent", "ab", "exempt", "not taken"]);
+  function loadClasses() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+  function saveClasses(classes) {
+    localStorage.setItem(STORE_KEY, JSON.stringify(classes));
+  }
+  function capsLevel(pct) {
+    if (!Number.isFinite(pct) || pct < 0) return null;
+    if (pct <= 29.99) return 1;
+    if (pct <= 39.99) return 2;
+    if (pct <= 49.99) return 3;
+    if (pct <= 59.99) return 4;
+    if (pct <= 69.99) return 5;
+    if (pct <= 79.99) return 6;
+    return 7;
+  }
+  function numberOf(value) {
+    if (value === void 0 || value === null) return null;
+    const text = String(value).trim().replace(/%$/, "").trim();
+    if (ABSENT.has(text.toLowerCase())) return null;
+    if (!/^-?\d+(\.\d+)?$/.test(text)) return null;
+    return Number(text);
+  }
+  function isAbsent(value) {
+    return value !== void 0 && ABSENT.has(String(value).trim().toLowerCase());
+  }
+  function validate(cls) {
+    const checks = [];
+    if (!cls.assessments.length) {
+      checks.push({ level: "error", message: "Add at least one assessment." });
+      return checks;
+    }
+    const names = cls.assessments.map((a) => a.name.trim());
+    for (const n of new Set(names.filter((n2, i) => n2 && names.indexOf(n2) !== i)))
+      checks.push({ level: "error", message: `Two assessments are called "${n}". Give each one a unique name.` });
+    let totalWeight = 0;
+    for (const a of cls.assessments) {
+      const label = a.name.trim() || "(unnamed)";
+      if (!a.name.trim()) checks.push({ level: "error", message: "An assessment has no name." });
+      const max = numberOf(a.max);
+      if (max === null || max <= 0) checks.push({ level: "error", message: `"${label}" needs a maximum mark greater than zero.` });
+      const weight = numberOf(a.weight);
+      if (weight === null || weight < 0) checks.push({ level: "error", message: `"${label}" needs a weight of zero or more.` });
+      else totalWeight += weight;
+    }
+    if (Math.abs(totalWeight - 100) > 1e-3)
+      checks.push({ level: "error", message: `The weights add up to ${+totalWeight.toFixed(2)}%, not 100%.` });
+    const ids = /* @__PURE__ */ new Set();
+    for (const l of cls.learners) {
+      const id = l.id.trim();
+      if (!id) {
+        checks.push({ level: "error", message: "A learner has no learner number or initials." });
+        continue;
+      }
+      if (ids.has(id)) checks.push({ level: "error", message: `Learner "${id}" appears more than once.` });
+      ids.add(id);
+      for (const a of cls.assessments) {
+        const label = a.name.trim();
+        const raw = l.marks[label];
+        if (isAbsent(raw)) {
+          checks.push({ level: "warning", message: `${id}: "${label}" is marked absent, so no term mark is calculated.` });
+          continue;
+        }
+        if (raw === void 0 || raw.trim() === "") {
+          checks.push({ level: "warning", message: `${id}: no mark for "${label}", so no term mark is calculated.` });
+          continue;
+        }
+        const mark = numberOf(raw);
+        const max = numberOf(a.max);
+        if (mark === null) {
+          checks.push({ level: "error", message: `${id}: "${raw}" in "${label}" is not a number.` });
+          continue;
+        }
+        if (mark < 0) checks.push({ level: "error", message: `${id}: mark in "${label}" is negative.` });
+        else if (max !== null && max > 0 && mark > max) checks.push({ level: "error", message: `${id}: mark ${mark} in "${label}" is above the maximum of ${max}.` });
+      }
+    }
+    return checks;
+  }
+  function calculate(cls, learner) {
+    const percentages = {};
+    let weighted = 0, complete = true;
+    for (const a of cls.assessments) {
+      const label = a.name.trim();
+      const mark = numberOf(learner.marks[label]);
+      const max = numberOf(a.max);
+      const weight = numberOf(a.weight) ?? 0;
+      if (mark === null || max === null || max <= 0 || mark < 0 || mark > max) {
+        percentages[label] = null;
+        if (weight > 0) complete = false;
+        continue;
+      }
+      const pct = Math.round(mark / max * 1e4) / 100;
+      percentages[label] = pct;
+      weighted += pct * weight;
+    }
+    if (!complete) return { percentages, term: null, level: null };
+    const term = Math.round(weighted / 100 * 100) / 100;
+    return { percentages, term, level: capsLevel(term) };
+  }
+  function newId() {
+    return Math.random().toString(36).slice(2, 10);
+  }
+  function esc(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+  function exportWorkbook(cls, checks) {
+    const headers = ["Learner", ...cls.assessments.map((a) => a.name.trim()), "Term mark %", "CAPS level"];
+    const rows = cls.learners.map((l) => {
+      const r = calculate(cls, l);
+      return [l.id.trim(), ...cls.assessments.map((a) => {
+        const n = numberOf(l.marks[a.name.trim()]);
+        return n !== null ? n : isAbsent(l.marks[a.name.trim()]) ? "absent" : l.marks[a.name.trim()] ?? "";
+      }), r.term ?? "", r.level ?? ""];
+    });
+    const wb = utils.book_new();
+    const ws = utils.aoa_to_sheet([headers, ...rows]);
+    utils.book_append_sheet(wb, ws, "Marks");
+    const notes = checks.length ? checks.map((c) => [c.level, c.message]) : [["ok", "No problems found."]];
+    utils.book_append_sheet(wb, utils.aoa_to_sheet([["Level", "Message"], ...notes]), "Checks");
+    const safe = (cls.name || "Gradebook").replace(/[^\w\- ]+/g, "").trim() || "Gradebook";
+    writeFileSync(wb, `${safe}.xlsx`);
+  }
+  function setupSteps(cls, errorCount) {
+    const total = cls.assessments.reduce((t, a) => t + (numberOf(a.weight) ?? 0), 0);
+    const steps = [
+      ["Name the class", cls.name.trim() !== ""],
+      ["Add assessments whose weights total 100%", Math.abs(total - 100) < 1e-3 && cls.assessments.length > 0],
+      ["Add learners and enter their marks", cls.learners.some((l) => l.id.trim() !== "" && cls.assessments.some((a) => numberOf(l.marks[a.name.trim()]) !== null))]
+    ];
+    const ready = steps.every(([, d]) => d) && errorCount === 0;
+    const list = steps.map(([t, done], i) => `<li style="margin:4px 0;color:${done ? "var(--good)" : "var(--ink)"}">${done ? "\u2713" : i + 1 + "."} ${esc(t)}</li>`).join("");
+    return { title: ready ? "Ready to download" : "Three steps to a checked gradebook", list };
+  }
+  function renderGradebook(root, toast2) {
+    let classes = loadClasses();
+    let activeId = classes[0]?.id ?? "";
+    const persist = () => saveClasses(classes);
+    const current = () => classes.find((c) => c.id === activeId);
+    const draw = () => {
+      const cls = current();
+      const classOptions = classes.map((c) => `<option value="${c.id}" ${c.id === activeId ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+      if (!cls) {
+        root.innerHTML = `<div class="page-heading"><div><h1>My Gradebook</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Create a class to start. Marks are saved in this browser only.</p></div></div>
+        <div class="panel" style="padding:20px"><label>Class name <input id="gb-new-name" placeholder="e.g. Grade 9B Maths" style="margin-left:8px;padding:8px"></label>
+        <button class="btn primary" id="gb-new-class" style="margin-left:8px">Create class</button></div>`;
+        root.querySelector("#gb-new-class").onclick = () => {
+          const name = root.querySelector("#gb-new-name").value.trim();
+          if (!name) {
+            toast2("Give the class a name.", true);
+            return;
+          }
+          const c = { id: newId(), name, assessments: [{ name: "Test 1", max: "50", weight: "100" }], learners: [] };
+          classes.push(c);
+          activeId = c.id;
+          persist();
+          draw();
+        };
+        return;
+      }
+      const checks = validate(cls);
+      const errors = checks.filter((c) => c.level === "error").length;
+      const warnings = checks.filter((c) => c.level === "warning").length;
+      const totalWeight = cls.assessments.reduce((s, a) => s + (numberOf(a.weight) ?? 0), 0);
+      const head = cls.assessments.map((a, i) => `
+      <div class="gb-arow">
+        <input class="gb-name" data-a="${i}" data-f="name" value="${esc(a.name)}" placeholder="Assessment name" aria-label="Assessment name">
+        <input class="gb-num" data-a="${i}" data-f="max" value="${esc(a.max)}" placeholder="Max" aria-label="Maximum mark" inputmode="decimal">
+        <input class="gb-num" data-a="${i}" data-f="weight" value="${esc(a.weight)}" placeholder="Weight %" aria-label="Weight percent" inputmode="decimal">
+        <button class="btn small" data-del-a="${i}" aria-label="Remove assessment">Remove</button></div>`).join("");
+      const body = cls.learners.map((l, li) => {
+        const r = calculate(cls, l);
+        const cells = cls.assessments.map((a, ai) => `<td><input data-l="${li}" data-m="${ai}" value="${esc(l.marks[a.name.trim()] ?? "")}" style="width:80px;padding:6px" inputmode="decimal" aria-label="${esc(a.name)} mark for ${esc(l.id)}"></td>`).join("");
+        return `<tr><td><input data-l="${li}" data-f="id" value="${esc(l.id)}" style="width:110px;padding:6px" aria-label="Learner number"></td>${cells}
+        <td>${r.term === null ? '<span style="color:var(--muted)">incomplete</span>' : r.term.toFixed(2)}</td>
+        <td>${r.level === null ? "\u2014" : r.level}</td>
+        <td><button class="btn small" data-del-l="${li}">Remove</button></td></tr>`;
+      }).join("");
+      const checkList = checks.length ? checks.slice(0, 12).map((c) => `<li style="color:${c.level === "error" ? "var(--bad)" : "var(--warn)"}">${esc(c.message)}</li>`).join("") : '<li style="color:var(--good)">No problems found.</li>';
+      const setup = setupSteps(cls, errors);
+      root.innerHTML = `<div class="page-heading"><div><h1>My Gradebook</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Turn messy school marks into checked, shareable reports. Your marks stay in this browser, so download the Excel file to keep a copy.</p></div></div>
+      <div class="panel" style="padding:14px 16px;margin-bottom:14px"><strong style="font-size:14px">${setup.title}</strong><ol id="gb-setup" style="margin:8px 0 0 18px;padding:0;font-size:14px;list-style:none">${setup.list}</ol></div>
+      <div class="panel" style="padding:16px;margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <select id="gb-class" aria-label="Class">${classOptions}</select>
+        <button class="btn small" id="gb-add-class">New class</button>
+        <button class="btn small" id="gb-rename">Rename</button>
+        <button class="btn small" id="gb-delete-class">Delete class</button>
+      </div>
+      <div class="panel" style="padding:16px;margin-bottom:14px">
+        <h2 style="font-size:16px;margin:0 0 10px">Assessments <span style="font-weight:normal;color:var(--muted);font-size:13px">weights total ${+totalWeight.toFixed(2)}% (must be 100%)</span></h2>
+        ${head}
+        <button class="btn small" id="gb-add-a">Add assessment</button>
+      </div>
+      <div class="panel" style="padding:16px;margin-bottom:14px;overflow-x:auto">
+        <h2 style="font-size:16px;margin:0 0 10px">Learners</h2>
+        <table style="border-collapse:collapse;font-size:14px"><thead><tr><th style="text-align:left;padding:6px">Learner</th>${cls.assessments.map((a) => `<th style="text-align:left;padding:6px">${esc(a.name)}</th>`).join("")}<th style="text-align:left;padding:6px">Term %</th><th style="text-align:left;padding:6px">CAPS</th><th></th></tr></thead>
+        <tbody>${body || '<tr><td colspan="99" style="padding:8px;color:var(--muted)">No learners yet.</td></tr>'}</tbody></table>
+        <button class="btn small" id="gb-add-l" style="margin-top:10px">Add learner</button>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px">Use learner numbers or initials, not full names. Type "absent" for a learner who did not sit an assessment.</p>
+      </div>
+      <div class="panel" style="padding:16px;margin-bottom:14px">
+        <h2 style="font-size:16px;margin:0 0 6px">Checks <span style="font-weight:normal;color:var(--muted);font-size:13px">${errors} error(s), ${warnings} warning(s)</span></h2>
+        <ul style="margin:6px 0 12px 18px;font-size:14px">${checkList}</ul>
+        <button class="btn primary" id="gb-export" ${errors ? 'disabled title="Fix the errors first"' : ""}>Download Excel</button>
+        ${errors ? '<span style="font-size:13px;color:var(--muted);margin-left:8px">Export unlocks when there are no errors.</span>' : ""}
+      </div>`;
+      const q = (s) => root.querySelector(s);
+      q("#gb-class").onchange = (e) => {
+        activeId = e.target.value;
+        draw();
+      };
+      q("#gb-add-class").onclick = () => {
+        const n = prompt("Class name?");
+        if (!n || !n.trim()) return;
+        const c = { id: newId(), name: n.trim(), assessments: [{ name: "Test 1", max: "50", weight: "100" }], learners: [] };
+        classes.push(c);
+        activeId = c.id;
+        persist();
+        draw();
+      };
+      q("#gb-rename").onclick = () => {
+        const n = prompt("New class name?", cls.name);
+        if (!n || !n.trim()) return;
+        cls.name = n.trim();
+        persist();
+        draw();
+      };
+      q("#gb-delete-class").onclick = () => {
+        if (!confirm(`Delete "${cls.name}" and all its marks from this browser?`)) return;
+        classes = classes.filter((c) => c.id !== cls.id);
+        activeId = classes[0]?.id ?? "";
+        persist();
+        draw();
+      };
+      q("#gb-add-a").onclick = () => {
+        cls.assessments.push({ name: `Assessment ${cls.assessments.length + 1}`, max: "100", weight: "0" });
+        persist();
+        draw();
+      };
+      q("#gb-add-l").onclick = () => {
+        cls.learners.push({ id: "", marks: {} });
+        persist();
+        draw();
+      };
+      root.querySelectorAll("[data-a]").forEach((inp) => inp.oninput = () => {
+        const i = Number(inp.dataset.a);
+        const f = inp.dataset.f;
+        const old = cls.assessments[i][f];
+        cls.assessments[i][f] = inp.value;
+        if (f === "name" && old) {
+          cls.learners.forEach((l) => {
+            if (old.trim() !== inp.value.trim() && l.marks[old.trim()] !== void 0) {
+              l.marks[inp.value.trim()] = l.marks[old.trim()];
+              delete l.marks[old.trim()];
+            }
+          });
+        }
+        persist();
+        refreshSummary(cls);
+      });
+      root.querySelectorAll("[data-del-a]").forEach((b) => b.onclick = () => {
+        cls.assessments.splice(Number(b.dataset.delA), 1);
+        persist();
+        draw();
+      });
+      root.querySelectorAll("[data-l]").forEach((inp) => inp.oninput = () => {
+        const li = Number(inp.dataset.l);
+        if (inp.dataset.f === "id") cls.learners[li].id = inp.value;
+        else cls.learners[li].marks[cls.assessments[Number(inp.dataset.m)].name.trim()] = inp.value;
+        persist();
+        refreshSummary(cls);
+      });
+      root.querySelectorAll("[data-del-l]").forEach((b) => b.onclick = () => {
+        cls.learners.splice(Number(b.dataset.delL), 1);
+        persist();
+        draw();
+      });
+      q("#gb-export").onclick = () => {
+        const list = validate(cls);
+        if (list.some((c) => c.level === "error")) {
+          toast2("Fix the errors before exporting.", true);
+          return;
+        }
+        exportWorkbook(cls, list);
+        toast2("Gradebook downloaded.");
+      };
+    };
+    const refreshSummary = (cls) => {
+      const checks = validate(cls);
+      const errors = checks.filter((c) => c.level === "error").length;
+      const warnings = checks.filter((c) => c.level === "warning").length;
+      const totalWeight = cls.assessments.reduce((s, a) => s + (numberOf(a.weight) ?? 0), 0);
+      const weightLabel = root.querySelector("h2 span");
+      if (weightLabel) weightLabel.textContent = `weights total ${+totalWeight.toFixed(2)}% (must be 100%)`;
+      const checkHead = [...root.querySelectorAll("h2")].find((h) => h.textContent?.startsWith("Checks"));
+      if (checkHead) checkHead.innerHTML = `Checks <span style="font-weight:normal;color:var(--muted);font-size:13px">${errors} error(s), ${warnings} warning(s)</span>`;
+      const list = checkHead?.parentElement?.querySelector("ul");
+      if (list) list.innerHTML = checks.length ? checks.slice(0, 12).map((c) => `<li style="color:${c.level === "error" ? "var(--bad)" : "var(--warn)"}">${esc(c.message)}</li>`).join("") : '<li style="color:var(--good)">No problems found.</li>';
+      cls.learners.forEach((l, li) => {
+        const r = calculate(cls, l);
+        const row = root.querySelectorAll("tbody tr")[li];
+        if (!row) return;
+        const cells = row.querySelectorAll("td");
+        const n = cells.length;
+        cells[n - 3].innerHTML = r.term === null ? '<span style="color:var(--muted)">incomplete</span>' : r.term.toFixed(2);
+        cells[n - 2].textContent = r.level === null ? "\u2014" : String(r.level);
+      });
+      const setupBox = root.querySelector("#gb-setup");
+      if (setupBox) {
+        const st = setupSteps(cls, errors);
+        setupBox.innerHTML = st.list;
+        const t = setupBox.previousElementSibling;
+        if (t) t.textContent = st.title;
+      }
+      const heads = root.querySelectorAll("thead th");
+      cls.assessments.forEach((a, i) => {
+        const th = heads[i + 1];
+        if (th) th.textContent = a.name.trim() || "(unnamed)";
+      });
+      const exp = root.querySelector("#gb-export");
+      if (exp) {
+        exp.disabled = errors > 0;
+        exp.title = errors ? "Fix the errors first" : "";
+      }
+    };
+    draw();
+  }
+
+  // web/register.ts
+  var CONSECUTIVE_ABSENCE_FLAG = 3;
+  var REPEATED_ABSENCE_FLAG = 5;
+  var STORE_KEY2 = "elite-sheets-registers-v1";
+  var MAX_TEMPLATE_BYTES = 15e5;
+  function loadRegisters() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY2);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+  function saveRegisters(list) {
+    localStorage.setItem(STORE_KEY2, JSON.stringify(list));
+  }
+  function monthOf(date) {
+    return date.slice(0, 7);
+  }
+  function monthlySummary(reg, month) {
+    const recordedDays = Object.keys(reg.days).filter((d) => monthOf(d) === month && Object.keys(reg.days[d]).length > 0).sort();
+    let learnerDays = 0, absentDays = 0;
+    const rows = reg.learners.map((learner) => {
+      let present = 0, absent = 0, late = 0, unmarked = 0, run = 0, longest = 0;
+      for (const d of recordedDays) {
+        const m = reg.days[d][learner.id];
+        if (m === void 0) {
+          unmarked++;
+          run = 0;
+          continue;
+        }
+        learnerDays++;
+        if (m === "A") {
+          absent++;
+          absentDays++;
+          run++;
+          longest = Math.max(longest, run);
+        } else {
+          run = 0;
+          if (m === "L") {
+            late++;
+            present++;
+          } else present++;
+        }
+      }
+      const flags = [];
+      if (longest >= CONSECUTIVE_ABSENCE_FLAG) flags.push(`${longest} days absent in a row: tell the principal`);
+      if (absent >= REPEATED_ABSENCE_FLAG) flags.push(`Repeated absence (${absent} days this month)`);
+      return { learner, present, absent, late, unmarked, longestAbsenceRun: longest, flags };
+    });
+    const rate = learnerDays ? Math.round(absentDays / learnerDays * 1e3) / 10 : null;
+    return { month, recordedDays, learnerDays, absentDays, absenteeRate: rate, rows };
+  }
+  function validateLearners(learners) {
+    const problems = [];
+    const ids = /* @__PURE__ */ new Set();
+    for (const l of learners) {
+      const id = l.id.trim();
+      if (!id) {
+        problems.push("A learner has no number.");
+        continue;
+      }
+      if (ids.has(id)) problems.push(`Learner number ${id} is used twice.`);
+      ids.add(id);
+    }
+    return problems;
+  }
+  function registerWorkbook(reg, month) {
+    const s = monthlySummary(reg, month);
+    const wb = utils.book_new();
+    const summary = [
+      [reg.name],
+      [`Monthly attendance: ${month}`],
+      [`Recorded days: ${s.recordedDays.length}`, "", `Absentee rate: ${s.absenteeRate === null ? "n/a" : s.absenteeRate + "%"}`],
+      [],
+      ["Learner number", "Name", "Present", "Absent", "Late", "Longest absence run", "Unmarked days", "Flags"],
+      ...s.rows.map((r) => [r.learner.id, r.learner.name, r.present, r.absent, r.late, r.longestAbsenceRun, r.unmarked, r.flags.join("; ")]),
+      [],
+      ["Teacher signature", "", "", "Date", ""],
+      ["Principal signature", "", "", "Date", ""]
+    ];
+    utils.book_append_sheet(wb, utils.aoa_to_sheet(summary), "Monthly summary");
+    const daily = [["Learner number", "Name", ...s.recordedDays]];
+    for (const l of reg.learners) {
+      daily.push([l.id, l.name, ...s.recordedDays.map((d) => reg.days[d][l.id] ?? "")]);
+    }
+    utils.book_append_sheet(wb, utils.aoa_to_sheet(daily), "Daily register");
+    return wb;
+  }
+  function exportRegister(reg, month) {
+    const safe = (reg.name || "Register").replace(/[^\w\- ]+/g, "").trim() || "Register";
+    writeFileSync(registerWorkbook(reg, month), `${safe} ${month}.xlsx`);
+  }
+  async function readTemplate(file) {
+    if (file.size > MAX_TEMPLATE_BYTES) throw new Error("That file is too large to keep in this browser (limit 1.5 MB). Try a smaller file or a photo at lower resolution.");
+    const lower = file.name.toLowerCase();
+    let headings = [];
+    if (/\.(xlsx|xls|csv)$/.test(lower)) {
+      const wb = readSync(await file.arrayBuffer(), { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = utils.sheet_to_json(ws, { header: 1, blankrows: false });
+      headings = (rows[0] ?? []).map((h) => String(h ?? "").trim()).filter(Boolean);
+    }
+    const fileDataUrl = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(file);
+    });
+    return { name: file.name, headings, fileDataUrl };
+  }
+  function newId2() {
+    return Math.random().toString(36).slice(2, 10);
+  }
+  function esc2(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+  function todayLocal() {
+    const d = /* @__PURE__ */ new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  function renderRegister(root, toast2) {
+    let registers = loadRegisters();
+    let activeId = registers[0]?.id ?? "";
+    let date = todayLocal();
+    let month = date.slice(0, 7);
+    const persist = () => saveRegisters(registers);
+    const current = () => registers.find((r) => r.id === activeId);
+    const draw = () => {
+      const reg = current();
+      if (!reg) {
+        root.innerHTML = `<div class="page-heading"><div><h1>Registers</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Create a class or period register. Names and attendance are saved in this browser only.</p></div></div>
+        <div class="panel" style="padding:20px;display:grid;gap:10px;max-width:520px">
+          <label>Register name <input id="rg-new-name" placeholder="e.g. Grade 8A class register"></label>
+          <label>Type <select id="rg-new-kind"><option value="class">Class register (daily)</option><option value="period">Period register (subject)</option></select></label>
+          <div><button class="btn primary" id="rg-new">Create register</button></div>
+        </div>`;
+        root.querySelector("#rg-new").onclick = () => {
+          const name = root.querySelector("#rg-new-name").value.trim();
+          const kind = root.querySelector("#rg-new-kind").value;
+          if (!name) {
+            toast2("Give the register a name.", true);
+            return;
+          }
+          const r = { id: newId2(), name, kind, learners: [], days: {} };
+          registers.push(r);
+          activeId = r.id;
+          persist();
+          draw();
+        };
+        return;
+      }
+      const options = registers.map((r) => `<option value="${r.id}" ${r.id === activeId ? "selected" : ""}>${esc2(r.name)} (${r.kind === "class" ? "class" : "period"})</option>`).join("");
+      const dayMarks = reg.days[date] ?? {};
+      const marked = Object.keys(dayMarks).length;
+      const learnerRows = reg.learners.map((l, i) => {
+        const m = dayMarks[l.id];
+        const btn = (code, label) => `<button class="btn small ${m === code ? "primary" : ""}" data-mark="${code}" data-li="${i}" aria-pressed="${m === code}" aria-label="${label} for ${esc2(l.name || l.id)}">${code}</button>`;
+        return `<tr><td>${esc2(l.id)}</td><td>${esc2(l.name)}</td><td style="white-space:nowrap">${btn("P", "Present")} ${btn("A", "Absent")} ${btn("L", "Late")}</td><td><button class="btn small" data-rm="${i}" aria-label="Remove learner">Remove</button></td></tr>`;
+      }).join("");
+      const sum = monthlySummary(reg, month);
+      const sumRows = sum.rows.map((r) => `<tr><td>${esc2(r.learner.id)}</td><td>${esc2(r.learner.name)}</td><td>${r.present}</td><td>${r.absent}</td><td>${r.late}</td><td>${r.longestAbsenceRun}</td><td>${r.flags.length ? r.flags.map(esc2).join("<br>") : '<span style="color:var(--good)">None</span>'}</td></tr>`).join("");
+      const problems = validateLearners(reg.learners);
+      const tpl = reg.template;
+      root.innerHTML = `<div class="page-heading"><div><h1>Registers</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Mark the day, then download the monthly summary for the principal to sign. Saved in this browser only.</p></div></div>
+      <div class="panel" style="padding:16px;display:grid;gap:12px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="rg-select" aria-label="Choose register">${options}</select>
+          <button class="btn" id="rg-new-open">New register</button>
+          <button class="btn" id="rg-delete">Delete register</button>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <label>Day <input type="date" id="rg-date" value="${date}"></label>
+          <span style="font-size:13px;color:var(--muted)">${marked} of ${reg.learners.length} learners marked for this day</span>
+          <button class="btn small" id="rg-all-p" ${reg.learners.length ? "" : "disabled"}>Mark everyone present</button>
+        </div>
+      </div>
+      <div class="panel" style="padding:16px;margin-top:14px">
+        <h2 style="font-size:17px;margin:0 0 10px">Learners</h2>
+        ${problems.length ? `<p style="color:var(--bad);font-size:13px">${problems.map(esc2).join(" ")}</p>` : ""}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <input id="rg-l-id" placeholder="Learner number" aria-label="Learner number" style="width:150px">
+          <input id="rg-l-name" placeholder="Name (optional)" aria-label="Learner name" style="width:220px">
+          <button class="btn" id="rg-add-l">Add learner</button>
+        </div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px">
+          <thead><tr><th style="text-align:left">Number</th><th style="text-align:left">Name</th><th style="text-align:left">Mark for ${esc2(date)}</th><th></th></tr></thead>
+          <tbody>${learnerRows || '<tr><td colspan="4" style="color:var(--muted)">Add learners to start the register.</td></tr>'}</tbody>
+        </table></div>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px">P = present, A = absent, L = late (late learners count as present but are listed separately).</p>
+      </div>
+      <div class="panel" style="padding:16px;margin-top:14px">
+        <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
+          <h2 style="font-size:17px;margin:0">Monthly summary</h2>
+          <div style="display:flex;gap:8px;align-items:center"><label>Month <input type="month" id="rg-month" value="${month}"></label>
+          <button class="btn primary" id="rg-export" ${sum.recordedDays.length ? "" : "disabled"}>Download Excel</button></div>
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin:8px 0">${sum.recordedDays.length} recorded day(s). Absentee rate: <strong>${sum.absenteeRate === null ? "n/a" : sum.absenteeRate + "%"}</strong></p>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px">
+          <thead><tr><th style="text-align:left">Number</th><th style="text-align:left">Name</th><th>Present</th><th>Absent</th><th>Late</th><th>Longest run</th><th style="text-align:left">Flags</th></tr></thead>
+          <tbody>${sumRows || '<tr><td colspan="7" style="color:var(--muted)">No recorded days this month yet.</td></tr>'}</tbody>
+        </table></div>
+      </div>
+      <div class="panel" style="padding:16px;margin-top:14px">
+        <h2 style="font-size:17px;margin:0 0 8px">School register template</h2>
+        ${tpl ? `<p style="font-size:14px">Stored: <strong>${esc2(tpl.name)}</strong>${tpl.headings.length ? `. Headings found: ${tpl.headings.map(esc2).join(", ")}` : " (no headings could be read from this file; type them below if needed)."}</p>
+          ${tpl.fileDataUrl ? `<a class="btn small" href="${tpl.fileDataUrl}" download="${esc2(tpl.name)}">Open stored template</a>` : ""}
+          <button class="btn small" id="rg-tpl-remove">Remove template</button>` : `<p style="font-size:14px;color:var(--muted)">Attach your school's register template (Excel, CSV, PDF or photo). Excel and CSV headings are read automatically.</p>`}
+        <div style="margin-top:10px"><input type="file" id="rg-tpl" accept=".xlsx,.xls,.csv,.pdf,image/*" aria-label="Attach register template"></div>
+      </div>`;
+      wire(reg);
+    };
+    const wire = (reg) => {
+      root.querySelector("#rg-select").onchange = (e) => {
+        activeId = e.target.value;
+        draw();
+      };
+      root.querySelector("#rg-new-open").onclick = () => {
+        activeId = "";
+        draw();
+      };
+      root.querySelector("#rg-delete").onclick = () => {
+        if (!confirm(`Delete "${reg.name}" and all its attendance? This cannot be undone.`)) return;
+        registers = registers.filter((r) => r.id !== reg.id);
+        activeId = registers[0]?.id ?? "";
+        persist();
+        draw();
+      };
+      root.querySelector("#rg-date").onchange = (e) => {
+        date = e.target.value || todayLocal();
+        draw();
+      };
+      root.querySelector("#rg-month").onchange = (e) => {
+        month = e.target.value || month;
+        draw();
+      };
+      root.querySelectorAll("[data-mark]").forEach((b) => b.onclick = () => {
+        const li = Number(b.dataset.li);
+        const l = reg.learners[li];
+        const code = b.dataset.mark;
+        reg.days[date] = { ...reg.days[date] ?? {}, [l.id]: code };
+        persist();
+        draw();
+      });
+      root.querySelector("#rg-all-p")?.addEventListener("click", () => {
+        const d = { ...reg.days[date] ?? {} };
+        for (const l of reg.learners) if (d[l.id] === void 0) d[l.id] = "P";
+        reg.days[date] = d;
+        persist();
+        draw();
+      });
+      root.querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => {
+        const l = reg.learners[Number(b.dataset.rm)];
+        if (!confirm(`Remove ${l.name || l.id} and their attendance from this register?`)) return;
+        reg.learners.splice(Number(b.dataset.rm), 1);
+        for (const d of Object.keys(reg.days)) delete reg.days[d][l.id];
+        persist();
+        draw();
+      });
+      root.querySelector("#rg-add-l").onclick = () => {
+        const id = root.querySelector("#rg-l-id").value.trim();
+        const name = root.querySelector("#rg-l-name").value.trim();
+        if (!id) {
+          toast2("Enter a learner number.", true);
+          return;
+        }
+        if (reg.learners.some((l) => l.id === id)) {
+          toast2(`Learner number ${id} is already in this register.`, true);
+          return;
+        }
+        reg.learners.push({ id, name });
+        persist();
+        draw();
+      };
+      root.querySelector("#rg-export")?.addEventListener("click", () => {
+        const problems = validateLearners(reg.learners);
+        if (problems.length) {
+          toast2(problems[0], true);
+          return;
+        }
+        exportRegister(reg, month);
+        toast2("Register downloaded.");
+      });
+      root.querySelector("#rg-tpl").onchange = async (e) => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        try {
+          reg.template = await readTemplate(f);
+          persist();
+          toast2("Template stored.");
+          draw();
+        } catch (err) {
+          toast2(err.message, true);
+        }
+      };
+      root.querySelector("#rg-tpl-remove")?.addEventListener("click", () => {
+        delete reg.template;
+        persist();
+        draw();
+      });
+    };
+    draw();
+  }
+
+  // web/cptd.ts
+  var CPTD_TARGET = 150;
+  var STORE_KEY3 = "elite-sheets-cptd-v1";
+  var MAX_EVIDENCE_BYTES = 15e5;
+  function loadProfile() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY3);
+      return raw ? JSON.parse(raw) : { cycleStart: "", activities: [] };
+    } catch {
+      return { cycleStart: "", activities: [] };
+    }
+  }
+  function saveProfile(p) {
+    localStorage.setItem(STORE_KEY3, JSON.stringify(p));
+  }
+  function isDate(s) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+  }
+  function addYears(date, years) {
+    const d = /* @__PURE__ */ new Date(date + "T00:00:00");
+    d.setFullYear(d.getFullYear() + years);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+  function cycleBounds(cycleStart) {
+    return { start: cycleStart, end: addYears(cycleStart, 3) };
+  }
+  function summarise(profile) {
+    if (!isDate(profile.cycleStart)) return null;
+    const { start, end } = cycleBounds(profile.cycleStart);
+    const counted = profile.activities.filter((a) => a.date >= start && a.date <= end);
+    const outside = profile.activities.filter((a) => !(a.date >= start && a.date <= end));
+    const byType = { 1: 0, 2: 0, 3: 0 };
+    for (const a of counted) byType[a.type] += a.points;
+    const total = counted.reduce((s, a) => s + a.points, 0);
+    const typesCovered = [1, 2, 3].filter((t) => counted.some((a) => a.type === t));
+    const missingTypes = [1, 2, 3].filter((t) => !typesCovered.includes(t));
+    return {
+      cycleStart: start,
+      cycleEnd: end,
+      total,
+      target: CPTD_TARGET,
+      remaining: Math.max(0, CPTD_TARGET - total),
+      byType,
+      typesCovered,
+      missingTypes,
+      unreported: counted.filter((a) => !a.reported).length,
+      percent: Math.min(100, Math.round(total / CPTD_TARGET * 1e3) / 10),
+      counted,
+      outside
+    };
+  }
+  function reportingWindows(year) {
+    return [
+      { label: "May/June reporting window", start: `${year}-05-01`, end: `${year}-06-30` },
+      { label: "October/November reporting window", start: `${year}-10-01`, end: `${year}-11-30` }
+    ];
+  }
+  function windowStatus(today) {
+    const year = Number(today.slice(0, 4));
+    const all = [...reportingWindows(year - 1), ...reportingWindows(year), ...reportingWindows(year + 1)];
+    for (const w of all) {
+      if (today >= w.start && today <= w.end) return { state: "open", window: w, daysAway: 0 };
+    }
+    const next = all.find((w) => w.start > today);
+    if (!next) return null;
+    const days2 = Math.round((Date.parse(next.start) - Date.parse(today)) / 864e5);
+    return { state: "upcoming", window: next, daysAway: days2 };
+  }
+  function validateActivity(a) {
+    const problems = [];
+    if (!a.title || !a.title.trim()) problems.push("Give the activity a title.");
+    if (!a.date || !isDate(a.date)) problems.push("Enter the activity date.");
+    if (![1, 2, 3].includes(Number(a.type))) problems.push("Choose the activity type.");
+    if (a.points === void 0 || !Number.isFinite(Number(a.points)) || Number(a.points) < 0) problems.push("Enter the points from the certificate (0 or more).");
+    return problems;
+  }
+  function cptdWorkbook(profile) {
+    const s = summarise(profile);
+    const wb = utils.book_new();
+    const head = s ? [
+      ["CPTD record (personal, not submitted to SACE)"],
+      ["Cycle", `${s.cycleStart} to ${s.cycleEnd}`],
+      ["Points in cycle", s.total, "Target", s.target, "Remaining", s.remaining],
+      ["Type 1 points", s.byType[1], "Type 2 points", s.byType[2], "Type 3 points", s.byType[3]],
+      ["Types missing", s.missingTypes.length ? s.missingTypes.join(", ") : "None"],
+      ["Activities not yet reported to SACE", s.unreported]
+    ] : [["Set the cycle start date first."]];
+    utils.book_append_sheet(wb, utils.aoa_to_sheet(head), "Summary");
+    const rows = profile.activities.slice().sort((a, b) => a.date.localeCompare(b.date)).map((a) => [
+      a.date,
+      a.title,
+      a.provider,
+      a.type,
+      a.points,
+      a.reported ? "Yes" : "No",
+      a.reportedDate || "",
+      a.date >= (s?.cycleStart ?? "0") && a.date <= (s?.cycleEnd ?? "9") ? "Counted" : "Outside this cycle",
+      a.evidenceName || ""
+    ]);
+    utils.book_append_sheet(wb, utils.aoa_to_sheet([["Date", "Activity", "Provider", "Type", "Points", "Reported to SACE", "Reported date", "Cycle", "Evidence file"], ...rows]), "Activities");
+    return wb;
+  }
+  function exportCPTD(profile) {
+    writeFileSync(cptdWorkbook(profile), "CPTD record.xlsx");
+  }
+  async function readEvidence(file) {
+    if (file.size > MAX_EVIDENCE_BYTES) throw new Error("That file is too large to keep in this browser (limit 1.5 MB).");
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve({ name: file.name, dataUrl: String(r.result) });
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(file);
+    });
+  }
+  function newId3() {
+    return Math.random().toString(36).slice(2, 10);
+  }
+  function esc3(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+  function todayLocal2() {
+    const d = /* @__PURE__ */ new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  function renderCPTD(root, toast2) {
+    let profile = loadProfile();
+    const persist = () => saveProfile(profile);
+    const draw = () => {
+      const s = summarise(profile);
+      const today = todayLocal2();
+      const win = windowStatus(today);
+      const winText = win ? win.state === "open" ? `<strong>${esc3(win.window.label)} is open now</strong> (until ${win.window.end}). ${s?.unreported ? `${s.unreported} activit${s.unreported === 1 ? "y is" : "ies are"} not yet reported to SACE.` : "Everything is marked reported."}` : `Next: ${esc3(win.window.label)} opens ${win.window.start} (${win.daysAway} day${win.daysAway === 1 ? "" : "s"} away).` : "";
+      const bar = s ? `<div style="background:var(--panel2);border-radius:999px;height:14px;overflow:hidden;margin:8px 0"><div style="width:${s.percent}%;height:100%;background:var(--accent)"></div></div>` : "";
+      const summary = s ? `<div class="panel" style="padding:16px;display:grid;gap:8px">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><strong style="font-size:16px">${s.total} of ${s.target} points</strong><span style="color:var(--muted);font-size:13px">Cycle ${s.cycleStart} to ${s.cycleEnd}</span></div>
+        ${bar}
+        <div style="font-size:14px">${s.remaining ? `${s.remaining} points still needed in this cycle.` : "Target reached for this cycle."}</div>
+        <div style="font-size:14px">Type 1: ${s.byType[1]} \xB7 Type 2: ${s.byType[2]} \xB7 Type 3: ${s.byType[3]}</div>
+        <div style="font-size:14px;color:${s.missingTypes.length ? "var(--warn)" : "var(--good)"}">${s.missingTypes.length ? `No ${s.missingTypes.map((t) => `Type ${t}`).join(" or ")} activity yet. SACE expects all three types.` : "Activities from all three types recorded."}</div>
+      </div>` : `<div class="panel" style="padding:16px"><label>Start of your current three-year cycle <input type="date" id="cp-start" value="${profile.cycleStart}"></label>
+        <button class="btn primary" id="cp-save-start" style="margin-left:8px">Save cycle start</button>
+        <p style="font-size:13px;color:var(--muted);margin:8px 0 0">Use the date your current SACE cycle started. Activities before that date are kept but not counted.</p></div>`;
+      const rows = profile.activities.slice().sort((a, b) => b.date.localeCompare(a.date)).map((a) => {
+        const idx = profile.activities.indexOf(a);
+        const counted = s ? a.date >= s.cycleStart && a.date <= s.cycleEnd : false;
+        return `<tr><td>${esc3(a.date)}</td><td>${esc3(a.title)}<br><span style="font-size:12px;color:var(--muted)">${esc3(a.provider)}</span></td><td>Type ${a.type}</td><td>${a.points}</td>
+        <td><label style="white-space:nowrap"><input type="checkbox" data-rep="${idx}" ${a.reported ? "checked" : ""}> Reported</label></td>
+        <td>${counted ? '<span style="color:var(--good)">Counted</span>' : '<span style="color:var(--muted)">Outside cycle</span>'}</td>
+        <td>${a.evidenceDataUrl ? `<a href="${a.evidenceDataUrl}" download="${esc3(a.evidenceName || "evidence")}">${esc3(a.evidenceName || "Evidence")}</a>` : '<span style="color:var(--muted)">None</span>'}</td>
+        <td><button class="btn small" data-del="${idx}" aria-label="Delete activity">Delete</button></td></tr>`;
+      }).join("");
+      root.innerHTML = `<div class="page-heading"><div><h1>CPTD log</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Your personal record of professional development. Teachers report to SACE themselves. Saved in this browser only.</p></div></div>
+      ${win ? `<div class="panel" style="padding:12px 16px;margin-bottom:14px;background:var(--gold-soft)">${winText}</div>` : ""}
+      ${summary}
+      <div class="panel" style="padding:16px;margin-top:14px">
+        <h2 style="font-size:17px;margin:0 0 10px">Add an activity</h2>
+        <div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+          <label>Date <input type="date" id="cp-date" value="${today}"></label>
+          <label>Activity title <input id="cp-title" placeholder="e.g. Maths content workshop"></label>
+          <label>Provider <input id="cp-provider" placeholder="e.g. District office"></label>
+          <label>Type <select id="cp-type"><option value="1">Type 1: teacher-initiated</option><option value="2">Type 2: school-initiated</option><option value="3">Type 3: provider or employer</option></select></label>
+          <label>Points (from certificate) <input type="number" id="cp-points" min="0" step="1" value="0"></label>
+          <label>Evidence (certificate, PDF or photo) <input type="file" id="cp-file" accept=".pdf,image/*"></label>
+        </div>
+        <div style="margin-top:10px"><button class="btn primary" id="cp-add">Add activity</button></div>
+      </div>
+      <div class="panel" style="padding:16px;margin-top:14px">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center"><h2 style="font-size:17px;margin:0">Activities</h2>
+        <button class="btn" id="cp-export" ${profile.activities.length ? "" : "disabled"}>Download CPTD record</button></div>
+        <div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:14px">
+          <thead><tr><th style="text-align:left">Date</th><th style="text-align:left">Activity</th><th style="text-align:left">Type</th><th>Points</th><th style="text-align:left">SACE</th><th style="text-align:left">Cycle</th><th style="text-align:left">Evidence</th><th></th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="8" style="color:var(--muted)">No activities yet. Add your first one above.</td></tr>'}</tbody>
+        </table></div>
+      </div>`;
+      wire();
+    };
+    const wire = () => {
+      root.querySelector("#cp-save-start")?.addEventListener("click", () => {
+        const v = root.querySelector("#cp-start").value;
+        if (!v) {
+          toast2("Choose the start date of your cycle.", true);
+          return;
+        }
+        profile.cycleStart = v;
+        persist();
+        draw();
+      });
+      root.querySelector("#cp-add").onclick = async () => {
+        const v = (id) => root.querySelector("#" + id).value;
+        const a = { date: v("cp-date"), title: v("cp-title").trim(), provider: v("cp-provider").trim(), type: Number(v("cp-type")), points: Number(v("cp-points")) };
+        const problems = validateActivity(a);
+        if (problems.length) {
+          toast2(problems[0], true);
+          return;
+        }
+        let evidence;
+        const f = root.querySelector("#cp-file").files?.[0];
+        if (f) {
+          try {
+            evidence = await readEvidence(f);
+          } catch (err) {
+            toast2(err.message, true);
+            return;
+          }
+        }
+        profile.activities.push({ id: newId3(), date: a.date, title: a.title, provider: a.provider ?? "", type: a.type, points: a.points, reported: false, reportedDate: "", evidenceName: evidence?.name, evidenceDataUrl: evidence?.dataUrl });
+        persist();
+        toast2("Activity added.");
+        draw();
+      };
+      root.querySelectorAll("[data-rep]").forEach((c) => c.onchange = () => {
+        const a = profile.activities[Number(c.dataset.rep)];
+        a.reported = c.checked;
+        a.reportedDate = c.checked ? todayLocal2() : "";
+        persist();
+        draw();
+      });
+      root.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => {
+        if (!confirm("Delete this activity from your CPTD record?")) return;
+        profile.activities.splice(Number(b.dataset.del), 1);
+        persist();
+        draw();
+      });
+      root.querySelector("#cp-export")?.addEventListener("click", () => {
+        exportCPTD(profile);
+        toast2("CPTD record downloaded.");
+      });
+    };
+    draw();
+  }
+
+  // web/pacing.ts
+  var STORE_KEY4 = "elite-sheets-pacing-v1";
+  function loadPacing() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY4);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+  function savePacing(list) {
+    localStorage.setItem(STORE_KEY4, JSON.stringify(list));
+  }
+  function addDays(date, n) {
+    const d = /* @__PURE__ */ new Date(date + "T00:00:00");
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  var isWeekday = (date) => {
+    const i = (/* @__PURE__ */ new Date(date + "T00:00:00")).getDay();
+    return i >= 1 && i <= 5;
+  };
+  var inTerms = (date, terms) => terms.length === 0 || terms.some((t) => t.start && t.end && date >= t.start && date <= t.end);
+  function isSchoolDay(date, terms) {
+    return isWeekday(date) && inTerms(date, terms);
+  }
+  function nextSchoolDay(date, terms) {
+    let d = date;
+    for (let i = 0; i < 400; i++) {
+      if (isSchoolDay(d, terms)) return d;
+      d = addDays(d, 1);
+    }
+    return date;
+  }
+  function shiftSchoolDays(date, n, terms) {
+    let d = nextSchoolDay(date, terms);
+    for (let i = 0; i < n; i++) {
+      d = nextSchoolDay(addDays(d, 1), terms);
+    }
+    return d;
+  }
+  function generatePlan(titles, start, perWeek, terms) {
+    const k = Math.min(5, Math.max(1, Math.round(perWeek)));
+    const first = nextSchoolDay(start, terms);
+    return titles.map((t, i) => ({
+      id: Math.random().toString(36).slice(2, 10),
+      title: t.trim(),
+      plannedDate: shiftSchoolDays(first, Math.round(i * 5 / k), terms),
+      taughtDate: ""
+    }));
+  }
+  function shiftPlan(lessons, fromDate, days2, terms) {
+    return lessons.map((l) => {
+      if (l.taughtDate || l.plannedDate < fromDate) return l;
+      return { ...l, plannedDate: shiftSchoolDays(l.plannedDate, days2, terms) };
+    });
+  }
+  function statusOf(lessons, today) {
+    const taught = lessons.filter((l) => l.taughtDate).length;
+    const open = lessons.filter((l) => !l.taughtDate).sort((a, b) => a.plannedDate.localeCompare(b.plannedDate));
+    const behind = open.filter((l) => l.plannedDate < today).length;
+    return { total: lessons.length, taught, remaining: open.length, behind, nextDate: open[0]?.plannedDate ?? null };
+  }
+  function behindReminders(list, today) {
+    return list.map((c) => ({ c, s: statusOf(c.lessons, today) })).filter((x) => x.s.behind > 0).map((x) => ({ key: `pace-${x.c.id}-${today}`, text: `${x.c.name}: ${x.s.behind} lesson(s) are behind plan.` }));
+  }
+  function newId4() {
+    return Math.random().toString(36).slice(2, 10);
+  }
+  function esc4(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+  function todayLocal3() {
+    const d = /* @__PURE__ */ new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  function renderPacing(root, toast2, terms) {
+    let classes = loadPacing();
+    let activeId = classes[0]?.id ?? "";
+    const persist = () => savePacing(classes);
+    const current = () => classes.find((c) => c.id === activeId);
+    const today = todayLocal3();
+    const draw = () => {
+      const cls = current();
+      if (!cls) {
+        root.innerHTML = `<div class="page-heading"><div><h1>Pacing</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Create a class to plan its scheme of work. Saved in this browser only.</p></div></div>
+        <div class="panel" style="padding:20px;display:grid;gap:10px;max-width:520px">
+          <label>Class and subject <input id="pc-new-name" placeholder="e.g. 8A Maths"></label>
+          <div><button class="btn primary" id="pc-new">Create class</button></div></div>`;
+        root.querySelector("#pc-new").onclick = () => {
+          const name = root.querySelector("#pc-new-name").value.trim();
+          if (!name) {
+            toast2("Name the class and subject.", true);
+            return;
+          }
+          const c = { id: newId4(), name, lessons: [] };
+          classes.push(c);
+          activeId = c.id;
+          persist();
+          draw();
+        };
+        return;
+      }
+      const s = statusOf(cls.lessons, today);
+      const options = classes.map((c) => `<option value="${c.id}" ${c.id === activeId ? "selected" : ""}>${esc4(c.name)}</option>`).join("");
+      const rows = cls.lessons.map((l, i) => {
+        const late = !l.taughtDate && l.plannedDate < today;
+        return `<tr style="${late ? "background:var(--bad-soft)" : ""}"><td>${i + 1}</td><td><input value="${esc4(l.title)}" data-lt="${i}" aria-label="Lesson ${i + 1} title" style="min-width:200px"></td>
+        <td><input type="date" value="${l.plannedDate}" data-lp="${i}" aria-label="Planned date for lesson ${i + 1}"></td>
+        <td><label style="white-space:nowrap"><input type="checkbox" data-tc="${i}" ${l.taughtDate ? "checked" : ""}> Taught</label>
+        ${l.taughtDate ? `<input type="date" value="${l.taughtDate}" data-td="${i}" aria-label="Date taught">` : ""}</td>
+        <td>${late ? '<span style="color:var(--bad)">Behind</span>' : ""}</td>
+        <td><button class="btn small" data-dl="${i}" aria-label="Remove lesson ${i + 1}">Remove</button></td></tr>`;
+      }).join("");
+      root.innerHTML = `<div class="page-heading"><div><h1>Pacing</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Plan the scheme of work on school days, tick lessons as taught, and move the plan when a day is lost.</p></div></div>
+      <div class="panel" style="padding:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="pc-select" aria-label="Choose class">${options}</select>
+        <button class="btn" id="pc-new-open">New class</button>
+        <button class="btn" id="pc-delete">Delete class</button>
+      </div>
+      <div class="panel" style="padding:16px;margin-top:14px;display:flex;gap:18px;flex-wrap:wrap;font-size:14px">
+        <span><strong>${s.taught}</strong> of ${s.total} taught</span>
+        <span style="color:${s.behind ? "var(--bad)" : "var(--good)"}"><strong>${s.behind}</strong> behind plan</span>
+        <span>Next lesson: ${s.nextDate ?? "none left"}</span>
+        ${terms.length ? "" : '<span style="color:var(--warn)">Enter term dates in the Planner so breaks are skipped.</span>'}
+      </div>
+      <div class="panel" style="padding:16px;margin-top:14px">
+        <h2 style="font-size:17px;margin:0 0 10px">Build the plan</h2>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 8px">One lesson per line. Lessons are placed on school days from the start date.</p>
+        <textarea id="pc-titles" rows="4" style="width:100%" placeholder="Number patterns&#10;Fractions&#10;Ratio and rate"></textarea>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">
+          <label>Start <input type="date" id="pc-start" value="${today}"></label>
+          <label>Lessons per week <input type="number" id="pc-perweek" min="1" max="5" value="4" style="width:80px"></label>
+          <button class="btn primary" id="pc-build">Add lessons to plan</button>
+        </div>
+      </div>
+      <div class="panel" style="padding:16px;margin-top:14px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+          <h2 style="font-size:17px;margin:0">Lessons</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <label>Lost a day on <input type="date" id="pc-lost-date" value="${today}"></label>
+            <label>School days <input type="number" id="pc-lost-n" min="1" max="20" value="1" style="width:70px"></label>
+            <button class="btn" id="pc-shift">Move the plan</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:14px">
+          <thead><tr><th style="text-align:left">#</th><th style="text-align:left">Lesson</th><th style="text-align:left">Planned</th><th style="text-align:left">Taught</th><th></th><th></th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" style="color:var(--muted)">No lessons yet. Build the plan above.</td></tr>'}</tbody>
+        </table></div>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px">Moving the plan only changes lessons not yet taught, and keeps their order.</p>
+      </div>`;
+      wire(cls);
+    };
+    const wire = (cls) => {
+      root.querySelector("#pc-select").onchange = (e) => {
+        activeId = e.target.value;
+        draw();
+      };
+      root.querySelector("#pc-new-open").onclick = () => {
+        activeId = "";
+        draw();
+      };
+      root.querySelector("#pc-delete").onclick = () => {
+        if (!confirm(`Delete the plan for "${cls.name}"?`)) return;
+        classes = classes.filter((c) => c.id !== cls.id);
+        activeId = classes[0]?.id ?? "";
+        persist();
+        draw();
+      };
+      root.querySelector("#pc-build").onclick = () => {
+        const titles = root.querySelector("#pc-titles").value.split("\n").map((t) => t.trim()).filter(Boolean);
+        if (!titles.length) {
+          toast2("Type at least one lesson.", true);
+          return;
+        }
+        const start = root.querySelector("#pc-start").value;
+        const perWeek = Number(root.querySelector("#pc-perweek").value) || 4;
+        if (!start) {
+          toast2("Choose a start date.", true);
+          return;
+        }
+        const planned = generatePlan(titles, start, perWeek, terms);
+        cls.lessons = [...cls.lessons, ...planned];
+        persist();
+        toast2(`${planned.length} lesson(s) added.`);
+        draw();
+      };
+      root.querySelectorAll("[data-lt]").forEach((i) => i.onchange = () => {
+        cls.lessons[Number(i.dataset.lt)].title = i.value.trim();
+        persist();
+        draw();
+      });
+      root.querySelectorAll("[data-lp]").forEach((i) => i.onchange = () => {
+        cls.lessons[Number(i.dataset.lp)].plannedDate = i.value;
+        persist();
+        draw();
+      });
+      root.querySelectorAll("[data-tc]").forEach((i) => i.onchange = () => {
+        const l = cls.lessons[Number(i.dataset.tc)];
+        l.taughtDate = i.checked ? today : "";
+        persist();
+        draw();
+      });
+      root.querySelectorAll("[data-td]").forEach((i) => i.onchange = () => {
+        cls.lessons[Number(i.dataset.td)].taughtDate = i.value;
+        persist();
+        draw();
+      });
+      root.querySelectorAll("[data-dl]").forEach((b) => b.onclick = () => {
+        cls.lessons.splice(Number(b.dataset.dl), 1);
+        persist();
+        draw();
+      });
+      root.querySelector("#pc-shift").onclick = () => {
+        const from = root.querySelector("#pc-lost-date").value;
+        const n = Number(root.querySelector("#pc-lost-n").value);
+        if (!from || !n || n < 1) {
+          toast2("Choose the date and the number of school days lost.", true);
+          return;
+        }
+        cls.lessons = shiftPlan(cls.lessons, from, n, terms);
+        persist();
+        toast2(`Plan moved by ${n} school day(s).`);
+        draw();
+      };
+    };
+    draw();
+  }
+
+  // web/planner.ts
+  var WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  var STORE_KEY5 = "elite-sheets-planner-v1";
+  var MAX_PHOTO_BYTES = 15e5;
+  var ABSENCE_ALERT_RUN = 3;
+  var REMINDER_LOOKAHEAD_DAYS = 14;
+  function loadPlanner() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY5);
+      if (raw) return JSON.parse(raw);
+    } catch {
+    }
+    return { year: (/* @__PURE__ */ new Date()).getFullYear(), terms: [], periods: [], events: [] };
+  }
+  function savePlanner(p) {
+    localStorage.setItem(STORE_KEY5, JSON.stringify(p));
+  }
+  var isDate2 = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+  var isTime = (s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
+  function addDays2(date, n) {
+    const d = /* @__PURE__ */ new Date(date + "T00:00:00");
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function mondayOf(date) {
+    const i = (/* @__PURE__ */ new Date(date + "T00:00:00")).getDay();
+    return addDays2(date, i === 0 ? -6 : 1 - i);
+  }
+  function validatePeriod(p, existing) {
+    const problems = [];
+    if (!p.day || !WEEKDAYS.includes(p.day)) problems.push("Choose a day.");
+    if (!p.start || !isTime(p.start) || !p.end || !isTime(p.end)) problems.push("Enter start and end times as HH:MM.");
+    else if (p.end <= p.start) problems.push("The end time must be after the start time.");
+    if (!p.label || !p.label.trim()) problems.push("Name the lesson or subject.");
+    if (p.day && p.start && p.end && isTime(p.start) && isTime(p.end) && p.end > p.start) {
+      const newStart = p.start, newEnd = p.end;
+      const clash = existing.find((e) => e.day === p.day && e.id !== p.id && newStart < e.end && e.start < newEnd);
+      if (clash) problems.push(`This clashes with ${clash.label} (${clash.start} to ${clash.end}).`);
+    }
+    return problems;
+  }
+  function validateTerms(terms) {
+    const problems = [];
+    for (const t of terms) {
+      if (!isDate2(t.start) || !isDate2(t.end)) problems.push(`Term ${t.term}: enter both dates.`);
+      else if (t.end < t.start) problems.push(`Term ${t.term}: the end date is before the start date.`);
+    }
+    return problems;
+  }
+  function weekView(data, date) {
+    const monday = mondayOf(date);
+    return WEEKDAYS.map((day, i) => {
+      const dayDate = addDays2(monday, i);
+      const periods = data.periods.filter((p) => p.day === day).sort((a, b) => a.start.localeCompare(b.start));
+      const events = data.events.filter((e) => e.date === dayDate);
+      const termNote = data.terms.filter((t) => dayDate === t.start || dayDate === t.end).map((t) => dayDate === t.start ? `Term ${t.term} starts` : `Term ${t.term} ends`);
+      return { day, date: dayDate, periods, events, termNote };
+    });
+  }
+  function trailingAbsenceRun(reg, learnerId) {
+    const days2 = Object.keys(reg.days).filter((d) => Object.keys(reg.days[d]).length > 0).sort();
+    let run = 0;
+    for (let i = days2.length - 1; i >= 0; i--) {
+      if (reg.days[days2[i]][learnerId] === "A") run++;
+      else break;
+    }
+    return run;
+  }
+  function reminders(today, data, registers, cptdProfile = loadProfile()) {
+    const out = [];
+    const horizon = addDays2(today, REMINDER_LOOKAHEAD_DAYS);
+    const inWindow = (d) => d >= today && d <= horizon;
+    const cs = summarise(cptdProfile);
+    const win = windowStatus(today);
+    if (win) {
+      if (win.state === "open") {
+        out.push({ key: `cptd-open-${win.window.start}`, date: today, kind: "cptd", text: `${win.window.label} is open until ${win.window.end}.${cs?.unreported ? ` ${cs.unreported} activity(ies) not yet reported to SACE.` : ""}` });
+      } else if (win.daysAway <= REMINDER_LOOKAHEAD_DAYS) {
+        out.push({ key: `cptd-soon-${win.window.start}`, date: win.window.start, kind: "cptd", text: `${win.window.label} opens in ${win.daysAway} day(s).` });
+      }
+    }
+    for (const reg of registers) {
+      for (const l of reg.learners) {
+        const run = trailingAbsenceRun(reg, l.id);
+        if (run >= ABSENCE_ALERT_RUN) {
+          out.push({ key: `reg-${reg.id}-${l.id}-${run}`, date: today, kind: "register", text: `${reg.name}: learner ${l.id} has been absent ${run} school days in a row. Tell the principal.` });
+        }
+      }
+    }
+    for (const t of data.terms) {
+      if (inWindow(t.start)) out.push({ key: `term-start-${t.term}-${t.start}`, date: t.start, kind: "term", text: `Term ${t.term} starts.` });
+      if (inWindow(t.end)) out.push({ key: `term-end-${t.term}-${t.end}`, date: t.end, kind: "term", text: `Term ${t.term} ends.` });
+    }
+    for (const e of data.events) {
+      if (inWindow(e.date)) out.push({ key: `event-${e.id}`, date: e.date, kind: "event", text: e.text });
+    }
+    for (const b of behindReminders(loadPacing(), today)) out.push({ key: b.key, date: today, kind: "pacing", text: b.text });
+    return out.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  var SHOWN_KEY = "elite-sheets-reminders-shown-v1";
+  function unshownReminders(list) {
+    let shown = [];
+    try {
+      shown = JSON.parse(localStorage.getItem(SHOWN_KEY) || "[]");
+    } catch {
+    }
+    return list.filter((r) => !shown.includes(r.key));
+  }
+  function markShown(list) {
+    let shown = [];
+    try {
+      shown = JSON.parse(localStorage.getItem(SHOWN_KEY) || "[]");
+    } catch {
+    }
+    const next = Array.from(/* @__PURE__ */ new Set([...shown, ...list.map((r) => r.key)])).slice(-500);
+    localStorage.setItem(SHOWN_KEY, JSON.stringify(next));
+  }
+  async function readPhoto(file) {
+    if (file.size > MAX_PHOTO_BYTES) throw new Error("That file is too large to keep in this browser (limit 1.5 MB).");
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve({ name: file.name, dataUrl: String(r.result) });
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(file);
+    });
+  }
+
+  // web/planner-ui.ts
+  function newId5() {
+    return Math.random().toString(36).slice(2, 10);
+  }
+  function esc5(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+  function todayLocal4() {
+    const d = /* @__PURE__ */ new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  function notifyDueReminders() {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const list = unshownReminders(reminders(todayLocal4(), loadPlanner(), loadRegisters()));
+    const now = list.filter((r) => r.date <= todayLocal4()).slice(0, 3);
+    for (const r of now) {
+      new Notification("Elite Sheets reminder", { body: r.text });
+    }
+    if (now.length) markShown(now);
+  }
+  function renderPlanner(root, toast2) {
+    let data = loadPlanner();
+    let viewDate = todayLocal4();
+    const persist = () => savePlanner(data);
+    const termsDraft = () => {
+      const rows = [1, 2, 3, 4].map((t) => {
+        const s = data.terms.find((x) => x.term === t);
+        return { term: t, start: s?.start ?? "", end: s?.end ?? "" };
+      });
+      return rows;
+    };
+    const draw = () => {
+      const week = weekView(data, viewDate);
+      const rem = reminders(todayLocal4(), data, loadRegisters());
+      const notifyState = typeof Notification === "undefined" ? "This browser does not support notifications." : Notification.permission === "granted" ? "Notifications are on." : Notification.permission === "denied" ? "Notifications are blocked in this browser settings." : "Notifications are off.";
+      const termRows = termsDraft().map((t) => `<tr><td>Term ${t.term}</td><td><input type="date" data-term="${t.term}" data-f="start" value="${t.start}" aria-label="Term ${t.term} start"></td><td><input type="date" data-term="${t.term}" data-f="end" value="${t.end}" aria-label="Term ${t.term} end"></td></tr>`).join("");
+      const periodRows = WEEKDAYS.map((d) => {
+        const ps = data.periods.filter((p) => p.day === d).sort((a, b) => a.start.localeCompare(b.start));
+        return ps.length ? ps.map((p) => `<tr><td>${d}</td><td>${p.start}\u2013${p.end}</td><td>${esc5(p.label)}</td><td>${esc5(p.room)}</td><td><button class="btn small" data-del-p="${p.id}" aria-label="Remove ${esc5(p.label)}">Remove</button></td></tr>`).join("") : "";
+      }).join("");
+      const grid = week.map((d) => `<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;min-width:0">
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px">${d.day} <span style="color:var(--muted);font-weight:400;font-size:12px">${d.date.slice(8)}</span></div>
+        ${d.termNote.map((t) => `<div style="font-size:12px;color:var(--accent-hover);background:var(--accent-soft);border-radius:8px;padding:4px 6px;margin-bottom:6px">${esc5(t)}</div>`).join("")}
+        ${d.events.map((e) => `<div style="font-size:12px;background:var(--gold-soft);border-radius:8px;padding:4px 6px;margin-bottom:6px">${esc5(e.text)}</div>`).join("")}
+        ${d.periods.map((p) => `<div style="font-size:13px;border-left:3px solid var(--accent);padding:4px 6px;margin-bottom:6px"><strong>${p.start}</strong> ${esc5(p.label)}${p.room ? `<br><span style="color:var(--muted);font-size:12px">${esc5(p.room)}</span>` : ""}</div>`).join("") || '<div style="font-size:12px;color:var(--muted)">No periods</div>'}
+      </div>`).join("");
+      const reminderList = rem.length ? rem.map((r) => `<li style="margin-bottom:6px"><strong>${r.date}</strong> ${esc5(r.text)}</li>`).join("") : '<li style="color:var(--muted)">Nothing due in the next two weeks.</li>';
+      root.innerHTML = `<div class="page-heading"><div><h1>Planner</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Your timetable, term dates, weekly calendar and reminders. Saved in this browser only.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="pl-open-helper">Open Sheet Helper</button><button class="btn" id="pl-open-pacing">Open pacing tracker</button></div></div>
+      <div class="panel" style="padding:16px">
+        <h2 style="font-size:17px;margin:0 0 10px">Reminders</h2>
+        <ul style="margin:0 0 10px 18px;padding:0;font-size:14px">${reminderList}</ul>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="font-size:13px;color:var(--muted)">${notifyState}</span>
+        ${typeof Notification !== "undefined" && Notification.permission === "default" ? '<button class="btn small" id="pl-notify">Turn on notifications</button>' : ""}</div>
+      </div>
+      <div class="panel" style="padding:16px;margin-top:14px">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center"><h2 style="font-size:17px;margin:0">Weekly calendar</h2>
+          <label>Week containing <input type="date" id="pl-view" value="${viewDate}"></label></div>
+        <div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:12px">${grid}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px">
+          <input type="date" id="pl-ev-date" value="${viewDate}" aria-label="Event date">
+          <input id="pl-ev-text" placeholder="Event or reminder, e.g. Exam paper due" aria-label="Event text" style="min-width:240px">
+          <button class="btn" id="pl-ev-add">Add event</button>
+        </div>
+        <ul style="margin:10px 0 0 18px;padding:0;font-size:13px">${data.events.slice().sort((a, b) => a.date.localeCompare(b.date)).map((e) => `<li style="margin-bottom:4px">${e.date}: ${esc5(e.text)} <button class="btn small" data-del-e="${e.id}">Remove</button></li>`).join("") || '<li style="color:var(--muted)">No events yet.</li>'}</ul>
+      </div>
+      <div class="panel" style="padding:16px;margin-top:14px">
+        <h2 style="font-size:17px;margin:0 0 10px">Term dates</h2>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 8px">Enter the dates your school or province publishes for ${data.year}.</p>
+        <label>Year <input type="number" id="pl-year" value="${data.year}" style="width:110px"></label>
+        <table style="border-collapse:collapse;margin-top:8px;font-size:14px"><thead><tr><th style="text-align:left">Term</th><th style="text-align:left">Starts</th><th style="text-align:left">Ends</th></tr></thead><tbody>${termRows}</tbody></table>
+        <div style="margin-top:10px"><button class="btn primary" id="pl-terms-save">Save term dates</button></div>
+      </div>
+      <div class="panel" style="padding:16px;margin-top:14px">
+        <h2 style="font-size:17px;margin:0 0 10px">Timetable</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="pl-p-day" aria-label="Day">${WEEKDAYS.map((d) => `<option>${d}</option>`).join("")}</select>
+          <input type="time" id="pl-p-start" value="08:00" aria-label="Start time">
+          <input type="time" id="pl-p-end" value="08:45" aria-label="End time">
+          <input id="pl-p-label" placeholder="Class or subject, e.g. 8A Maths" aria-label="Class or subject" style="min-width:200px">
+          <input id="pl-p-room" placeholder="Room (optional)" aria-label="Room" style="width:140px">
+          <button class="btn primary" id="pl-p-add">Add period</button>
+        </div>
+        <div style="overflow-x:auto;margin-top:12px"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr><th style="text-align:left">Day</th><th style="text-align:left">Time</th><th style="text-align:left">Class or subject</th><th style="text-align:left">Room</th><th></th></tr></thead><tbody>${periodRows || '<tr><td colspan="5" style="color:var(--muted)">No periods yet.</td></tr>'}</tbody></table></div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+          ${data.timetablePhoto ? `<p style="font-size:14px">Paper timetable stored: <strong>${esc5(data.timetablePhoto.name)}</strong> <a class="btn small" href="${data.timetablePhoto.dataUrl}" download="${esc5(data.timetablePhoto.name)}">Open</a> <button class="btn small" id="pl-photo-remove">Remove</button></p>` : ""}
+          <label style="font-size:14px">Attach a photo or file of your timetable (kept for reference) <input type="file" id="pl-photo" accept="image/*,.pdf"></label>
+        </div>
+      </div>`;
+      wire();
+    };
+    const wire = () => {
+      root.querySelector("#pl-notify")?.addEventListener("click", async () => {
+        if (typeof Notification === "undefined") return;
+        const r = await Notification.requestPermission();
+        toast2(r === "granted" ? "Notifications turned on." : "Notifications were not allowed.", r !== "granted");
+        draw();
+      });
+      root.querySelector("#pl-open-helper").onclick = () => window.dispatchEvent(new CustomEvent("elite-nav", { detail: "helper" }));
+      root.querySelector("#pl-open-pacing").onclick = () => window.dispatchEvent(new CustomEvent("elite-nav", { detail: "pacing" }));
+      root.querySelector("#pl-view").onchange = (e) => {
+        viewDate = e.target.value || viewDate;
+        draw();
+      };
+      root.querySelector("#pl-ev-add").onclick = () => {
+        const date = root.querySelector("#pl-ev-date").value;
+        const text = root.querySelector("#pl-ev-text").value.trim();
+        if (!date || !text) {
+          toast2("Enter a date and a short description.", true);
+          return;
+        }
+        data.events.push({ id: newId5(), date, text });
+        persist();
+        toast2("Event added.");
+        draw();
+      };
+      root.querySelectorAll("[data-del-e]").forEach((b) => b.onclick = () => {
+        data.events = data.events.filter((e) => e.id !== b.dataset.delE);
+        persist();
+        draw();
+      });
+      root.querySelector("#pl-terms-save").onclick = () => {
+        const next = [];
+        root.querySelectorAll("[data-term]").forEach((i) => {
+          const t = Number(i.dataset.term);
+          let row = next.find((x) => x.term === t);
+          if (!row) {
+            row = { term: t, start: "", end: "" };
+            next.push(row);
+          }
+          row[i.dataset.f] = i.value;
+        });
+        const filled = next.filter((t) => t.start || t.end);
+        const problems = validateTerms(filled);
+        if (problems.length) {
+          toast2(problems[0], true);
+          return;
+        }
+        data.terms = filled;
+        data.year = Number(root.querySelector("#pl-year").value) || data.year;
+        persist();
+        toast2("Term dates saved.");
+        draw();
+      };
+      root.querySelector("#pl-p-add").onclick = () => {
+        const p = {
+          id: newId5(),
+          day: root.querySelector("#pl-p-day").value,
+          start: root.querySelector("#pl-p-start").value,
+          end: root.querySelector("#pl-p-end").value,
+          label: root.querySelector("#pl-p-label").value.trim(),
+          room: root.querySelector("#pl-p-room").value.trim()
+        };
+        const problems = validatePeriod(p, data.periods);
+        if (problems.length) {
+          toast2(problems[0], true);
+          return;
+        }
+        data.periods.push(p);
+        persist();
+        toast2("Period added.");
+        draw();
+      };
+      root.querySelectorAll("[data-del-p]").forEach((b) => b.onclick = () => {
+        data.periods = data.periods.filter((p) => p.id !== b.dataset.delP);
+        persist();
+        draw();
+      });
+      root.querySelector("#pl-photo").onchange = async (e) => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        try {
+          data.timetablePhoto = await readPhoto(f);
+          persist();
+          toast2("Timetable stored.");
+          draw();
+        } catch (err) {
+          toast2(err.message, true);
+        }
+      };
+      root.querySelector("#pl-photo-remove")?.addEventListener("click", () => {
+        delete data.timetablePhoto;
+        persist();
+        draw();
+      });
+    };
+    draw();
+  }
+
+  // web/helper.ts
+  var KIND_LABEL = { lesson: "Lesson plan", test: "Class test with memo", assignment: "Assignment with rubric" };
+  function esc6(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+  function draftText(out) {
+    const d = out.draft;
+    const lines = [d.title || KIND_LABEL[out.kind], ""];
+    if (out.kind === "lesson") {
+      lines.push("Objectives:", ...(d.objectives || []).map((x) => "- " + x), "", "Steps:");
+      for (const s of d.steps || []) lines.push(`- ${s.minutes} min: ${s.activity}`);
+      lines.push("", "Resources: " + (d.resources || []).join(", "), "Assessment: " + (d.assessment || ""), "Homework: " + (d.homework || ""));
+    } else if (out.kind === "test") {
+      lines.push(d.instructions || "", "");
+      for (const q of d.questions || []) lines.push(`${q.number}. (${q.marks}) ${q.text}`, `   Memo: ${q.memo}`);
+    } else {
+      lines.push("Brief: " + (d.brief || ""), "", "Rubric:");
+      for (const r of d.rubric || []) lines.push(`- ${r.criterion} (${r.marks}): ${r.descriptor}`);
+    }
+    return lines.join("\n");
+  }
+  function renderDraft(out) {
+    const d = out.draft;
+    const c = out.check;
+    const checkLine = out.kind === "lesson" ? `Steps add up to ${c.minutes} minutes, as planned.` : `Marks add up to ${c.marks}, as planned.`;
+    let body = "";
+    if (out.kind === "lesson") {
+      body = `<h3>Objectives</h3><ul>${(d.objectives || []).map((x) => `<li>${esc6(x)}</li>`).join("")}</ul>
+      <h3>Steps</h3><table class="sh-table"><thead><tr><th>Minutes</th><th>Activity</th></tr></thead><tbody>${(d.steps || []).map((s) => `<tr><td>${esc6(String(s.minutes))}</td><td>${esc6(s.activity)}</td></tr>`).join("")}</tbody></table>
+      <p><strong>Resources:</strong> ${esc6((d.resources || []).join(", "))}</p>
+      <p><strong>Assessment:</strong> ${esc6(d.assessment || "")}</p>
+      <p><strong>Homework:</strong> ${esc6(d.homework || "")}</p>`;
+    } else if (out.kind === "test") {
+      body = `<p>${esc6(d.instructions || "")}</p><table class="sh-table"><thead><tr><th>No.</th><th>Question</th><th>Marks</th><th>Memo</th></tr></thead><tbody>${(d.questions || []).map((q) => `<tr><td>${esc6(String(q.number))}</td><td>${esc6(q.text)}</td><td>${esc6(String(q.marks))}</td><td>${esc6(q.memo)}</td></tr>`).join("")}</tbody></table>`;
+    } else {
+      body = `<p><strong>Brief:</strong> ${esc6(d.brief || "")}</p><table class="sh-table"><thead><tr><th>Criterion</th><th>Marks</th><th>Descriptor</th></tr></thead><tbody>${(d.rubric || []).map((r) => `<tr><td>${esc6(r.criterion)}</td><td>${esc6(String(r.marks))}</td><td>${esc6(r.descriptor)}</td></tr>`).join("")}</tbody></table>`;
+    }
+    return `<div class="panel" style="padding:16px;margin-top:14px" id="sh-result">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+      <div><h2 style="font-size:18px;margin:0">${esc6(d.title || KIND_LABEL[out.kind])}</h2>
+      <p style="font-size:13px;color:var(--muted);margin:4px 0 0">Grade ${esc6(out.grade)} \xB7 ${esc6(out.subject)} \xB7 ${esc6(out.topic)}</p></div>
+      <div style="display:flex;gap:8px"><button class="btn small" id="sh-copy">Copy text</button><button class="btn small" id="sh-print">Print</button></div>
+    </div>
+    <p role="status" style="font-size:13px;color:var(--accent-hover);background:var(--accent-soft);border-radius:8px;padding:6px 10px;margin:12px 0">\u2713 ${esc6(checkLine)} Review before use.</p>
+    ${body}
+  </div>`;
+  }
+  function chatHtml(turns) {
+    const log = turns.length ? turns.map((t) => `<article class="msg ${t.role === "user" ? "user" : ""}"><span class="msg-sender">${t.role === "user" ? "You" : "Helper"}</span><div class="bubble">${esc6(t.text)}</div></article>`).join("") : '<p style="font-size:13px;color:var(--muted)">Ask about CAPS content, check that a topic matches the outcomes, or ask for a change to the draft above.</p>';
+    return `<div class="panel" style="padding:16px;margin-top:14px" aria-label="Talk to Sheet Helper">
+    <h2 style="font-size:17px;margin:0 0 10px">Talk to Sheet Helper</h2>
+    <div id="sh-chat-log" class="messages" tabindex="0" aria-live="polite" style="max-height:340px;overflow:auto">${log}</div>
+    <form id="sh-chat-form" class="chat-compose" style="margin-top:10px">
+      <textarea id="sh-chat-text" rows="2" maxlength="1000" aria-label="Message Sheet Helper" placeholder="e.g. Does this match the CAPS outcome for fractions? Or: make question 2 harder"></textarea>
+      <button class="btn primary small" id="sh-chat-send" type="submit">Send</button>
+    </form>
+    <p style="font-size:12px;color:var(--muted);margin:8px 0 0">Do not type learner names or numbers here. Only what you write in this box is sent.</p>
+  </div>`;
+  }
+  function renderHelper(root, api2, toast2) {
+    let info = null;
+    let last = null;
+    let turns = [];
+    let chatBusy = false;
+    let chosenGrade = "8";
+    const subjectsFor = (grade) => info?.subjects?.[grade] || [];
+    const draw = () => {
+      const grades = info?.grades || ["R", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
+      const used = info?.used || {};
+      const limits = info?.limits || { lesson: 20, assessment: 10, chat: 60 };
+      const left = (k) => Math.max(0, (limits[k] ?? 0) - (used[k] ?? 0));
+      const notReady = info && !info.configured ? '<p role="status" style="font-size:13px;background:var(--gold-soft);border-radius:8px;padding:8px 10px;margin:10px 0">Sheet Helper is not switched on yet. You can see the form, but drafts and answers cannot be created until the service is connected.</p>' : "";
+      root.innerHTML = `<div class="page-heading"><div><h1>Sheet Helper</h1>
+      <p style="font-size:13px;color:var(--muted);margin-top:4px">Drafts for lesson plans, class tests with memos, and assignments with rubrics. Aligned to CAPS, in English. Check every draft against your CAPS documents before you use it.</p></div></div>
+      <div class="panel" style="padding:16px">
+        <p style="font-size:13px;margin:0 0 10px">Left this month: <strong>${left("lesson")}</strong> of ${limits.lesson} lesson plans, <strong>${left("assessment")}</strong> of ${limits.assessment} tests or assignments, and <strong>${left("chat")}</strong> of ${limits.chat} conversation messages.</p>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 12px">Only the grade, subject, topic, mark totals and what you type in the conversation are sent. Learner names, IDs and marks never leave your browser. Do not type a learner's name anywhere in Sheet Helper.</p>
+        ${notReady}
+        <div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:end">
+          <label>Type<select id="sh-kind">${Object.keys(KIND_LABEL).map((k) => `<option value="${k}">${KIND_LABEL[k]}</option>`).join("")}</select></label>
+          <label>Grade<select id="sh-grade">${grades.map((g) => `<option value="${g}">Grade ${g}</option>`).join("")}</select></label>
+          <label>CAPS subject<select id="sh-subject"></select></label>
+          <label>Length (minutes)<input id="sh-num" type="number" min="20" max="120" value="45"></label>
+          <label style="grid-column:1/-1">Topic<input id="sh-topic" maxlength="120" placeholder="e.g. Fractions: adding unlike denominators"></label>
+        </div>
+        <div style="margin-top:12px"><button class="btn" id="sh-make">Create draft</button> <span id="sh-busy" style="font-size:13px;color:var(--muted)"></span></div>
+      </div>
+      <div id="sh-out"></div>
+      <div id="sh-chat"></div>`;
+      const kind = root.querySelector("#sh-kind");
+      const grade = root.querySelector("#sh-grade");
+      const subject = root.querySelector("#sh-subject");
+      const num = root.querySelector("#sh-num");
+      const fillSubjects = () => {
+        const list = subjectsFor(grade.value);
+        subject.innerHTML = list.map((s) => `<option value="${esc6(s)}">${esc6(s)}</option>`).join("");
+      };
+      const fillNum = () => {
+        const lesson = kind.value === "lesson";
+        num.min = lesson ? "20" : "10";
+        num.max = lesson ? "120" : "100";
+        num.value = lesson ? "45" : "50";
+        const label = num.parentElement;
+        if (label && label.firstChild) label.firstChild.textContent = lesson ? "Length (minutes) " : "Total marks ";
+      };
+      grade.value = chosenGrade;
+      grade.onchange = () => {
+        chosenGrade = grade.value;
+        fillSubjects();
+      };
+      kind.onchange = fillNum;
+      fillSubjects();
+      fillNum();
+      if (last) root.querySelector("#sh-out").innerHTML = renderDraft(last);
+      root.querySelector("#sh-chat").innerHTML = last ? chatHtml(turns) : "";
+      wire();
+    };
+    const currentSettings = () => {
+      const kind = root.querySelector("#sh-kind").value;
+      const grade = root.querySelector("#sh-grade").value;
+      const subject = root.querySelector("#sh-subject").value;
+      const n = Number(root.querySelector("#sh-num").value);
+      return { kind, grade, subject, n };
+    };
+    const wire = () => {
+      const make = root.querySelector("#sh-make");
+      make.onclick = async () => {
+        const { kind, grade, subject, n } = currentSettings();
+        const topic = root.querySelector("#sh-topic").value.trim();
+        if (topic.length < 3) {
+          toast2("Describe the topic in a few words.", true);
+          return;
+        }
+        const payload = { kind, grade, subject, topic };
+        if (kind === "lesson") payload.minutes = n;
+        else payload.total_marks = n;
+        const busy2 = root.querySelector("#sh-busy");
+        make.disabled = true;
+        busy2.textContent = "Writing the draft. This can take a minute\u2026";
+        try {
+          last = await api2("/api/helper/generate", payload);
+          turns = [];
+          toast2("Draft ready. Review it before use.");
+          info = await api2("/api/helper/usage", void 0, "GET");
+          draw();
+        } catch (err) {
+          const msg = err?.message || "Sheet Helper could not write this draft.";
+          toast2(msg, true);
+          busy2.textContent = msg;
+        } finally {
+          make.disabled = false;
+        }
+      };
+      wireOutput();
+      wireChat();
+    };
+    const wireOutput = () => {
+      const copy = root.querySelector("#sh-copy");
+      if (copy && last) copy.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(draftText(last));
+          toast2("Draft copied.");
+        } catch {
+          toast2("Copy did not work in this browser. Select the text and copy it.", true);
+        }
+      };
+      const print = root.querySelector("#sh-print");
+      if (print) print.onclick = () => window.print();
+    };
+    const wireChat = () => {
+      const form = root.querySelector("#sh-chat-form");
+      if (!form) return;
+      const log = root.querySelector("#sh-chat-log");
+      if (log) log.scrollTop = log.scrollHeight;
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (chatBusy || !last) return;
+        const input = root.querySelector("#sh-chat-text");
+        const text = input.value.trim();
+        if (!text) return;
+        const { kind, grade, subject, n } = currentSettings();
+        const next = [...turns, { role: "user", text }];
+        const history = next.slice(-12);
+        while (history.length && history[0].role !== "user") history.shift();
+        const payload = { kind, grade, subject, messages: history, current_draft: last.draft };
+        if (kind === "lesson") payload.minutes = n;
+        else payload.total_marks = n;
+        chatBusy = true;
+        turns = next;
+        root.querySelector("#sh-chat").innerHTML = chatHtml(turns);
+        wireChat();
+        const send = root.querySelector("#sh-chat-send");
+        if (send) send.disabled = true;
+        try {
+          const out = await api2("/api/helper/chat", payload);
+          turns = [...turns, { role: "assistant", text: out.reply }];
+          if (out.draft) {
+            last = { ...last, kind, grade, subject, draft: out.draft, check: out.check };
+            toast2("Draft updated and checked.");
+          }
+          info = await api2("/api/helper/usage", void 0, "GET");
+          draw();
+        } catch (err) {
+          turns = turns.slice(0, -1);
+          const msg = err?.message || "Sheet Helper could not answer this message.";
+          toast2(msg, true);
+          root.querySelector("#sh-chat").innerHTML = chatHtml(turns);
+          const again = root.querySelector("#sh-chat-text");
+          if (again) again.value = text;
+          wireChat();
+        } finally {
+          chatBusy = false;
+        }
+      };
+    };
+    (async () => {
+      try {
+        info = await api2("/api/helper/usage", void 0, "GET");
+      } catch {
+        info = { configured: false, used: {}, limits: { lesson: 20, assessment: 10, chat: 60 } };
+      }
+      draw();
+    })();
+    draw();
+  }
+
   // web/app.ts
   var $2 = (id) => document.getElementById(id);
   var escapeHTML = (x) => String(x ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -26947,21 +33482,16 @@
       defaultSample: "pivot",
       tabs: [
         { page: "workspace", label: "My Spreadsheet", iconName: "grid" },
-        { page: "quotes", label: "Quotes & Invoices", iconName: "dollar" },
-        { page: "templates", label: "Templates", iconName: "layers" },
         { page: "preferences", label: "Past Files & Settings", iconName: "settings" }
       ],
       cards: [
         { title: "\u{1F393} 1-Click Demo: School SA-SAMS (2 Files \u2192 1)", desc: "Watch it join Learner Bio + Subject Marks into 1 clean import sheet.", action: "sample:sasams_students" },
-        { title: "\u{1F4C2} 1-Click Demo: Merge a Whole Folder", desc: "Watch it combine 3 files into 1 Master Sheet, fix SA IDs & flag duplicates.", action: "sample:district_batch" },
         { title: "\u{1F4CA} 1-Click Demo: Monthly Branch Totals", desc: "Watch it combine regional monthly sheets and calculate Totals automatically.", action: "sample:pivot" }
       ],
       samples: [
         { val: "pivot", label: "Combine Monthly Sheets \u2192 Summary Table" },
         { val: "sasams_students", label: "School SA-SAMS (2 Files \u2192 1 Import Sheet)" },
-        { val: "district_batch", label: "Merge a Whole Folder of Files into 1 Sheet" },
-        { val: "direct", label: "Contact & Order List \u2192 Clean Excel Sheet" },
-        { val: "chat_map", label: "Match Different Column Names in 1 Click" }
+        { val: "direct", label: "Contact & Order List \u2192 Clean Excel Sheet" }
       ],
       builderPresetCmd: "Columns: Name, Email, Phone, Date, Category, Amount, Notes",
       builderPresetLabel: "Everyday Tracker Sheet",
@@ -26970,12 +33500,17 @@
     education: {
       label: "\u{1F393} School & District Office",
       shortName: "School",
-      badge: "SA-SAMS \xB7 Class Lists \xB7 Marks",
-      desc: "Combine SA-SAMS student & subject mark sheets, fix 13-digit SA IDs (including missing 0s for 2000\u20132009), calculate Pass Levels (1\u20137), and merge school folders.",
+      badge: "Gradebook \xB7 Weighted marks \xB7 CAPS levels",
+      desc: "Turn messy school marks into checked, shareable reports. Set weighted assessments, see term marks and CAPS levels, and download a clean Excel file. Your marks stay in this browser.",
       defaultSample: "sasams_students",
       tabs: [
-        { page: "workspace", label: "My School Spreadsheet", iconName: "grid" },
-        { page: "templates", label: "School Templates", iconName: "layers" },
+        { page: "gradebook", label: "My Gradebook", iconName: "grid" },
+        { page: "register", label: "Registers", iconName: "clipboard" },
+        { page: "cptd", label: "CPTD log", iconName: "shield" },
+        { page: "planner", label: "Planner", iconName: "clock" },
+        { page: "pacing", label: "Pacing", iconName: "chart" },
+        { page: "helper", label: "Sheet Helper", iconName: "spark" },
+        { page: "workspace", label: "Import an existing file", iconName: "grid" },
         { page: "preferences", label: "Past Files & Settings", iconName: "settings" }
       ],
       cards: [
@@ -26984,93 +33519,19 @@
         { title: "\u270F\uFE0F 1-Click Demo: Class & Fee Register", desc: "Generate a class list & tuition sheet with automatic Balance calculation.", action: "builder:student" }
       ],
       samples: [
-        { val: "sasams_students", label: "SA-SAMS 2-File Student & Subject Marks" },
-        { val: "district_batch", label: "Multi-School Folder Merge (Check SA IDs & Duplicates)" }
+        { val: "sasams_students", label: "SA-SAMS 2-File Student & Subject Marks" }
       ],
       builderPresetCmd: "Create a SA-SAMS student & tuition sheet",
       builderPresetLabel: "Class & Tuition Register",
       templateCategories: ["Education / SA-SAMS"]
-    },
-    sme_pa: {
-      label: "\u{1F4BC} Small Business & PA",
-      shortName: "Business",
-      badge: "Quotes \xB7 Invoices \xB7 Clients",
-      desc: "Create branded Quotes & Tax Invoices in plain words, paste WhatsApp or Email client lists into Excel, and clean customer names, phones, and IDs.",
-      defaultSample: "direct",
-      tabs: [
-        { page: "workspace", label: "My Business Spreadsheet", iconName: "grid" },
-        { page: "quotes", label: "Quotes & Invoices", iconName: "dollar" },
-        { page: "templates", label: "Business Templates", iconName: "layers" },
-        { page: "preferences", label: "Past Files & Settings", iconName: "settings" }
-      ],
-      cards: [
-        { title: "\u{1F9FE} 1-Click Demo: Create Quote / Tax Invoice", desc: "Type what you are charging in plain words and download a clean PDF or Excel invoice.", action: "page:quotes" },
-        { title: "\u2728 1-Click Demo: Clean Client & Order List", desc: "Load a client or order sheet to fix names, +27 phone numbers, emails & ID numbers.", action: "sample:direct" },
-        { title: "\u{1F4CB} 1-Click Demo: Booking Form to Table", desc: "Turn customer booking forms into a clean, structured Excel table.", action: "sample:form" }
-      ],
-      samples: [
-        { val: "direct", label: "Client & Order List \u2192 Clean Excel Sheet" },
-        { val: "form", label: "Customer Booking Form \u2192 Clean Table" }
-      ],
-      builderPresetCmd: "Columns: Client ID, Full Name, SA ID Number, Phone, Email, Amount Due, Paid",
-      builderPresetLabel: "Client & Payment List",
-      templateCategories: ["Business PA & Billing"]
-    },
-    finance_hr: {
-      label: "\u{1F4CA} Finance, Bookkeeping & Payroll",
-      shortName: "Finance",
-      badge: "Monthly Totals \xB7 Payroll \xB7 Reconcile",
-      desc: "Combine monthly or branch figures with automatic Totals, spot missing numbers before export, check staff payroll SA IDs, and compare two sheets.",
-      defaultSample: "pivot",
-      tabs: [
-        { page: "workspace", label: "My Finance Spreadsheet", iconName: "grid" },
-        { page: "templates", label: "Finance Templates", iconName: "layers" },
-        { page: "preferences", label: "Past Files & Settings", iconName: "settings" }
-      ],
-      cards: [
-        { title: "\u{1F4CA} 1-Click Demo: Combine Monthly Figures", desc: "Merge regional or monthly sheets into one summary table with automatic Totals.", action: "sample:pivot" },
-        { title: "\u{1F50D} 1-Click Demo: Spot Missing Figures", desc: "Catch blank monthly figures automatically and fill them in chat before downloading.", action: "sample:hold" },
-        { title: "\u{1F465} 1-Click Demo: Expense & VAT Sheet", desc: "Create a monthly expense or payroll sheet with automatic VAT & Total columns.", action: "builder:expense" }
-      ],
-      samples: [
-        { val: "pivot", label: "Combine Branch Sheets \u2192 Monthly Summary Table" },
-        { val: "hold", label: "Spot Missing Monthly Figure \u2192 Fill in Chat" }
-      ],
-      builderPresetCmd: "Create a monthly expense tracker",
-      builderPresetLabel: "Expense & VAT Sheet",
-      templateCategories: ["Finance & Operations", "HR & Payroll"]
-    },
-    supply_chain: {
-      label: "\u{1F4E6} Stock, Inventory & Suppliers",
-      shortName: "Stock",
-      badge: "Supplier Lists \xB7 SKUs \xB7 Warehouses",
-      desc: "Match supplier price lists and CSVs to your stock sheet in 1 click, merge warehouse folders into 1 Master Stock file, and calculate stock values.",
-      defaultSample: "chat_map",
-      tabs: [
-        { page: "workspace", label: "My Stock Spreadsheet", iconName: "grid" },
-        { page: "templates", label: "Stock Templates", iconName: "layers" },
-        { page: "preferences", label: "Past Files & Settings", iconName: "settings" }
-      ],
-      cards: [
-        { title: "\u{1F4E6} 1-Click Demo: Match Supplier Columns", desc: 'Match different supplier column names (like "Boxes" \u2192 "Qty") in 1 click.', action: "sample:chat_map" },
-        { title: "\u{1F4C2} 1-Click Demo: Merge Warehouse Folder", desc: "Upload or demo a folder of depot sheets combined into 1 Master file.", action: "sample:district_batch" },
-        { title: "\u{1F9EE} 1-Click Demo: Stock Count & Value Sheet", desc: "Start an inventory count sheet with automatic Total Value = Qty \xD7 Unit Price.", action: "builder:inventory" }
-      ],
-      samples: [
-        { val: "chat_map", label: 'Match Supplier "Boxes" Column \u2192 Stock "Qty"' },
-        { val: "direct", label: "Supplier CSV \u2192 Standard Stock Template" },
-        { val: "unpivot", label: "Wide Warehouse Sheet \u2192 Normalized Rows" }
-      ],
-      builderPresetCmd: "Create a warehouse inventory stock sheet",
-      builderPresetLabel: "Warehouse Stock Sheet",
-      templateCategories: ["Supply Chain & ERP"]
     }
   };
   function activeVertical() {
+    if (user && user.role !== "admin") return "education";
     return overview?.preferences?.vertical || "general";
   }
-  function friendlyText(raw) {
-    return String(raw || "").replace(/QMS released this workbook \(\d+\/\d+ checks passed,\s*/gi, "Your spreadsheet is ready to download (").replace(/QMS released ([^()]+?)\s*\(\d+\/\d+ checks passed,\s*/gi, "$1 is ready to download (").replace(/Output held[.:]\s*/gi, "Almost ready \u2014 ").replace(/\bQMS\b/g, "Helper");
+  function visibleTabs(meta) {
+    return meta.tabs;
   }
   function loginPage() {
     user = null;
@@ -27079,32 +33540,69 @@
     demoToken = "";
     workspaceID = "";
     document.body.className = "light";
-    $2("root").innerHTML = `<main class="login-minimal"><section class="sign-card">${logo()}<h1>Your calm, everyday spreadsheet helper.</h1><p>Clean up messy files, combine spreadsheets, or create a brand-new sheet in plain everyday words \u2014 no complicated formulas needed.</p>${boot.demo_mode ? `<div class="demo-actions">
-    <button class="btn primary" data-launch-vert="general" style="padding:16px 20px;font-size:16px;justify-content:space-between"><span>\u2728 Start as Regular / Everyday User</span>${icon("arrow")}</button>
-  </div>
-  <details class="divider-details"><summary>Optional: Or open a specialized industry workspace (Schools, Business, Finance, Stock)</summary>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
-      <button class="btn small" data-launch-vert="education" style="justify-content:flex-start;text-align:left;padding:10px 12px"><div><strong style="display:block">\u{1F393} Schools & SA-SAMS</strong><small style="color:var(--muted)">Class Lists, IDs & Marks</small></div></button>
-      <button class="btn small" data-launch-vert="sme_pa" style="justify-content:flex-start;text-align:left;padding:10px 12px"><div><strong style="display:block">\u{1F4BC} Small Business & PA</strong><small style="color:var(--muted)">Quotes & Invoices</small></div></button>
-      <button class="btn small" data-launch-vert="finance_hr" style="justify-content:flex-start;text-align:left;padding:10px 12px"><div><strong style="display:block">\u{1F4CA} Finance & Payroll</strong><small style="color:var(--muted)">Monthly Totals & Staff</small></div></button>
-      <button class="btn small" data-launch-vert="supply_chain" style="justify-content:flex-start;text-align:left;padding:10px 12px"><div><strong style="display:block">\u{1F4E6} Stock & Suppliers</strong><small style="color:var(--muted)">Inventory & Warehouses</small></div></button>
-    </div>
-    <button id="demo-admin" class="btn small" style="width:100%;margin-top:10px">${icon("settings")}Platform Admin Settings</button>
-  </details>` : ""}
+    $2("root").innerHTML = `<main class="login-minimal"><style>
+.login-minimal,body:has(.login-minimal){--bg:#F3FAF9;--panel:#FFFFFF;--line:#D3E8E5;--line-strong:#A6D0CA;--ink:#13293D;--muted:#4D6475;--accent:#0A7C78;--accent-hover:#076562;--accent-soft:#E0F4F1;--accent-border:#9ED8D1;--gold:#F5B82E;--gold-soft:#FFF4DB}
+body:has(.login-minimal){background:#F3FAF9 !important;background-image:none !important}
+.land-end .btn.primary{background:#FFFFFF;color:#0A7C78;box-shadow:none}
+.land-end .btn.primary:hover:not(:disabled){background:#E0F4F1}
+.login-minimal .btn.primary{box-shadow:0 6px 16px rgba(10,124,120,.25)}
+.land{max-width:860px;margin:0 auto;text-align:left;color:var(--ink)}
+.land h1{color:var(--ink);font-size:clamp(28px,4.2vw,40px);line-height:1.15;margin:14px 0 12px}
+.land-lede{font-size:17px;line-height:1.55;color:var(--muted);margin:0 0 18px}
+.land-note{font-size:14px;color:var(--muted);margin:10px 0 0}
+.land-cta{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;font-size:16px;width:100%;max-width:440px}
+.land-block{margin:44px 0 0}
+.land-block h2{font-size:22px;margin:0 0 10px}
+.land-block p{font-size:16px;line-height:1.6;color:var(--ink);margin:0;max-width:720px}
+.land-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:18px}
+.land-step{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--accent);border-radius:12px;padding:18px}
+.land-step b{display:inline-block;width:30px;height:30px;line-height:30px;text-align:center;border-radius:50%;background:var(--gold);color:var(--ink);font-weight:700;margin-bottom:8px}
+.land-step h3{font-size:16px;margin:0 0 6px}
+.land-step p{font-size:14.5px;margin:0}
+.land-shot{margin:18px 0 0}
+.land-shot img{width:100%;height:auto;border:1px solid var(--line);border-radius:12px;display:block}
+.land-shot figcaption{font-size:13px;color:var(--muted);margin-top:8px}
+.land-trust{display:flex;flex-wrap:wrap;gap:8px 10px;margin-top:18px}
+.land-trust span{background:var(--accent-soft);color:var(--accent-hover);border:1px solid var(--accent-border);border-radius:999px;padding:7px 12px;font-size:14px;font-weight:600}
+.land-faq details{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-top:10px}
+.land-faq summary{cursor:pointer;font-weight:600}
+.land-faq p{margin:8px 0 0;font-size:15px}
+.land-end{margin:44px 0 10px;padding:24px;background:linear-gradient(135deg,var(--accent) 0%,#0B5E7A 100%);color:#fff;border-radius:14px;text-align:left}.land-end .land-note{color:#E6F7F5}.land-end h2{color:#fff}
+.land-end h2{font-size:22px;margin:0 0 6px}
+</style>
+<div class="land" id="top">
+  ${logo()}
+  <h1>Turn messy school marks into checked, shareable reports.</h1>
+  <p class="land-lede">Build a weighted gradebook, see term marks and CAPS levels, and download a clean Excel file. Your marks stay in this browser.</p>
+  ${boot.demo_mode ? `<button class="btn primary land-cta" data-launch-vert="education"><span>${icon("school")} Open My Gradebook</span>${icon("arrow")}</button>
+  <p class="land-note">Free for 2 weeks, then R79 a month. Try the sample class first.</p>` : ""}
+  <p class="land-note"><a href="#get-started">Create an account or sign in</a></p>
+  <section class="land-block"><h2>Weights added up wrong?</h2><p>Points-based weighting is the usual cause. A 6/10 test and an 80/100 exam only count as you set them when each mark becomes a percentage first. Elite Sheets does that, then checks that weights total 100% before anything exports.</p></section>
+  <figure class="land-shot"><img src="/static/landing-hero.jpg" alt="A smiling teacher checks a neat spreadsheet with a green tick on his laptop" loading="lazy"><figcaption>Illustration, not a real customer or testimonial.</figcaption></figure>
+  <section class="land-block"><h2>How it works</h2><div class="land-steps">
+    <div class="land-step"><b>1</b><h3>Add learners and assessments</h3><p>Name each test or exam and give it a weight. Type learner numbers or initials.</p></div>
+    <div class="land-step"><b>2</b><h3>Check the list</h3><p>Missing marks, wrong totals and weights that do not add to 100% are flagged before export.</p></div>
+    <div class="land-step"><b>3</b><h3>Download Excel</h3><p>Get a Marks sheet with term marks and CAPS levels, and a Checks sheet with what was found.</p></div>
+  </div></section>
+  <figure class="land-shot"><img src="/static/landing-gradebook.png" alt="Gradebook with sample learner numbers, assessment weights, term marks and CAPS levels" loading="lazy"><figcaption>Sample class. Learners are shown by number only.</figcaption></figure>
+  <section class="land-block" id="features"><h2>Everything for the school year, in one place</h2>
+  <div class="land-steps">
+    <div class="land-step"><b>1</b><h3>Gradebook</h3><p>Weighted assessments, term marks, CAPS levels, checks before export, and Excel or CSV download.</p></div>
+    <div class="land-step"><b>2</b><h3>Registers</h3><p>Daily marks (present, absent, late), monthly absentee rate, flags for three days in a row and repeated absence, and a signed monthly Excel export.</p></div>
+    <div class="land-step"><b>3</b><h3>CPTD log</h3><p>Record your PD points by type across your three-year cycle, with reporting windows and an Excel summary. A personal record only; nothing is submitted to SACE.</p></div>
+    <div class="land-step"><b>4</b><h3>Planner</h3><p>Timetable, term dates, a weekly calendar and in-app reminders, with browser notifications if you allow them.</p></div>
+    <div class="land-step"><b>5</b><h3>Pacing</h3><p>Plan your scheme of work on school days, tick lessons as taught, and move the plan when a day is lost.</p></div>
+    <div class="land-step"><b>6</b><h3>Sheet Helper</h3><p>Drafts of CAPS-aligned lesson plans, class tests with memos, and assignments with rubrics. Mark totals are checked in code. Ask follow-up questions or request changes in the same chat. You review every draft before you use it.</p></div>
+  </div></section>
+  <div class="land-trust"><span>Free for 2 weeks</span><span>R79 a month after that</span><span>Excel and CSV export</span><span>Marks stay in this browser</span></div>
+</div>
+<section class="sign-card" id="get-started">${logo()}<h2 style="margin:0 0 8px">Get started</h2><p class="land-note" style="margin-top:0">Sign in to your account or create a free one.</p>
   <details class="divider-details"><summary>Create a free account (Sign Up)</summary>
     <form id="signup-form">
       <div class="field-row">
         <div><label for="signup-name">Your Name</label><input id="signup-name" required minlength="2" placeholder="e.g. Thabo Mokoena"></div>
         <div><label for="signup-org">Workspace or Organization Name</label><input id="signup-org" required minlength="2" placeholder="e.g. Personal / My Workspace"></div>
       </div>
-      <label for="signup-vertical">Workspace Mode (you can change this anytime)</label>
-      <select id="signup-vertical">
-        <option value="general" selected>\u2728 Everyday / Regular User (General Spreadsheets \u2014 Default)</option>
-        <option value="education">\u{1F393} School & District Office (SA-SAMS, Student Lists & Marks)</option>
-        <option value="sme_pa">\u{1F4BC} Small Business & PA (Quotes, Tax Invoices & Client Lists)</option>
-        <option value="finance_hr">\u{1F4CA} Finance, Bookkeeping & Payroll (Monthly Summaries & Staff)</option>
-        <option value="supply_chain">\u{1F4E6} Stock, Inventory & Suppliers (Supplier Sheets & Warehouses)</option>
-      </select>
       <div class="field-row">
         <div><label for="signup-email">Email</label><input id="signup-email" type="email" required placeholder="you@example.com"></div>
         <div><label for="signup-password">Password (8+ characters)</label><input id="signup-password" type="password" required minlength="8" placeholder="Password"></div>
@@ -27113,7 +33611,18 @@
     </form>
   </details>
   <details class="divider-details" ${boot.demo_mode ? "" : "open"}><summary>Sign in to an existing account</summary><form id="login-form"><label for="login-email">Email</label><input id="login-email" type="email" autocomplete="username" required placeholder="you@example.com"><label for="login-password">Password</label><input id="login-password" type="password" autocomplete="current-password" required placeholder="Password"><button class="btn primary" style="width:100%;margin-top:16px" id="sign-in">Sign in${icon("arrow")}</button></form></details>
-  <div class="signin-powered-wrap">${productCredit()}</div></section></main>`;
+  </section>
+<div class="land land-faq" style="margin-top:8px">
+  <section class="land-block"><h2>Questions teachers ask</h2>
+  <details><summary>Is my data safe?</summary><p>Gradebook marks are saved in this browser and are not sent to our server. Export the Excel file to keep a copy.</p></details>
+  <details><summary>What if I clear my browser data?</summary><p>Clearing site data removes the saved marks. Export before you clear it, or before you switch computers.</p></details>
+  <details><summary>Does Sheet Helper see my learners?</summary><p>No. It receives only the grade, CAPS subject, topic and mark totals you enter. Learner names, numbers and marks never go to the AI service.</p></details>
+  <details><summary>Is the CPTD log sent to SACE?</summary><p>No. It is your personal record. You still report your PD points through SACE yourself.</p></details>
+  <details><summary>Does it work with SA-SAMS?</summary><p>Elite Sheets does not connect to SA-SAMS. You export the checked marks and copy them across yourself.</p></details>
+  <details><summary>What does it cost?</summary><p>Free for 2 weeks, then R79 a month.</p></details></section>
+  <div class="land-end"><h2>Check your next mark sheet in minutes</h2><p class="land-note" style="margin-top:0">Start with the sample class, then use your own learners.</p>${boot.demo_mode ? `<button class="btn primary land-cta" data-launch-vert="education" style="margin-top:12px"><span>${icon("school")} Open My Gradebook</span>${icon("arrow")}</button>` : ""}</div>
+  <div class="signin-powered-wrap">${productCredit()}</div>
+</div></main>`;
     $2("login-form").addEventListener("submit", (e) => {
       e.preventDefault();
       void busy($2("sign-in"), async () => {
@@ -27125,7 +33634,7 @@
     $2("signup-form").addEventListener("submit", (e) => {
       e.preventDefault();
       void busy($2("sign-up-btn"), async () => {
-        const vert = $2("signup-vertical").value;
+        const vert = "education";
         const r = await api("/api/auth/signup", {
           name: $2("signup-org").value.trim(),
           display_name: $2("signup-name").value.trim(),
@@ -27166,11 +33675,12 @@
     demoToken = r.demo_token || "";
     workspaceID = user.role === "admin" && boot.demo_mode ? "demo-a" : user.tenant_id;
     await refresh();
-    currentPage = user.role === "admin" ? "admin" : "workspace";
+    currentPage = user.role === "admin" ? "admin" : "gradebook";
     job = null;
     await xlOfferPending();
     shell();
     await showPage(currentPage);
+    if (user.role !== "admin") notifyDueReminders();
   }
   async function refresh() {
     if (!user) return;
@@ -27183,7 +33693,7 @@
     applyPreferences();
   }
   function applyPreferences() {
-    document.body.className = ((overview.preferences?.theme === "dark" ? "dark" : "light") + (overview.preferences?.density === "compact" ? " compact" : "")).trim();
+    document.body.className = ("light" + (overview.preferences?.density === "compact" ? " compact" : "")).trim();
   }
   function shell() {
     if (!user) {
@@ -27192,7 +33702,7 @@
     }
     const vert = activeVertical();
     const vMeta = VERTICAL_META[vert] || VERTICAL_META.general;
-    $2("root").innerHTML = `<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${vMeta.tabs.map((t) => `<button class="nav-btn" data-page="${t.page}">${icon(t.iconName)}${escapeHTML(t.label)}</button>`).join("")}${user.role === "admin" ? `<button class="nav-btn" data-page="admin">${icon("shield")}Admin</button>` : ""}</nav></div><div class="topbar-right"><select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k, v]) => `<option value="${k}" ${k === vert ? "selected" : ""}>${escapeHTML(v.label)}</option>`).join("")}</select>${user.role === "admin" && customers.length ? `<select id="workspace-picker" aria-label="Customer workspace">${customers.map((c) => `<option value="${c.id}" ${c.id === workspaceID ? "selected" : ""}>${escapeHTML(c.name)}</option>`).join("")}</select>` : ""}<button id="help" class="btn small">${icon("info")}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon("logout")}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon("logout")}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Elite Sheets</strong> \xB7 Calm, everyday spreadsheet helper</div>${productCredit()}</footer></div>`;
+    $2("root").innerHTML = `<div class="shell"><header class="topbar"><div class="topbar-left">${logo()}<nav class="nav" aria-label="Workspace navigation">${visibleTabs(vMeta).map((t) => `<button class="nav-btn" data-page="${t.page}">${icon(t.iconName)}${escapeHTML(t.label)}</button>`).join("")}${user.role === "admin" ? `<button class="nav-btn" data-page="admin">${icon("shield")}Admin</button>` : ""}</nav></div><div class="topbar-right">${user.role === "admin" ? `<select id="vertical-picker" aria-label="Workspace mode" title="Switch between Everyday Mode or an optional Industry Pack">${Object.entries(VERTICAL_META).map(([k, v]) => `<option value="${k}" ${k === vert ? "selected" : ""}>${escapeHTML(v.label)}</option>`).join("")}</select>` : ""}${user.role === "admin" && customers.length ? `<select id="workspace-picker" aria-label="Customer workspace">${customers.map((c) => `<option value="${c.id}" ${c.id === workspaceID ? "selected" : ""}>${escapeHTML(c.name)}</option>`).join("")}</select>` : ""}<button id="help" class="btn small">${icon("info")}Guide</button><button id="mobile-menu" class="icon-button mobile-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="topbar-menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button id="logout" class="icon-button" aria-label="Sign out" title="Sign out">${icon("logout")}</button><button id="mobile-logout" class="icon-button mobile-logout" aria-label="Sign out">${icon("logout")}</button></div></header><main id="main" tabindex="-1"><div id="page" class="page"></div></main><footer class="app-footer"><div class="app-footer-left"><strong>Elite Sheets</strong> \xB7 Calm, everyday spreadsheet helper</div>${productCredit()}</footer></div>`;
     bindMobileMenu();
     document.querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => void showPage(b.dataset.page)));
     $2("logout").addEventListener("click", () => void (async () => {
@@ -27204,7 +33714,7 @@
       loginPage();
     })());
     $2("help").addEventListener("click", showHelp);
-    $2("vertical-picker").addEventListener("change", () => void (async () => {
+    $2("vertical-picker")?.addEventListener("change", () => void (async () => {
       const newVert = $2("vertical-picker").value;
       const curPrefs = overview.preferences || { theme: "light", density: "comfortable", explanations: "detailed", auto_checks: true };
       await api("/api/preferences", { ...curPrefs, vertical: newVert }, "PUT");
@@ -27212,7 +33722,7 @@
       await refresh();
       const nextTabs = (VERTICAL_META[newVert] || VERTICAL_META.general).tabs;
       if (!nextTabs.some((t) => t.page === currentPage) && currentPage !== "admin") {
-        currentPage = newVert === "sme_pa" ? "quotes" : "workspace";
+        currentPage = "workspace";
       }
       shell();
       await showPage(currentPage);
@@ -27235,25 +33745,20 @@
     try {
       if (page === "workspace") studio();
       else if (page === "builder") builderPage();
-      else if (page === "quotes") quotesPage();
-      else if (page === "templates") await templatesPage();
+      else if (page === "gradebook") renderGradebook($2("page"), toast);
+      else if (page === "register") renderRegister($2("page"), toast);
+      else if (page === "cptd") renderCPTD($2("page"), toast);
+      else if (page === "planner") renderPlanner($2("page"), toast);
+      else if (page === "pacing") renderPacing($2("page"), toast, loadPlanner().terms);
+      else if (page === "helper") renderHelper($2("page"), api, toast);
       else if (page === "jobs") jobHistory();
-      else if (page === "knowledge") await knowledgePage();
       else if (page === "preferences") await preferencesPage();
       else if (page === "admin") await adminPage();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), true);
     }
   }
-  function chatPlaceholder(hasJob) {
-    const phone2 = window.matchMedia("(max-width: 1024px)").matches;
-    if (phone2) return hasJob ? "Type a question or change\u2026" : "Type the columns you want\u2026";
-    return hasJob ? "Tell me what to change (e.g. 'swap Jan and Feb', '18', 'yes')\u2026" : "Tell me what columns to create (e.g. 'Columns: Name, Phone, Amount')\u2026";
-  }
   var localChatNotes = [];
-  function localNotesHtml() {
-    return localChatNotes.filter((n) => n.jobId === (job?.id || "")).map((n) => n.role === "user" ? `<article class="msg user"><span class="msg-sender">You</span><div class="bubble">${n.html}</div></article>` : `<article class="msg"><span class="msg-sender">Helper</span><div class="bubble">${n.html}</div></article>`).join("");
-  }
   function addHelperNote(question, answerHtml) {
     const id = job?.id || "";
     if (question) localChatNotes.push({ jobId: id, role: "user", html: escapeHTML(question) });
@@ -27329,48 +33834,29 @@
       }
     }
     const srcColHeaders = Array.from(srcColSet);
-    const hasAudit = Boolean(job?.batch_audit || headers.includes("SA ID Status") || headers.includes("Duplicate Status"));
     let toolbarButtonsHtml = "";
     if (vert === "education") {
       toolbarButtonsHtml = `
       <button class="btn small" data-clean="smart_fix_contacts">\u{1FAAA} Fix SA IDs & Phones</button>
       <button class="btn small" data-clean="caps_levels">\u{1F393} Pass Levels (1\u20137)</button>
-      ${hasAudit ? `<button class="btn small primary" id="view-batch-audit">\u{1F4CB} Summary Report</button>` : `<button class="btn small" data-clean="deduplicate">\u{1F9F9} Remove Duplicates</button>`}
-    `;
-    } else if (vert === "sme_pa") {
-      toolbarButtonsHtml = `
-      <button class="btn small" data-clean="smart_fix_contacts">\u2728 Fix Names & Phones</button>
-      <button class="btn small" data-clean="add_total_row">\u2795 Add Total Row</button>
       <button class="btn small" data-clean="deduplicate">\u{1F9F9} Remove Duplicates</button>
-    `;
-    } else if (vert === "finance_hr") {
-      toolbarButtonsHtml = `
-      <button class="btn small" data-clean="add_total_row">\u2795 Add Total Row</button>
-      <button class="btn small" data-clean="smart_fix_contacts">\u{1FAAA} Check Staff IDs</button>
-      <button class="btn small cyan" id="open-in-studio">\u2696\uFE0F Compare / Summarize \u2192</button>
-    `;
-    } else if (vert === "supply_chain") {
-      toolbarButtonsHtml = `
-      <button class="btn small" data-clean="trim_text">\u{1F9F9} Clean Text & SKUs</button>
-      <button class="btn small" data-clean="deduplicate">\u2728 Remove Duplicate SKUs</button>
-      <button class="btn small" data-clean="add_total_row">\u2795 Add Total Row</button>
     `;
     } else {
       toolbarButtonsHtml = `
       <button class="btn small" data-clean="smart_fix_contacts">\u2728 Clean Names, Phones & IDs</button>
       <button class="btn small" data-clean="add_total_row">\u2795 Add Total Row</button>
-      ${hasAudit ? `<button class="btn small primary" id="view-batch-audit">\u{1F4CB} Summary Report</button>` : `<button class="btn small" data-clean="deduplicate">\u{1F9F9} Remove Duplicates</button>`}
+      <button class="btn small" data-clean="deduplicate">\u{1F9F9} Remove Duplicates</button>
     `;
     }
     $2("page").innerHTML = `
   <div class="simple-studio">
-    <section class="chat-card" aria-label="Sheet Helper">
+    <section class="chat-card" aria-label="Import an existing file">
       <div class="chat-top">
         <div class="chat-top-title">
           <span class="bot-avatar">${icon("spark")}</span>
           <div>
-            <h1>Sheet Helper</h1>
-            <small>${job ? escapeHTML(job.title) : "Ask me anything in plain words"}</small>
+            <h1>Import an existing file</h1>
+            <small>${job ? escapeHTML(job.title) : "Open a spreadsheet to check and export it"}</small>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -27388,7 +33874,6 @@
             ${boot.demo_mode ? `<div class="picker-row"><select id="sample-case" aria-label="Try an example">${vMeta.samples.map((s, idx) => `<option value="${s.val}">Demo ${idx + 1}: ${escapeHTML(s.label)}</option>`).join("")}</select><button id="load-example" class="btn primary small">Load Demo</button></div>` : ""}
             <div class="upload-grid" style="grid-template-columns:1fr 1fr 1fr">
               <label class="upload-box" for="source-files">${icon("upload")}<strong>Your Sheet(s)</strong><small>.XLSX, .XLS or .CSV</small><input id="source-files" type="file" multiple accept=".xlsx,.xls,.csv" aria-label="Upload source spreadsheets"></label>
-              <label class="upload-box" for="folder-files">${icon("folder")}<strong>Entire Folder</strong><small>Merge all files</small><input id="folder-files" type="file" webkitdirectory directory multiple aria-label="Upload entire folder of spreadsheets"></label>
               <label class="upload-box" for="target-file">${icon("grid")}<strong>Template</strong><small>Optional</small><input id="target-file" type="file" accept=".xlsx,.xls,.csv" aria-label="Upload destination template"></label>
             </div>
             <div id="file-list" class="file-list"></div>
@@ -27397,16 +33882,7 @@
         </details>
       </div>
 
-      <div class="messages" id="messages" tabindex="0" aria-label="Helper conversation" aria-live="polite">
-        ${job ? job.chat.map((m) => `<article class="msg ${m.role === "user" ? "user" : ""}"><span class="msg-sender">${m.role === "user" ? "You" : "Helper"}</span><div class="bubble">${escapeHTML(friendlyText(m.text))}</div></article>`).join("") + localNotesHtml() : `<article class="msg"><span class="msg-sender">Helper</span><div class="bubble">Hi! Click <b>Open / Upload File</b> above to load a spreadsheet, or type what columns you want me to build right below.<div style="margin-top:10px"><button id="start-guide-inline" class="btn small cyan">${icon("info")}Show Me Where to Click (Interactive Guide)</button></div></div></article>`}
-      </div>
-
-      ${job ? `<div class="quick-action-bar">${job.proposal ? `<button id="confirm-correction" class="btn primary">${icon("check")}Yes, apply: ${escapeHTML(job.proposal.description)}</button>` : ""}${!r || !release ? `<button id="run-job" class="btn ${r ? "" : "primary"}">${icon("check")}${r ? "Update Sheet" : "Fill My Sheet"}</button>` : ""}<div class="quick-chips"><button class="chip" id="ask-missing" type="button">\u{1F50D} What's missing?</button>${hasMissingNorthFeb && !job.proposal ? `<button class="chip" data-chat="18">Reply: 18</button><button class="chip" data-chat="North Feb is 18">North Feb is 18</button>` : ""}${customMissing && !hasMissingNorthFeb && !job.proposal ? `<button class="chip" data-chat="${escapeHTML(customMissing.entity)} ${escapeHTML(customMissing.category)} is 18">Set ${escapeHTML(customMissing.entity)} / ${escapeHTML(customMissing.category)} = 18</button>` : ""}${hasUnmappedQty && !customUnmapped?.length && !job.proposal ? `<button class="chip" data-chat="yes">Yes, put Boxes in Qty</button>` : ""}${customUnmapped?.length && customUnused?.length && !job.proposal ? customUnused.slice(0, 2).map((sc) => `<button class="chip" data-chat="put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}">Put ${escapeHTML(sc)} in ${escapeHTML(customUnmapped[0])}</button>`).join("") : ""}${r && !release ? `<button class="chip" data-chat="What is blocking this output?">What is missing?</button>` : ""}${release && headers.includes("Jan") && headers.includes("Feb") ? `<button class="chip" data-chat="swap Jan and Feb">Swap Jan & Feb</button><button class="chip" data-chat="replace the first row with row 2">Swap row 1 & row 2</button>` : ""}</div></div>` : `<div class="quick-action-bar"><div class="quick-chips"><button class="chip" data-chat="${escapeHTML(vMeta.builderPresetCmd)}">\u2728 Build ${escapeHTML(vMeta.builderPresetLabel)}</button><button class="chip" data-chat="Create a SA-SAMS student & tuition sheet">\u{1F393} Student & Tuition Sheet</button></div></div>`}
-
-      <form id="chat-form" class="chat-compose">
-        <textarea id="chat-text" rows="1" aria-label="Message the Sheet Helper" placeholder="${chatPlaceholder(!!job)}"></textarea>
-        <button id="send-chat" class="btn primary small" type="submit" aria-label="Send message">${icon("send")}</button>
-      </form>
+      ${job ? `<div class="quick-action-bar"><button id="run-job" class="btn primary">${icon("check")}${r ? "Update Sheet" : "Fill My Sheet"}</button></div>` : ""}
     </section>
 
     <section class="result-card" id="output-table-area" aria-label="Your Spreadsheet">
@@ -27444,18 +33920,12 @@
         await refresh();
         shell();
         await showPage("workspace");
-      } else if (act === "page:quotes") {
-        await showPage("quotes");
       } else if (act === "page:builder") {
         await showPage("builder");
       } else if (act === "upload:open") {
         const d = $2("upload-drawer-box");
         if (d) d.open = true;
         $2("source-files")?.click();
-      } else if (act === "folder:open") {
-        const d = $2("upload-drawer-box");
-        if (d) d.open = true;
-        $2("folder-files")?.click();
       } else if (act.startsWith("builder:")) {
         const sub = act.split(":")[1];
         if (sub === "paste") {
@@ -27489,9 +33959,8 @@
     }));
     let stagedSources = [];
     const renderStagedFiles = () => {
-      const fld = $2("folder-files").files;
       const target = $2("target-file").files;
-      const validFolderFiles = Array.from(fld || []).filter((f) => /\.(xlsx|xls|csv)$/i.test(f.name));
+      const validFolderFiles = [];
       const stateChip = `<span class="file-state waiting">Ready to open</span>`;
       const srcRows = stagedSources.map((f, idx) => `<li class="file-status-row"><span class="file-status-name">${escapeHTML(f.name)}</span>${stateChip}<button type="button" class="file-remove" data-rm-src="${idx}" aria-label="Remove ${escapeHTML(f.name)}">Remove</button></li>`).join("");
       const otherRows = [...validFolderFiles, ...Array.from(target || [])].map((f) => `<li class="file-status-row"><span class="file-status-name">${escapeHTML(f.webkitRelativePath || f.name)}</span>${stateChip}</li>`).join("");
@@ -27511,19 +33980,12 @@
       }
       renderStagedFiles();
     });
-    $2("folder-files").addEventListener("change", renderStagedFiles);
     $2("target-file").addEventListener("change", renderStagedFiles);
     $2("inspect-files").addEventListener("click", () => void busy($2("inspect-files"), async () => {
       const f = new FormData();
       const targetFiles = $2("target-file").files;
-      const fldFiles = Array.from($2("folder-files").files || []).filter((fl) => /\.(xlsx|xls|csv)$/i.test(fl.name));
       if (targetFiles?.length) f.append("target", targetFiles[0]);
-      if (fldFiles.length) {
-        for (const file of fldFiles) f.append("sources", file);
-        f.append("request_id", uid());
-        f.append("title", "Folder Batch Master Consolidation");
-        job = await api("/api/jobs/batch-folder", f);
-      } else {
+      {
         let filesToSend = [...stagedSources];
         const prevFiles = window.__lastUploadedSources || [];
         if (filesToSend.length === 1 && prevFiles.length >= 1 && job && !prevFiles.some((pf) => pf.name === filesToSend[0].name && pf.size === filesToSend[0].size)) {
@@ -27548,7 +34010,6 @@
       shell();
       await showPage("workspace");
     }));
-    if ($2("view-batch-audit")) $2("view-batch-audit").addEventListener("click", () => showBatchAuditModal());
     if (job) {
       if ($2("run-job")) $2("run-job").addEventListener("click", () => void doRun());
       if ($2("confirm-correction")) $2("confirm-correction").addEventListener("click", () => void confirmCorrection());
@@ -27590,7 +34051,6 @@
         toast("Opened in Sheet Creator!");
       });
     }
-    wireChat();
   }
   function makeBlankTab(name = "Sheet1", cols = 4, rowCount = 5) {
     const headers = Array.from({ length: cols }, (_, i) => `Column ${String.fromCharCode(65 + i)}`);
@@ -27682,46 +34142,6 @@
     if (pct >= 40) return { level: 3, desc: "Level 3 (Moderate)", at_risk: false };
     if (pct >= 30) return { level: 2, desc: "Level 2 (Elementary \u2014 At Risk)", at_risk: true };
     return { level: 1, desc: "Level 1 (Not Achieved \u2014 At Risk)", at_risk: true };
-  }
-  function showBatchAuditModal() {
-    const r = job?.report;
-    const rows = r?.rows || [];
-    const ba = job?.batch_audit || {};
-    let validIds = ba.valid_sa_ids || 0, repairedIds = ba.repaired_sa_ids || 0, foreignIds = ba.foreign_or_permit_ids || 0, invalidIds = ba.invalid_sa_ids || 0, dupRows = ba.cross_file_duplicates || 0;
-    if (!ba.total_rows && rows.length) {
-      for (const row of rows) {
-        const st = String(row["SA ID Status"] || "");
-        if (st === "Valid SA ID") validIds++;
-        else if (st.startsWith("Repaired SA ID")) repairedIds++;
-        else if (st.startsWith("Foreign")) foreignIds++;
-        else if (st.startsWith("Invalid")) invalidIds++;
-        const ds = String(row["Duplicate Status"] || "");
-        if (ds.startsWith("Duplicate")) dupRows++;
-      }
-    }
-    const filesMerged = ba.files_merged || (job?.profiles?.sources?.length || 1);
-    const totalRows = ba.total_rows || rows.length;
-    openModal("Elite Sheets \u2014 Data Quality Summary Report", `
-    <div style="display:grid;gap:12px">
-      <p style="margin:0;color:var(--muted)">Before-vs-After Data Quality Summary for schools, district offices, consultants, and business compliance:</p>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${filesMerged}</strong><small style="display:block;color:var(--muted)">Files Consolidated</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${totalRows}</strong><small style="display:block;color:var(--muted)">Total Master Rows</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${validIds + repairedIds}</strong><small style="display:block;color:var(--muted)">Verified 13-Digit SA IDs</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${repairedIds}</strong><small style="display:block;color:var(--muted)">Leading-Zero IDs Restored (Born 2000\u20132009)</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${foreignIds}</strong><small style="display:block;color:var(--muted)">Foreign / Study Permit IDs</small></div>
-        <div class="stat-box" style="padding:12px;border:1px solid var(--line);border-radius:10px"><strong>${invalidIds}</strong><small style="display:block;color:var(--muted)">Checksum Issues Flagged</small></div>
-      </div>
-      <div class="check ${dupRows > 0 ? "fail" : ""}">
-        <strong>${dupRows > 0 ? `! ${dupRows} Cross-File Duplicate Record(s) Flagged` : "\u2713 0 Cross-File Duplicates Found"}</strong>
-        <small>All rows are preserved in your Master Sheet with <b>Source File</b>, <b>Duplicate Status</b>, and <b>SA ID Status</b> columns so no data is silently lost.</small>
-      </div>
-      <div style="margin-top:6px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <small style="color:var(--muted)">Generated by <b>Elite Sheets</b></small>
-        ${productCredit()}
-      </div>
-    </div>
-  `);
   }
   function runSaIdAndContactSmartFixOnTab(tab) {
     let fixed = 0;
@@ -28102,7 +34522,7 @@
     $2("page").innerHTML = `<div class="simple-studio">
     <section class="chat-card" aria-label="Sheet Creator Helper">
       <div class="chat-top">
-        <div class="chat-top-title"><span class="bot-avatar">${icon("spark")}</span><div><h1>Sheet Helper</h1><small>Start blank, paste text, or tell me what columns to make</small></div></div>
+        <div class="chat-top-title"><span class="bot-avatar">${icon("spark")}</span><div><h1>Sheet Builder</h1><small>Start blank, paste text, or tell me what columns to make</small></div></div>
         <button id="builder-new-blank" class="btn small">${icon("plus")}Start Blank</button>
       </div>
       <div class="picker-bar">
@@ -28420,338 +34840,6 @@
       toast("Opened active sheet in Transform with QMS checks passed!");
     }));
   }
-  var quoteState = {
-    docType: "QUOTATION",
-    docNumber: "QUO-2026-0042",
-    date: "2026-10-14",
-    companyName: "Apex Business Solutions (Pty) Ltd",
-    companyContact: "billing@apexsolutions.co.za \xB7 082 555 0199",
-    clientName: "Greenwood High School",
-    clientContact: "finance@greenwoodhigh.edu.za",
-    currency: "R",
-    vatRate: 15,
-    items: [
-      { code: "SAS-01", description: "SA-SAMS Student & Subject Matrix System Import (Per Learner)", qty: 850, price: 35 },
-      { code: "ONB-02", description: "School Template Setup & Staff Onboarding Session", qty: 1, price: 2500 }
-    ]
-  };
-  function quotesPage() {
-    const s = quoteState;
-    const subtotal = s.items.reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
-    const vatAmt = Math.round(subtotal * (s.vatRate / 100) * 100) / 100;
-    const grandTotal = Math.round((subtotal + vatAmt) * 100) / 100;
-    $2("page").innerHTML = `<div class="page-heading"><div><h1>Quotes & Invoices (Business PA)</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Tell your PA what to quote in plain words, or edit your branded Quotation / Tax Invoice below and download as Excel (.XLSX) or Printable PDF.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="quote-add-item" class="btn small">${icon("plus")}Add Line Item</button><button id="quote-print" class="btn small">${icon("file")}Printable Quote / PDF</button><button id="quote-to-transform" class="btn small cyan">${icon("shield")}Open in Transform</button><button id="quote-download" class="btn small success">${icon("download")}Download Branded XLSX</button></div></div>
-  <section class="feature-banner">
-    <form id="quote-pa-form" class="prompt-row">
-      <input id="quote-pa-input" placeholder="Tell your PA in plain words (e.g. 'Invoice for Horizon Academy: 1200 Student Imports at 30 each and 1 Setup Fee at 3000')\u2026">
-      <button type="submit" class="btn primary small">${icon("spark")}Fill Quote with PA</button>
-    </form>
-  </section>
-  <div class="settings-grid" style="margin-bottom:16px">
-    <section class="settings-panel">
-      <h2>Document & Your Business</h2>
-      <div class="field-row">
-        <div><label for="q-type">Document Type</label><select id="q-type"><option value="QUOTATION" ${s.docType === "QUOTATION" ? "selected" : ""}>Quotation</option><option value="TAX INVOICE" ${s.docType === "TAX INVOICE" ? "selected" : ""}>Tax Invoice</option></select></div>
-        <div><label for="q-num">Document #</label><input id="q-num" value="${escapeHTML(s.docNumber)}"></div>
-      </div>
-      <label for="q-comp">Your Business Name</label><input id="q-comp" value="${escapeHTML(s.companyName)}">
-      <label for="q-comp-contact">Your Email / Phone / Bank Details</label><input id="q-comp-contact" value="${escapeHTML(s.companyContact)}">
-    </section>
-    <section class="settings-panel">
-      <h2>Client & Tax Settings</h2>
-      <label for="q-client">Client / School / Company Name</label><input id="q-client" value="${escapeHTML(s.clientName)}">
-      <label for="q-client-contact">Client Email / Reference</label><input id="q-client-contact" value="${escapeHTML(s.clientContact)}">
-      <div class="field-row">
-        <div><label for="q-curr">Currency</label><select id="q-curr"><option value="R" ${s.currency === "R" ? "selected" : ""}>ZAR (R)</option><option value="$" ${s.currency === "$" ? "selected" : ""}>USD ($)</option><option value="\xA3" ${s.currency === "\xA3" ? "selected" : ""}>GBP (\xA3)</option></select></div>
-        <div><label for="q-vat">VAT / Tax (%)</label><input id="q-vat" type="number" min="0" max="50" value="${s.vatRate}"></div>
-      </div>
-    </section>
-  </div>
-  <section class="result-card">
-    <div class="result-head"><div><h2>${escapeHTML(s.docType)} \xB7 ${escapeHTML(s.docNumber)}</h2><small>Prepared for ${escapeHTML(s.clientName)}</small></div><span class="badge good">Total: ${escapeHTML(s.currency)} ${grandTotal.toLocaleString()}</span></div>
-    <div class="table-scroll" tabindex="0" aria-label="Quotation line items">
-      <table>
-        <thead><tr><th>Item Code</th><th>Service / Product Description</th><th>Qty</th><th>Unit Price (${escapeHTML(s.currency)})</th><th>Line Total (${escapeHTML(s.currency)})</th><th style="width:48px"></th></tr></thead>
-        <tbody>
-          ${s.items.map((it, idx) => {
-      const lineTot = Math.round((Number(it.qty) || 0) * (Number(it.price) || 0) * 100) / 100;
-      return `<tr>
-              <td><input class="cell-input q-item-code" data-idx="${idx}" value="${escapeHTML(it.code)}" aria-label="Item code ${idx + 1}"></td>
-              <td><input class="cell-input q-item-desc" data-idx="${idx}" value="${escapeHTML(it.description)}" aria-label="Description ${idx + 1}"></td>
-              <td><input class="cell-input q-item-qty" data-idx="${idx}" type="number" value="${it.qty}" aria-label="Quantity ${idx + 1}"></td>
-              <td><input class="cell-input q-item-price" data-idx="${idx}" type="number" step="0.01" value="${it.price}" aria-label="Unit price ${idx + 1}"></td>
-              <td><strong>${escapeHTML(s.currency)} ${lineTot.toLocaleString()}</strong></td>
-              <td><button class="icon-button" data-del-qitem="${idx}" aria-label="Remove item ${idx + 1}">${icon("trash")}</button></td>
-            </tr>`;
-    }).join("")}
-        </tbody>
-      </table>
-    </div>
-  </section>
-  <div class="quote-summary-box">
-    <div class="quote-totals">
-      <div>Subtotal<strong>${escapeHTML(s.currency)} ${subtotal.toLocaleString()}</strong></div>
-      <div>VAT (${s.vatRate}%)<strong>${escapeHTML(s.currency)} ${vatAmt.toLocaleString()}</strong></div>
-      <div>Grand Total<strong>${escapeHTML(s.currency)} ${grandTotal.toLocaleString()}</strong></div>
-    </div>
-  </div>`;
-    const syncQuoteDom = () => {
-      s.docType = $2("q-type").value;
-      s.docNumber = $2("q-num").value.trim() || "QUO-001";
-      s.companyName = $2("q-comp").value.trim();
-      s.companyContact = $2("q-comp-contact").value.trim();
-      s.clientName = $2("q-client").value.trim();
-      s.clientContact = $2("q-client-contact").value.trim();
-      s.currency = $2("q-curr").value;
-      s.vatRate = Number($2("q-vat").value) || 0;
-      const codes = document.querySelectorAll(".q-item-code");
-      const descs = document.querySelectorAll(".q-item-desc");
-      const qtys = document.querySelectorAll(".q-item-qty");
-      const prices = document.querySelectorAll(".q-item-price");
-      s.items = Array.from(codes).map((_, i) => ({
-        code: codes[i].value.trim() || `ITEM-${i + 1}`,
-        description: descs[i].value.trim() || "Service",
-        qty: Number(qtys[i].value) || 0,
-        price: Number(prices[i].value) || 0
-      }));
-    };
-    ["q-type", "q-curr", "q-vat"].forEach((id) => $2(id).addEventListener("change", () => {
-      syncQuoteDom();
-      quotesPage();
-    }));
-    document.querySelectorAll(".q-item-qty,.q-item-price").forEach((el) => el.addEventListener("change", () => {
-      syncQuoteDom();
-      quotesPage();
-    }));
-    $2("quote-pa-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      syncQuoteDom();
-      const txt = $2("quote-pa-input").value.trim();
-      if (!txt) return;
-      if (/invoice/i.test(txt)) {
-        s.docType = "TAX INVOICE";
-        s.docNumber = s.docNumber.replace(/^QUO/, "INV");
-      } else if (/quote|quotation/i.test(txt)) {
-        s.docType = "QUOTATION";
-        s.docNumber = s.docNumber.replace(/^INV/, "QUO");
-      }
-      const clientM = txt.match(/(?:for|to)\s+([A-Z][A-Za-z0-9\s&.-]+?)(?::|,|\s+\d)/);
-      if (clientM) s.clientName = clientM[1].trim();
-      const itemRegex = /(\d+)\s+([A-Za-z][A-Za-z0-9\s-]{2,40}?)\s+(?:at|@|for)\s+[R$£]?(\d+(?:\.\d+)?)/gi;
-      const parsedItems = [];
-      let m;
-      let idx = 1;
-      while ((m = itemRegex.exec(txt)) !== null) {
-        parsedItems.push({ code: `ITEM-0${idx++}`, description: m[2].trim(), qty: Number(m[1]), price: Number(m[3]) });
-      }
-      if (parsedItems.length) s.items = parsedItems;
-      quotesPage();
-      toast("PA updated your quotation details and line items!");
-    });
-    $2("quote-add-item").addEventListener("click", () => {
-      syncQuoteDom();
-      s.items.push({ code: `ITEM-0${s.items.length + 1}`, description: "Additional Service / Product", qty: 1, price: 500 });
-      quotesPage();
-    });
-    document.querySelectorAll("[data-del-qitem]").forEach((b) => b.addEventListener("click", () => {
-      syncQuoteDom();
-      s.items.splice(Number(b.dataset.delQitem), 1);
-      quotesPage();
-    }));
-    const buildQuoteTableRows = () => {
-      syncQuoteDom();
-      const headers = ["Document #", "Client", "Item Code", "Description", "Qty", "Unit Price", "VAT", "Line Total"];
-      const rows = s.items.map((it) => {
-        const sub = (Number(it.qty) || 0) * (Number(it.price) || 0);
-        const vat = Math.round(sub * (s.vatRate / 100) * 100) / 100;
-        return {
-          "Document #": s.docNumber,
-          "Client": s.clientName,
-          "Item Code": it.code,
-          "Description": it.description,
-          "Qty": it.qty,
-          "Unit Price": it.price,
-          "VAT": vat,
-          "Line Total": Math.round((sub + vat) * 100) / 100
-        };
-      });
-      return { headers, rows };
-    };
-    $2("quote-download").addEventListener("click", () => {
-      const { headers, rows } = buildQuoteTableRows();
-      const blob = buildXlsxBlob(s.docType === "TAX INVOICE" ? "Tax_Invoice" : "Quotation", headers, rows);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${s.docNumber}-${s.clientName.replace(/\s+/g, "-")}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast("Downloaded branded Excel (.xlsx) quote!");
-    });
-    $2("quote-to-transform").addEventListener("click", () => void busy($2("quote-to-transform"), async () => {
-      const { headers, rows } = buildQuoteTableRows();
-      job = await api("/api/jobs/from-builder", { title: `${s.docNumber}-${s.clientName}.xlsx`, sheet: "Quote_Invoice", headers, rows, request_id: uid() });
-      await refresh();
-      shell();
-      await showPage("workspace");
-      toast("Opened your quote in Transform!");
-    }));
-    $2("quote-print").addEventListener("click", () => {
-      syncQuoteDom();
-      openModal(`${s.docType} \xB7 ${s.docNumber}`, `
-      <div style="padding:12px;border:1px solid var(--line);border-radius:10px">
-        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;border-bottom:1px solid var(--line);padding-bottom:12px">
-          <div><h3 style="font-size:18px">${escapeHTML(s.companyName)}</h3><p style="font-size:12px;color:var(--muted)">${escapeHTML(s.companyContact)}</p></div>
-          <div style="text-align:right"><strong>${escapeHTML(s.docType)} #${escapeHTML(s.docNumber)}</strong><p style="font-size:12px;color:var(--muted)">Date: ${escapeHTML(s.date)}</p></div>
-        </div>
-        <div style="margin:12px 0"><small style="color:var(--muted)">PREPARED FOR:</small><div><strong>${escapeHTML(s.clientName)}</strong> (${escapeHTML(s.clientContact)})</div></div>
-        <div class="table-scroll"><table><thead><tr><th>Code</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>${s.items.map((it) => `<tr><td>${escapeHTML(it.code)}</td><td>${escapeHTML(it.description)}</td><td>${it.qty}</td><td>${escapeHTML(s.currency)} ${it.price}</td><td>${escapeHTML(s.currency)} ${((Number(it.qty) || 0) * (Number(it.price) || 0)).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>
-        <div style="margin-top:14px;text-align:right">
-          <div>Subtotal: <b>${escapeHTML(s.currency)} ${subtotal.toLocaleString()}</b></div>
-          <div>VAT (${s.vatRate}%): <b>${escapeHTML(s.currency)} ${vatAmt.toLocaleString()}</b></div>
-          <div style="font-size:16px;margin-top:4px">Grand Total: <b>${escapeHTML(s.currency)} ${grandTotal.toLocaleString()}</b></div>
-        </div>
-        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-          <button id="print-modal-btn" class="btn primary small">Print / Save as PDF</button>
-          ${productCredit()}
-        </div>
-      </div>
-    `);
-      $2("print-modal-btn").addEventListener("click", () => window.print());
-    });
-  }
-  async function templatesPage() {
-    const vert = activeVertical();
-    const vMeta = VERTICAL_META[vert] || VERTICAL_META.general;
-    const res = await api("/api/templates", void 0, "GET");
-    const allItems = res.items || [];
-    const items = allItems.filter((t) => !t.builtin || vMeta.templateCategories.includes(t.category));
-    $2("page").innerHTML = `<div class="page-heading"><div><h1>${escapeHTML(vMeta.shortName)} Templates</h1><p style="font-size:13px;color:var(--muted);margin-top:4px">Pick a ready-made ${escapeHTML(vMeta.shortName.toLowerCase())} template below, download a blank Excel (.XLSX) file, or save your own template.</p></div><button id="new-template-btn" class="btn primary small">${icon("plus")}Save Custom Template</button></div>
-  <div class="knowledge-grid">
-    ${items.map((t, idx) => `<article class="knowledge-card">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
-        <span class="badge ${t.builtin ? "good" : "purple"}">${escapeHTML(t.category || (t.builtin ? "Ready-Made" : "Custom"))}</span>
-        <small style="color:var(--muted)">${t.headers.length} columns</small>
-      </div>
-      <h3>${escapeHTML(t.name)}</h3>
-      <p style="margin-top:6px;font-size:13px">${escapeHTML(t.description || "")}</p>
-      <div class="file-list" style="margin-top:10px">${t.headers.map((h) => `<span class="file-chip">${escapeHTML(h)}</span>`).join("")}</div>
-      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn small primary" data-use-tpl="${idx}">${icon("spark")}Open Template</button>
-        <button class="btn small" data-dl-tpl="${idx}">${icon("download")}Download Blank Excel (.XLSX)</button>
-      </div>
-    </article>`).join("")}
-  </div>`;
-    document.querySelectorAll("[data-use-tpl]").forEach((b) => b.addEventListener("click", () => void busy(b, async () => {
-      const t = items[Number(b.dataset.useTpl)];
-      if (t.id === "sasams_student_import" && boot.demo_mode) {
-        job = await api("/api/demo/jobs", { case: "sasams_students", request_id: uid() });
-        job = await api(`/api/jobs/${job.id}/run`, {});
-      } else {
-        job = await api("/api/jobs/from-builder", { title: `${t.name}.xlsx`, sheet: t.sheet || "Output", headers: t.headers, rows: t.sample_rows || [], request_id: uid() });
-      }
-      await refresh();
-      shell();
-      await showPage("workspace");
-      toast(`Opened template: ${t.name}`);
-    })));
-    document.querySelectorAll("[data-dl-tpl]").forEach((b) => b.addEventListener("click", () => {
-      const t = items[Number(b.dataset.dlTpl)];
-      const blob = buildXlsxBlob(t.sheet || "Template", t.headers, []);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${t.name.replace(/\s+/g, "-")}-Template.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast(`Downloaded blank template: ${t.name}`);
-    }));
-    $2("new-template-btn").addEventListener("click", () => {
-      openModal("Save Your Own Template", `
-      <form id="custom-tpl-form">
-        <label for="tpl-name">Template Name</label>
-        <input id="tpl-name" required placeholder="e.g. Term 2 Class List">
-        <label for="tpl-cat">Category</label>
-        <input id="tpl-cat" value="${escapeHTML(vMeta.templateCategories[0] || "Custom")}" placeholder="e.g. School / Business">
-        <label for="tpl-headers">Column Names (comma-separated) \u2014 or upload an Excel/CSV file below</label>
-        <input id="tpl-headers" required placeholder="e.g. ID, First Name, Last Name, Phone, Amount">
-        <label for="tpl-file">Or copy columns from an existing Excel (.XLSX / .XLS) / CSV file (optional)</label>
-        <input id="tpl-file" type="file" accept=".xlsx,.xls,.csv">
-        <button type="submit" id="save-tpl-submit" class="btn primary" style="margin-top:14px">Save Template</button>
-      </form>
-    `);
-      $2("tpl-file").addEventListener("change", async () => {
-        const f = $2("tpl-file").files?.[0];
-        if (!f) return;
-        const parsed = await parseUploadedFile(f);
-        if (parsed.headers.length) {
-          $2("tpl-headers").value = parsed.headers.join(", ");
-          if (!$2("tpl-name").value) $2("tpl-name").value = f.name.replace(/\.(xlsx|xls|csv)$/i, "");
-        }
-      });
-      $2("custom-tpl-form").addEventListener("submit", (e) => {
-        e.preventDefault();
-        void busy($2("save-tpl-submit"), async () => {
-          const name = $2("tpl-name").value.trim();
-          const category = $2("tpl-cat").value.trim() || vMeta.templateCategories[0] || "Custom";
-          const headers = $2("tpl-headers").value.split(",").map((s) => s.trim()).filter(Boolean);
-          await api("/api/templates", { name, category, headers }, "POST");
-          closeModal();
-          await templatesPage();
-          toast(`Saved "${name}" to your templates!`);
-        });
-      });
-    });
-  }
-  function wireChat() {
-    const messages = $2("messages");
-    messages.scrollTop = messages.scrollHeight;
-    $2("chat-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      void sendChat();
-    });
-    $2("chat-text").addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        void sendChat();
-      }
-    });
-    document.querySelectorAll("[data-chat]").forEach((b) => b.addEventListener("click", () => {
-      $2("chat-text").value = b.dataset.chat;
-      void sendChat();
-    }));
-    if ($2("confirm-correction")) $2("confirm-correction").addEventListener("click", () => void busy($2("confirm-correction"), async () => {
-      job = await api(`/api/jobs/${job.id}/confirm`, { proposal_id: job.proposal.id, request_id: uid() });
-      await refresh();
-      shell();
-      await showPage("workspace");
-      toast(job.state === "RELEASED" ? "Done! Your Excel file is ready to download." : "Saved \u2014 check the chat for next steps.");
-    }));
-  }
-  async function sendChat() {
-    const text = $2("chat-text").value.trim();
-    if (!text) return;
-    if (job && /\b(missing|incomplete|blank|empty|what('s| is)? (still )?(left|wrong|not done))\b/i.test(text)) {
-      $2("chat-text").value = "";
-      addHelperNote(text, sheetMissingSummary());
-      return;
-    }
-    await busy($2("send-chat"), async () => {
-      if (!job) {
-        handleBuilderChatCommand(text);
-        const tab = currentBuilderTab();
-        job = await api("/api/jobs/from-builder", { title: builderState.title || "Created-Sheet.xlsx", sheet: tab.name || "Sheet1", headers: tab.headers, rows: tab.rows, request_id: uid() });
-        await refresh();
-        shell();
-        await showPage("workspace");
-        return;
-      }
-      job = await api(`/api/jobs/${job.id}/chat`, { text, request_id: uid() });
-      await refresh();
-      shell();
-      await showPage("workspace");
-    });
-  }
   async function doRun() {
     if (!job) return;
     await busy($2("run-job"), async () => {
@@ -28769,9 +34857,6 @@
   function jobHistory() {
     void preferencesPage();
   }
-  async function knowledgePage() {
-    await preferencesPage();
-  }
   function creditMeterHtml(c) {
     if (!c || typeof c.included !== "number" || !c.costs) return "";
     const pct = Math.min(100, Math.round(c.used / Math.max(c.included, 1) * 100));
@@ -28783,7 +34868,6 @@
   async function preferencesPage() {
     const p = overview.preferences || { theme: "light", density: "comfortable", explanations: "detailed", auto_checks: true, vertical: "general" };
     const vert = p.vertical || "general";
-    const savedRules = (await api("/api/knowledge", void 0, "GET")).items || [];
     let creditInfo = null;
     try {
       creditInfo = await api("/api/credits", void 0, "GET");
@@ -28825,8 +34909,6 @@
       <h2>Workspace & Appearance</h2>
       <label for="pref-vertical">Workspace Mode</label>
       <select id="pref-vertical">${Object.entries(VERTICAL_META).map(([k, v]) => `<option value="${k}" ${k === vert ? "selected" : ""}>${escapeHTML(v.label)} \u2014 ${escapeHTML(v.badge)}</option>`).join("")}</select>
-      <label for="theme">Screen Theme</label>
-      <select id="theme"><option value="light" ${p.theme !== "dark" ? "selected" : ""}>Warm Paper & Calm Sage (Default)</option><option value="dark" ${p.theme === "dark" ? "selected" : ""}>Dark Mode</option></select>
       <label for="density">Table Row Spacing</label>
       <select id="density"><option value="comfortable">Comfortable</option><option value="compact" ${p.density === "compact" ? "selected" : ""}>Compact</option></select>
       <label for="explanations">Helper Reply Style</label>
@@ -28842,10 +34924,6 @@
       <div class="quiet-buttons">
         ${job ? `<button id="edit-plan" class="btn small">${icon("edit")}Inspect Current Mapping JSON</button><button id="download-evidence" class="btn small" ${job.report ? "" : "disabled"}>${icon("download")}Download Technical Audit JSON</button>` : ""}
       </div>
-      <h3 style="font-size:14px;margin-top:10px">Automatically Remembered Column Rules (${savedRules.length})</h3>
-      <div class="knowledge-grid" style="margin-top:8px">
-        ${savedRules.map((k, i) => `<article class="knowledge-card"><h4>${escapeHTML(k.template_name)}</h4><p style="font-size:12px">${k.headers.length} columns remembered</p><button class="btn small" style="margin-top:8px" data-pattern="${i}">View Technical Rule</button></article>`).join("") || '<p style="font-size:13px">Finish a spreadsheet and your column matches will be remembered here automatically.</p>'}
-      </div>
     </div>
   </details>`;
     document.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => void loadJob(b.dataset.open)));
@@ -28860,13 +34938,12 @@
         await showPage("preferences");
       }));
     }));
-    document.querySelectorAll("[data-pattern]").forEach((b) => b.addEventListener("click", () => openModal("Saved Rule Details", `<pre>${escapeHTML(JSON.stringify(savedRules[Number(b.dataset.pattern)].plan, null, 2))}</pre>`)));
     if ($2("edit-plan")) $2("edit-plan").addEventListener("click", editPlan);
     if ($2("download-evidence")) $2("download-evidence").addEventListener("click", () => void download("evidence"));
     $2("preferences-form").addEventListener("submit", (e) => {
       e.preventDefault();
       void busy($2("save-preferences"), async () => {
-        await api("/api/preferences", { theme: $2("theme").value, density: $2("density").value, explanations: $2("explanations").value, auto_checks: $2("auto-checks").checked, vertical: $2("pref-vertical").value }, "PUT");
+        await api("/api/preferences", { theme: "light", density: $2("density").value, explanations: $2("explanations").value, auto_checks: $2("auto-checks").checked, vertical: $2("pref-vertical").value }, "PUT");
         await refresh();
         applyPreferences();
         shell();
@@ -29189,18 +35266,16 @@
     adminSettings = await api("/api/admin/settings");
     customers = (await api("/api/admin/customers")).items;
     const s = adminSettings;
-    $2("page").innerHTML = `<div class="page-heading"><h1>Admin Settings</h1><span class="badge purple">Platform Admin</span></div><div id="credit-admin" class="credit-admin"><p class="cm-note">Loading credits\u2026</p></div><form id="admin-form"><div class="settings-grid"><section class="settings-panel"><h2>Budgets & Quotas</h2><div class="field-row"><div><label for="platform-budget">Platform monthly ceiling (USD)</label><input id="platform-budget" inputmode="decimal" value="${escapeHTML(s.platform_budget_usd)}"></div><div><label for="ai-budget">Monthly AI allowance (USD)</label><input id="ai-budget" inputmode="decimal" value="${escapeHTML(s.monthly_budget_usd)}"></div></div><div class="field-row"><div><label for="input-price">Input price / 1M tokens (USD)</label><input id="input-price" inputmode="decimal" value="${escapeHTML(s.input_price_per_million_usd)}"></div><div><label for="output-price">Output price / 1M tokens (USD)</label><input id="output-price" inputmode="decimal" value="${escapeHTML(s.output_price_per_million_usd)}"></div></div><label for="pricing-url">Pricing source URL</label><input id="pricing-url" type="url" value="${escapeHTML(s.pricing_source_url)}" placeholder="https://\u2026"><label for="pricing-date">Date verified</label><input id="pricing-date" type="date" value="${escapeHTML(s.pricing_verified_date)}"><div class="field-row"><div><label for="max-tokens">Max output tokens</label><input id="max-tokens" type="number" min="256" max="12000" value="${s.max_output_tokens}"></div><div><label for="storage-limit">Storage / customer (MiB)</label><input id="storage-limit" type="number" min="50" max="10000" value="${s.max_storage_mib_per_customer}"></div></div><label for="jobs-limit">Max jobs / customer</label><input id="jobs-limit" type="number" min="5" max="1000" value="${s.max_jobs_per_customer}"></section><section class="settings-panel"><h2>AI Provider & Shared Key</h2><label for="provider">Provider</label><select id="provider"><option value="openai_compatible">OpenAI-compatible</option><option value="anthropic" ${s.provider === "anthropic" ? "selected" : ""}>Anthropic</option></select><label for="base-url">Base URL</label><input id="base-url" type="url" value="${escapeHTML(s.base_url)}" placeholder="https://api.openai.com/v1"><label for="model">Model ID</label><input id="model" value="${escapeHTML(s.model)}" placeholder="gpt-4o-mini"><label for="api-key">Shared API key (write-only)</label><input id="api-key" type="password" autocomplete="off" ${boot.demo_mode ? "disabled" : ""} placeholder="${boot.demo_mode ? "Disabled in preview" : "Paste key in deployed app"}"><label class="toggle"><input id="clear-key" type="checkbox" ${boot.demo_mode ? "disabled" : ""}>Remove stored key</label><label class="toggle"><input id="ai-enabled" type="checkbox" ${s.enabled ? "checked" : ""} ${boot.demo_mode ? "disabled" : ""}>Enable external AI requests</label><label class="toggle"><input id="auto-learn" type="checkbox" ${s.auto_learn ? "checked" : ""}>Auto-save mappings after QMS passes</label></section></div><div class="settings-actions"><button id="save-admin" class="btn primary">Save settings${icon("check")}</button></div></form><div class="section-heading"><h2>Customer Accounts (${customers.length})</h2><button id="new-customer" class="btn small">${icon("plus")}Add customer</button></div><div class="customer-table" tabindex="0" aria-label="Customer workspaces"><table><thead><tr><th>Customer</th><th>Users</th><th>Status</th><th>Created</th></tr></thead><tbody>${customers.map((c) => `<tr><td><strong>${escapeHTML(c.name)}</strong></td><td>${c.users}</td><td><span class="badge good">Active</span></td><td>${new Date(c.created).toLocaleDateString()}</td></tr>`).join("") || '<tr><td colspan="4" class="table-empty">No customers yet.</td></tr>'}</tbody></table></div>`;
+    $2("page").innerHTML = `<div class="page-heading"><h1>Admin Settings</h1><span class="badge purple">Platform Admin</span></div><div id="credit-admin" class="credit-admin"><p class="cm-note">Loading credits\u2026</p></div><form id="admin-form"><div class="settings-grid"><section class="settings-panel"><h2>Limits</h2><div class="field-row"><div><label for="storage-limit">Storage / customer (MiB)</label><input id="storage-limit" type="number" min="50" max="10000" value="${escapeHTML(String(s.max_storage_mib_per_customer))}"></div><div><label for="jobs-limit">Max jobs / customer</label><input id="jobs-limit" type="number" min="5" max="1000" value="${escapeHTML(String(s.max_jobs_per_customer))}"></div></div></section></div><div class="settings-actions"><button id="save-admin" class="btn primary">Save settings${icon("check")}</button></div></form><div class="section-heading"><h2>Customer Accounts (${customers.length})</h2><button id="new-customer" class="btn small">${icon("plus")}Add customer</button></div><div class="customer-table" tabindex="0" aria-label="Customer workspaces"><table><thead><tr><th>Customer</th><th>Users</th><th>Status</th><th>Created</th></tr></thead><tbody>${customers.map((c) => `<tr><td><strong>${escapeHTML(c.name)}</strong></td><td>${c.users}</td><td><span class="badge good">Active</span></td><td>${new Date(c.created).toLocaleDateString()}</td></tr>`).join("") || '<tr><td colspan="4" class="table-empty">No customers yet.</td></tr>'}</tbody></table></div>`;
     $2("admin-form").addEventListener("submit", (e) => {
       e.preventDefault();
       void busy($2("save-admin"), async () => {
         const read = (id) => $2(id).value;
-        const key = read("api-key");
-        $2("api-key").value = "";
-        const body = { enabled: $2("ai-enabled").checked, provider: $2("provider").value, base_url: read("base-url").trim(), model: read("model").trim(), monthly_budget_usd: read("ai-budget"), platform_budget_usd: read("platform-budget"), input_price_per_million_usd: read("input-price"), output_price_per_million_usd: read("output-price"), pricing_source_url: read("pricing-url").trim(), pricing_verified_date: read("pricing-date"), max_output_tokens: Number(read("max-tokens")), timeout_seconds: 75, auto_learn: $2("auto-learn").checked, api_key: key || null, clear_key: $2("clear-key").checked, max_storage_mib_per_customer: Number(read("storage-limit")), max_jobs_per_customer: Number(read("jobs-limit")) };
+        const body = { max_storage_mib_per_customer: Number(read("storage-limit")), max_jobs_per_customer: Number(read("jobs-limit")) };
         adminSettings = await api("/api/admin/settings", body, "PUT");
         await refresh();
         await adminPage();
-        toast("Settings saved. No AI request was made.");
+        toast("Settings saved.");
       });
     });
     $2("new-customer").addEventListener("click", createCustomer);
@@ -29681,6 +35756,10 @@
         addHelperNote("What's missing?", sheetMissingSummary());
       }
     });
+    window.addEventListener("elite-nav", (e) => {
+      const page = e.detail;
+      if (user) void showPage(page);
+    });
     window.addEventListener("online", () => {
       if (xlHasUnsaved && job?.report?.rows) {
         xlRetryCount = 0;
@@ -29842,9 +35921,7 @@
       <button id="share-revoke" class="btn small" type="button">Turn off this link</button>
     </div>
     <hr>
-    <label for="share-email"><strong>Email the link</strong></label>
-    <div class="share-row"><input id="share-email" type="email" placeholder="name@school.co.za" autocomplete="off"><button id="share-send" class="btn small" type="button">Send email</button></div>
-    <p class="muted">The email contains a link only, never the file itself.</p>`);
+`);
     let shareId = null;
     const days2 = () => Number(document.querySelector('input[name="share-days"]:checked').value);
     $2("share-create").addEventListener("click", async () => {
@@ -29876,15 +35953,6 @@
         shareId = null;
         $2("share-result").hidden = true;
         toast("That link is now turned off.");
-      } catch (e) {
-        toast(e instanceof Error ? e.message : String(e), true);
-      }
-    });
-    $2("share-send").addEventListener("click", async () => {
-      const to = $2("share-email").value.trim();
-      try {
-        await api(`/api/jobs/${jobId}/share/email`, { to, days: days2() });
-        toast(`Link sent to ${to}.`);
       } catch (e) {
         toast(e instanceof Error ? e.message : String(e), true);
       }
@@ -29967,7 +36035,7 @@
         }
       });
     }
-    bar.innerHTML = `<button class="m-tab" data-mtab="chat" type="button"><span class="m-ico" aria-hidden="true">\u{1F4AC}</span>Helper</button><button class="m-tab" data-mtab="sheet" type="button"><span class="m-ico" aria-hidden="true">\u{1F4CA}</span>Sheet</button><button class="m-tab" data-tpage="templates" type="button"><span class="m-ico" aria-hidden="true">\u{1F5C2}\uFE0F</span>Templates</button><button class="m-tab" data-tpage="preferences" type="button"><span class="m-ico" aria-hidden="true">\u2699\uFE0F</span>Files</button>`;
+    bar.innerHTML = (user?.role === "admin" ? `<button class="m-tab" data-mtab="chat" type="button"><span class="m-ico" aria-hidden="true">${icon("chat")}</span>Helper</button><button class="m-tab" data-mtab="sheet" type="button"><span class="m-ico" aria-hidden="true">${icon("grid")}</span>Sheet</button>` : `<button class="m-tab" data-tpage="workspace" type="button"><span class="m-ico" aria-hidden="true">${icon("sheet")}</span>School file</button>`) + (user?.role === "admin" ? `<button class="m-tab" data-tpage="templates" type="button"><span class="m-ico" aria-hidden="true">${icon("layers")}</span>Templates</button>` : "") + (user?.role !== "admin" ? `<button class="m-tab" data-tpage="gradebook" type="button"><span class="m-ico" aria-hidden="true">${icon("book")}</span>Gradebook</button>` : "") + (user?.role !== "admin" ? `<button class="m-tab" data-tpage="register" type="button"><span class="m-ico" aria-hidden="true">${icon("clipboard")}</span>Registers</button>` : "") + (user?.role !== "admin" ? `<button class="m-tab" data-tpage="cptd" type="button"><span class="m-ico" aria-hidden="true">${icon("shield")}</span>CPTD</button>` : "") + (user?.role !== "admin" ? `<button class="m-tab" data-tpage="planner" type="button"><span class="m-ico" aria-hidden="true">${icon("clock")}</span>Planner</button>` : "") + `<button class="m-tab" data-tpage="preferences" type="button"><span class="m-ico" aria-hidden="true">${icon("settings")}</span>Files</button>`;
     updateTabbar();
   }
   async function download(kind, baseName) {

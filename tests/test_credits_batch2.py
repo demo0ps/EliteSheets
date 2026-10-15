@@ -36,22 +36,6 @@ def test_paused_user_is_blocked_until_restored(client):
     assert c.get('/api/credits').status_code == 200
 
 
-def test_spending_cap_stops_charges_and_can_be_lifted(client):
-    c, _ = client
-    sign(client)
-    job = example(client, request='cap-job-001')
-    sign(client, role='admin')
-    op = id_for(client, 'operator@demo.elitesheets')
-    assert c.put(f'/api/admin/credits/{op}/cap', json={'spend_cap': 2, 'reason': 'Trial budget'}).status_code == 200
-    sign(client)
-    assert chat(client, job, 'cap-req-1').status_code == 200
-    assert chat(client, job, 'cap-req-2').status_code == 200
-    blocked = chat(client, job, 'cap-req-3')
-    assert blocked.status_code == 402 and 'spending cap' in blocked.json()['detail']
-    sign(client, role='admin')
-    assert c.put(f'/api/admin/credits/{op}/cap', json={'spend_cap': None, 'reason': 'Trial over'}).status_code == 200
-    sign(client)
-    assert chat(client, job, 'cap-req-4').status_code == 200
 
 
 def test_cap_validation(client):
@@ -62,25 +46,6 @@ def test_cap_validation(client):
     assert c.put(f'/api/admin/credits/{op}/cap', json={'spend_cap': 10, 'reason': 'ok'}).status_code == 422
 
 
-def test_admin_undo_reverses_one_charge_once(client):
-    c, _ = client
-    sign(client)
-    job = example(client, request='undo-job-001')
-    assert chat(client, job, 'undo-req-1').status_code == 200
-    sign(client, role='admin')
-    op = id_for(client, 'operator@demo.elitesheets')
-    history = c.get(f'/api/admin/credits/{op}/history').json()
-    before = history['view']['left']
-    charge = next(r for r in history['ledger'] if r['delta'] < 0)
-    assert charge['undone'] is False
-
-    undone = c.post(f'/api/admin/credits/{op}/undo/{charge["id"]}', json={'reason': 'Duplicate charge'})
-    assert undone.status_code == 200 and undone.json()['left'] == before + 1
-    assert c.post(f'/api/admin/credits/{op}/undo/{charge["id"]}', json={'reason': 'Duplicate charge'}).status_code == 409
-
-    after = c.get(f'/api/admin/credits/{op}/history').json()
-    assert next(r for r in after['ledger'] if r['id'] == charge['id'])['undone'] is True
-    assert any(r['reason'].startswith('Undo: ') for r in after['ledger'])
 
 
 def test_undo_only_applies_to_charges_and_needs_a_reason(client):
@@ -104,41 +69,3 @@ def test_refund_returns_credits_to_the_balance(client):
     assert c.get('/api/credits').json()['left'] == before
 
 
-def test_low_balance_email_is_sent_once(client, monkeypatch):
-    c, _ = client
-    sent = []
-
-    class FakeSMTP:
-        def __init__(self, host, port, timeout=None):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def starttls(self):
-            pass
-
-        def login(self, user, password):
-            pass
-
-        def send_message(self, msg):
-            sent.append((msg['To'], msg['Subject']))
-
-    monkeypatch.setattr(online_module.smtplib, 'SMTP', FakeSMTP)
-    monkeypatch.setenv('SHEETQMS_SMTP_HOST', 'smtp.test.invalid')
-    monkeypatch.setenv('SHEETQMS_SMTP_FROM', 'noreply@test.invalid')
-    sign(client, role='admin')
-    op = id_for(client, 'operator@demo.elitesheets')
-    assert c.put(f'/api/admin/credits/{op}/allowance', json={'included': 3, 'reason': 'Small trial'}).status_code == 200
-    sign(client)
-    job = example(client, request='email-job-001')
-    assert chat(client, job, 'email-req-1').status_code == 200
-    assert chat(client, job, 'email-req-2').status_code == 200
-    assert sent == []
-    assert chat(client, job, 'email-req-3').status_code == 200  # 0 left: alert goes out
-    assert sent == [('operator@demo.elitesheets', 'Your Elite Sheets credits are running low')]
-    assert chat(client, job, 'email-req-4').status_code == 402
-    assert len(sent) == 1

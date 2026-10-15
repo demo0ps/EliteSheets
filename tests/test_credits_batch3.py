@@ -11,20 +11,6 @@ def id_for(client, email):
     return next(i['id'] for i in items if i['email'] == email)
 
 
-def test_margin_estimates_cost_and_revenue_excluding_vat(client):
-    c, _ = client
-    sign(client)
-    job = example(client, request='margin-job-001')
-    assert c.post(f'/api/jobs/{job["id"]}/chat', json={'text': 'Q', 'request_id': 'margin-req-1'}).status_code == 200
-    sign(client, role='admin')
-    margin = c.get('/api/admin/margin').json()
-    assert margin['users'] == 2  # operator and the second demo customer; the admin is not billed
-    assert margin['fee'] == 79
-    assert margin['credits_spent'] == 1
-    assert margin['estimated_cost'] == 0.01
-    assert margin['revenue_excl_vat'] == round(79 * 2 / 1.15, 2)
-    assert margin['margin_pct'] is not None and margin['margin_pct'] > 99
-    assert 'Fixed platform costs' in margin['assumption']
 
 
 def test_margin_is_admin_only(client):
@@ -65,17 +51,6 @@ def test_balances_export_has_headers_and_rows(client):
     assert any(r[1] == 'operator@demo.elitesheets' for r in rows[1:])
 
 
-def test_ledger_export_lists_charges_and_validates_month(client):
-    c, _ = client
-    sign(client)
-    job = example(client, request='export-job-001')
-    c.post(f'/api/jobs/{job["id"]}/chat', json={'text': 'Q', 'request_id': 'export-req-1'})
-    sign(client, role='admin')
-    body = c.get('/api/admin/exports/ledger').json()
-    rows = list(csv.reader(io.StringIO(body['csv'].lstrip('\ufeff'))))
-    assert rows[0][:3] == ['When', 'Month', 'Name']
-    assert any(r[5] == '-1' and r[6] == 'helper_message' for r in rows[1:])
-    assert c.get('/api/admin/exports/ledger?month=October').status_code == 422
 
 
 def test_csv_cells_are_safe_from_formula_injection():

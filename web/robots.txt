@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://demo0ps.github.io/EliteSheets/sitemap.xml

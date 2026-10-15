@@ -1,6 +1,6 @@
 {
   "version": "0.2.0",
-  "artifact": "SheetQMS-online.zip",
+  "artifact": "EliteSheets-online.zip",
   "verification_scope": "Development/synthetic automated (67) and headless Chromium (22) checks passed; live cloud deployment, live AI and real customer spreadsheets not yet verified",
   "files": {
     ".env.example": {
@@ -199,11 +199,11 @@
       "sha256": "2e237158f051267a16728f1790de180c6569d7b42437d067e65c420b716ee1a6",
       "bytes": 321796
     },
-    "web/eduscf-logo.png": {
+    "web/elite-logo.png": {
       "sha256": "8f78adb6ad3254ef32c753c33c2e238d55fd8f9d0f3eef9c813ef70abf343d69",
       "bytes": 11499
     },
-    "web/eduscf_logo.ts": {
+    "web/elite_logo.ts": {
       "sha256": "4b0b2d2e124dbc913d153c055253b4e299e9347b98f3390b772c6fc216e2a527",
       "bytes": 15389
     },

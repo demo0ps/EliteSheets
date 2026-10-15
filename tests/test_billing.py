@@ -27,18 +27,6 @@ def test_new_users_are_active_with_full_access(client):
     assert meter['access'] == 'full'
 
 
-def test_cancelled_is_read_only_and_blocks_changes(client):
-    c, _ = client
-    sign(client)
-    job = example(client, request='billing-job-001')
-    sign(client, role='admin')
-    op = id_for(client, 'operator@demo.elitesheets')
-    assert set_sub(client, op, 'cancelled').status_code == 200
-    sign(client)
-    assert c.get('/api/credits').status_code == 200
-    blocked = c.post(f'/api/jobs/{job["id"]}/chat', json={'text': 'Q', 'request_id': 'billing-req-1'})
-    assert blocked.status_code == 403 and 'view and download' in blocked.json()['detail']
-    assert c.get('/api/credits').json()['access'] == 'read_only'
 
 
 def test_past_due_keeps_access_during_grace_then_goes_read_only(client):

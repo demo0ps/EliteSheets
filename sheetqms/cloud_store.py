@@ -42,6 +42,8 @@ provider_secrets = sa.Table('provider_secrets', M, sa.Column('provider_id', sa.S
 checkouts = sa.Table('checkouts', M, sa.Column('id', sa.String, primary_key=True), sa.Column('provider_id', sa.String, nullable=False), sa.Column('user_id', sa.String, nullable=False), sa.Column('kind', sa.String, nullable=False), sa.Column('amount_cents', sa.Integer, nullable=False), sa.Column('reference', sa.String, nullable=False), sa.Column('external_id', sa.String), sa.Column('status', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False), sa.Column('paid', sa.String))
 sa.Index('checkouts_external', checkouts.c.external_id)
 rate_limits = sa.Table('rate_limits', M, sa.Column('id', sa.String, primary_key=True), sa.Column('count', sa.Integer, nullable=False), sa.Column('expires', sa.String, nullable=False))
+helper_usage = sa.Table('helper_usage', M, sa.Column('id', sa.String, primary_key=True), sa.Column('user_id', sa.String, nullable=False), sa.Column('month', sa.String, nullable=False), sa.Column('kind', sa.String, nullable=False), sa.Column('created', sa.String, nullable=False))
+sa.Index('helper_usage_user_month', helper_usage.c.user_id, helper_usage.c.month, helper_usage.c.kind)
 sa.Index('job_workspace_created', jobs.c.tenant_id, jobs.c.created)
 sa.Index('event_workspace_job', events.c.tenant_id, events.c.job_id, events.c.id)
 
@@ -254,6 +256,14 @@ class CloudStore:
         with self.tx() as c:
             c.execute(jobs.delete().where(jobs.c.tenant_id == tenant, jobs.c.id == job['id']))
             self.event_in(c, tenant, job['id'], job['trace_id'], 'job_files_deleted', {'note': 'Structural knowledge and minimal audit retained.'})
+
+    def helper_count(self, user_id, month, kind):
+        with self.tx() as c:
+            return int(c.execute(sa.select(sa.func.count()).select_from(helper_usage).where(helper_usage.c.user_id == user_id, helper_usage.c.month == month, helper_usage.c.kind == kind)).scalar() or 0)
+
+    def helper_record(self, user_id, month, kind):
+        with self.tx() as c:
+            c.execute(helper_usage.insert().values(id=str(uuid.uuid4()), user_id=user_id, month=month, kind=kind, created=now()))
 
     def take_rate(self, key, maximum=15, seconds=900):
         with self.tx(serial=True) as c:

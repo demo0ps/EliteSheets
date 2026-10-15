@@ -1,6 +1,6 @@
-# SheetQMS v0.2 — customer workspace + QMS chat
+# Elite Sheets v0.2 — customer workspace + QMS chat
 
-**New modern tech workspace, not an already-published production service.** Open the `SheetQMS online workspace` live preview to explore the working synthetic app. Real keys/live AI are disabled there.
+**New modern tech workspace, not an already-published production service.** Open the `Elite Sheets online workspace` live preview to explore the working synthetic app. Real keys/live AI are disabled there.
 
 ## Talk to QMS
 
